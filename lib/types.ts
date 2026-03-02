@@ -6,7 +6,7 @@ export type TaskStatus = 'open' | 'done'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TeamRole = 'admin' | 'agent' | 'viewer'
 export type AdPlatform = 'meta' | 'google' | 'tiktok' | 'organic' | 'other'
-export type AgentType = 'lead' | 'followup' | 'coach' | 'marketing'
+export type AgentType = 'lead' | 'followup' | 'coach' | 'marketing' | 'investor'
 export type AgentRunStatus = 'running' | 'done' | 'failed'
 export type NotificationType = 'agent_complete' | 'cold_lead' | 'task_due' | 'tip' | 'info'
 
@@ -331,6 +331,150 @@ export interface Notification {
   link: string | null
   read: boolean
   created_at: string
+}
+
+// ─── Investors & Opportunities ────────────────────────────────────────────────
+
+export type InvestmentType = 'buy_to_let' | 'buy_to_sell' | 'fix_and_flip' | 'commercial'
+export type RiskLevel = 'conservative' | 'moderate' | 'aggressive'
+export type InvestmentHorizon = 'short' | 'medium' | 'long'
+export type InvestorStatus = 'active' | 'inactive' | 'invested'
+export type OpportunityStatus = 'analyzing' | 'available' | 'under_offer' | 'closed' | 'passed'
+export type MatchStatus = 'suggested' | 'presented' | 'interested' | 'rejected' | 'invested'
+export type PropertyType = 'apartment' | 'house' | 'commercial' | 'land'
+export type MaxRenovation = 'none' | 'light' | 'medium' | 'full'
+
+export interface Investor {
+  id: string
+  team_id: string
+  name: string
+  email: string | null
+  phone: string | null
+  investment_type: InvestmentType[]
+  budget_min: number | null
+  budget_max: number | null
+  preferred_zones: string[]
+  preferred_typologies: string[]
+  min_yield: number | null
+  risk_level: RiskLevel
+  investment_horizon: InvestmentHorizon
+  needs_financing: boolean
+  max_renovation: MaxRenovation
+  notes: string | null
+  status: InvestorStatus
+  last_contact: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Opportunity {
+  id: string
+  team_id: string
+  title: string
+  address: string | null
+  zone: string
+  typology: string | null
+  property_type: PropertyType
+  asking_price: number
+  negotiated_price: number | null
+  estimated_monthly_rent: number | null
+  condo_fee: number
+  annual_imi: number
+  renovation_cost: number
+  estimated_sell_price: number | null
+  status: OpportunityStatus
+  source: string | null
+  description: string | null
+  lead_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface InvestorMatch {
+  id: string
+  team_id: string
+  investor_id: string
+  opportunity_id: string
+  match_score: number
+  match_reasons: { reason: string; positive: boolean }[]
+  ai_analysis: string | null
+  pitch_draft: string | null
+  status: MatchStatus
+  created_at: string
+  updated_at: string
+  // joins
+  investor?: Investor
+  opportunity?: Opportunity
+}
+
+export interface RoiMetrics {
+  preco_compra: number          // preço efectivo (negociado ou asking)
+  rendimento_anual: number      // renda * 12
+  encargos_anuais: number       // condo*12 + imi + gestão (~10% renda)
+  yield_bruto: number           // %
+  yield_liquido: number         // %
+  imt: number                   // imposto municipal transmissões
+  custos_escritura: number      // ~1.5% do preço
+  capital_total_investido: number // entrada + imt + escritura + renovação
+  cash_flow_anual: number       // renda anual líquida - prestação
+  cash_on_cash: number | null   // % (só se self-financed)
+  payback_anos: number | null   // anos para recuperar capital investido
+  plus_valia_estimada: number | null // % (só se sell price definido)
+}
+
+export const INVESTMENT_TYPE_LABELS: Record<InvestmentType, string> = {
+  buy_to_let: 'Buy-to-Let (Arrendamento)',
+  buy_to_sell: 'Buy-to-Sell (Revenda)',
+  fix_and_flip: 'Fix & Flip',
+  commercial: 'Comercial',
+}
+
+export const RISK_LEVEL_LABELS: Record<RiskLevel, string> = {
+  conservative: 'Conservador',
+  moderate: 'Moderado',
+  aggressive: 'Agressivo',
+}
+
+export const INVESTMENT_HORIZON_LABELS: Record<InvestmentHorizon, string> = {
+  short: 'Curto prazo (<2 anos)',
+  medium: 'Médio prazo (2-5 anos)',
+  long: 'Longo prazo (>5 anos)',
+}
+
+export const INVESTOR_STATUS_LABELS: Record<InvestorStatus, string> = {
+  active: 'Ativo',
+  inactive: 'Inativo',
+  invested: 'Investiu',
+}
+
+export const OPPORTUNITY_STATUS_LABELS: Record<OpportunityStatus, string> = {
+  analyzing: 'Em Análise',
+  available: 'Disponível',
+  under_offer: 'Em Oferta',
+  closed: 'Fechado',
+  passed: 'Passou',
+}
+
+export const MATCH_STATUS_LABELS: Record<MatchStatus, string> = {
+  suggested: 'Sugerido',
+  presented: 'Apresentado',
+  interested: 'Interessado',
+  rejected: 'Rejeitado',
+  invested: 'Investiu',
+}
+
+export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
+  apartment: 'Apartamento',
+  house: 'Moradia',
+  commercial: 'Comercial',
+  land: 'Terreno',
+}
+
+export const MAX_RENOVATION_LABELS: Record<MaxRenovation, string> = {
+  none: 'Sem obras',
+  light: 'Obras ligeiras',
+  medium: 'Obras médias',
+  full: 'Remodelação total',
 }
 
 // ─── View Models ──────────────────────────────────────────────────────────────
