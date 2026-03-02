@@ -1,17 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, TASK_PRIORITY_COLORS, TASK_PRIORITY_LABELS, INTERACTION_TYPE_LABELS } from '@/lib/types'
-import { formatDateTime, formatRelativeTime, formatCurrency, getInitials } from '@/lib/utils'
+import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, INTERACTION_TYPE_LABELS } from '@/lib/types'
+import { formatRelativeTime, formatCurrency, getInitials } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { LeadDetailClient } from './LeadDetailClient'
+import { TaskList } from './TaskList'
+import { CopyButton } from './CopyButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
-  MessageCircle, Target, AlertTriangle, CheckCircle2,
+  MessageCircle, AlertTriangle,
 } from 'lucide-react'
 import Link from 'next/link'
-import type { LeadStatus, TaskPriority, InteractionType } from '@/lib/types'
+import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,11 +52,24 @@ export default async function LeadDetailPage({ params }: Props) {
 
   if (error || !lead) notFound()
 
+  // Fetch latest agent extraction for persistent drafts & suggestions
+  const { data: latestExtraction } = await supabase
+    .from('agent_extractions')
+    .select('id, drafts_json, recommendations_json, created_at')
+    .eq('lead_id', id)
+    .eq('team_id', member.team_id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
   const profile = Array.isArray(lead.lead_profiles) ? lead.lead_profiles[0] : lead.lead_profiles
   const interactions = Array.isArray(lead.interactions) ? lead.interactions : []
   const tasks = Array.isArray(lead.tasks) ? lead.tasks : []
   const openTasks = tasks.filter((t: { status: string }) => t.status === 'open')
   const doneTasks = tasks.filter((t: { status: string }) => t.status === 'done')
+
+  const drafts: AgentDraft[] = (latestExtraction?.drafts_json as { drafts?: AgentDraft[] } | null)?.drafts ?? []
+  const recommendations = latestExtraction?.recommendations_json as AgentRecommendations | null
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -201,7 +216,7 @@ export default async function LeadDetailPage({ params }: Props) {
           )}
         </div>
 
-        {/* Middle + Right: Tasks + Interactions */}
+        {/* Middle + Right: Tasks + Interactions + Drafts */}
         <div className="lg:col-span-2 space-y-6">
           {/* Tasks */}
           <Card>
@@ -213,56 +228,53 @@ export default async function LeadDetailPage({ params }: Props) {
                 )}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {openTasks.length === 0 && doneTasks.length === 0 ? (
-                <p className="text-sm text-gray-400 text-center py-3">Sem tarefas</p>
-              ) : (
-                <>
-                  {openTasks.map((task: {
-                    id: string; title: string; description?: string; priority: string;
-                    due_at?: string; created_by: string; status: string
-                  }) => {
-                    const isOverdue = task.due_at && new Date(task.due_at) < new Date()
-                    return (
-                      <div key={task.id} className="flex items-start gap-3 p-3 rounded-lg bg-gray-50">
-                        <Target size={16} className="mt-0.5 text-gray-400 flex-shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-gray-800">{task.title}</p>
-                            <Badge className={`text-xs ${TASK_PRIORITY_COLORS[task.priority as TaskPriority]}`}>
-                              {TASK_PRIORITY_LABELS[task.priority as TaskPriority]}
-                            </Badge>
-                            {task.created_by === 'agent' && (
-                              <span className="text-xs text-purple-500">🤖</span>
-                            )}
-                          </div>
-                          {task.description && (
-                            <p className="text-xs text-gray-500 mt-0.5">{task.description}</p>
-                          )}
-                          {task.due_at && (
-                            <p className={`text-xs mt-1 ${isOverdue ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
-                              {isOverdue ? '⚠️ ' : ''}{formatDateTime(task.due_at)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {doneTasks.length > 0 && (
-                    <div className="pt-1">
-                      <p className="text-xs text-gray-400 mb-2">Concluídas ({doneTasks.length})</p>
-                      {doneTasks.slice(0, 3).map((task: { id: string; title: string }) => (
-                        <div key={task.id} className="flex items-center gap-2 py-1">
-                          <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
-                          <p className="text-sm text-gray-400 line-through">{task.title}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
+            <CardContent>
+              <TaskList initialOpenTasks={openTasks} initialDoneTasks={doneTasks} />
             </CardContent>
           </Card>
+
+          {/* Latest AI Suggestions & Drafts */}
+          {latestExtraction && (drafts.length > 0 || (recommendations?.next_questions && recommendations.next_questions.length > 0)) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                  Últimas Sugestões IA
+                  <span className="ml-2 font-normal text-gray-400 normal-case text-xs">
+                    {formatRelativeTime(latestExtraction.created_at)}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Next Questions */}
+                {recommendations?.next_questions && recommendations.next_questions.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Perguntas por fazer</p>
+                    <ul className="space-y-1">
+                      {recommendations.next_questions.map((q, i) => (
+                        <li key={i} className="text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded">
+                          {q}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Message Drafts */}
+                {drafts.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
+                      Rascunhos de Mensagem
+                    </p>
+                    <div className="space-y-3">
+                      {drafts.map((draft, i) => (
+                        <DraftCard key={i} draft={draft} index={i} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Interaction Timeline */}
           <Card>
@@ -308,3 +320,29 @@ export default async function LeadDetailPage({ params }: Props) {
     </div>
   )
 }
+
+// Server component helper to render a single draft card with copy button (client-side copy needs client component)
+function DraftCard({ draft, index }: { draft: AgentDraft; index: number }) {
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="text-xs">
+            {draft.channel === 'whatsapp' ? '📱 WhatsApp' : '📧 Email'}
+          </Badge>
+          <span className="text-xs text-gray-500">{draft.goal}</span>
+        </div>
+        <CopyButton text={draft.body} id={`saved-draft-${index}`} />
+      </div>
+      {draft.subject && (
+        <div className="px-3 py-1.5 bg-blue-50 border-b text-xs font-medium text-blue-700">
+          Assunto: {draft.subject}
+        </div>
+      )}
+      <div className="p-3">
+        <p className="text-sm text-gray-700 whitespace-pre-wrap">{draft.body}</p>
+      </div>
+    </div>
+  )
+}
+

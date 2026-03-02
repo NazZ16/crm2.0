@@ -142,6 +142,38 @@ export async function POST(request: Request) {
     })
     .eq('id', lead_id)
 
+  // Merge extracted profile into lead_profiles (deep merge — only overwrite non-null new values)
+  function mergeField<T>(existing: T | null | undefined, updated: Partial<T> | null | undefined): T | null {
+    if (!updated) return existing ?? null
+    if (!existing) return updated as T
+    const result = { ...existing } as Record<string, unknown>
+    for (const [k, v] of Object.entries(updated as Record<string, unknown>)) {
+      if (v !== null && v !== undefined) {
+        if (Array.isArray(v) && v.length > 0) result[k] = v
+        else if (!Array.isArray(v)) result[k] = v
+      }
+    }
+    return result as T
+  }
+
+  const ex = output.lead_updates
+  const profileUpsert = {
+    lead_id,
+    home_preferences: mergeField(existingProfile?.home_preferences, ex.home_preferences),
+    financial_profile: mergeField(existingProfile?.financial_profile, ex.financial_profile),
+    personality_traits: mergeField(existingProfile?.personality_traits, ex.personality_traits),
+    family_context: mergeField(existingProfile?.family_context, ex.family_context),
+    fears_objections: mergeField(existingProfile?.fears_objections, ex.fears_objections),
+    process_preferences: mergeField(existingProfile?.process_preferences, ex.process_preferences),
+    summary: ex.summary || existingProfile?.summary || null,
+    confidence_score: ex.confidence_score,
+    updated_at: now,
+  }
+
+  await supabase
+    .from('lead_profiles')
+    .upsert(profileUpsert, { onConflict: 'lead_id' })
+
   // Create interaction record
   await supabase.from('interactions').insert({
     lead_id,
