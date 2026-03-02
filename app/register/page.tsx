@@ -13,6 +13,7 @@ import Link from 'next/link'
 export default function RegisterPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const [fullName, setFullName] = useState('')
   const [teamName, setTeamName] = useState('')
   const [email, setEmail] = useState('')
@@ -25,13 +26,18 @@ export default function RegisterPage() {
       return
     }
     setLoading(true)
+
     const supabase = createClient()
+    const resolvedTeamName = teamName.trim() || `Equipa de ${fullName}`
+
+    // Guardar team_name nos metadados — o callback usa-os para criar a equipa
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? location.origin
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { full_name: fullName },
-        emailRedirectTo: `${location.origin}/api/auth/callback`,
+        data: { full_name: fullName, team_name: resolvedTeamName },
+        emailRedirectTo: `${siteUrl}/api/auth/callback`,
       },
     })
 
@@ -41,12 +47,12 @@ export default function RegisterPage() {
       return
     }
 
-    if (data.user) {
-      // Create team via API route (needs service role)
+    // Se a sessão foi criada imediatamente (confirmação de email desativada)
+    if (data.session) {
       const res = await fetch('/api/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ team_name: teamName || `Equipa de ${fullName}` }),
+        body: JSON.stringify({ team_name: resolvedTeamName }),
       })
 
       if (!res.ok) {
@@ -56,12 +62,38 @@ export default function RegisterPage() {
         return
       }
 
-      toast.success('Conta criada! A redirecionar...')
+      toast.success('Conta criada!')
       router.push('/dashboard')
       router.refresh()
+      return
     }
 
+    // Email de confirmação enviado — mostrar mensagem ao utilizador
+    setSubmitted(true)
     setLoading(false)
+  }
+
+  if (submitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="w-full max-w-md space-y-6 text-center">
+          <div className="text-3xl font-bold text-gray-900">🏠 CRM 2.0</div>
+          <Card>
+            <CardContent className="pt-6 pb-6 space-y-3">
+              <div className="text-4xl">📧</div>
+              <h2 className="text-lg font-semibold text-gray-900">Verifica o teu email</h2>
+              <p className="text-sm text-gray-500">
+                Enviámos um link de confirmação para <strong>{email}</strong>.
+                Clica no link para ativar a conta e aceder ao CRM.
+              </p>
+              <p className="text-xs text-gray-400">
+                Não vês o email? Verifica a pasta de spam.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
