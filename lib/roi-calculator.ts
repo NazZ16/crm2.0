@@ -1,20 +1,21 @@
 import type { Opportunity, RoiMetrics, FixFlipMetrics } from '@/lib/types'
 
 /**
- * Tabela IMT 2024 para habitação própria permanente (Portugal)
- * Fonte: Autoridade Tributária e Aduaneira
+ * Tabela IMT para prédios urbanos (investimento / habitação não permanente) — Portugal
+ * Fonte: APEMIP / Autoridade Tributária e Aduaneira
+ * Fórmula: IMT = Valor × Taxa − Parcela a abater
+ *
+ * Exemplo: 140.000 × 2% − 1.063,46 = 1.736,54 €
  */
 function calcularImt(preco: number): number {
-  // Habitação — tabela I (residência permanente) 2024
-  // Usar tabela II (outros) para simplificação de investimento
   const tabela = [
-    { ate: 97064, taxa: 0, deducao: 0 },
-    { ate: 132774, taxa: 0.02, deducao: 1941.28 },
-    { ate: 181034, taxa: 0.05, deducao: 5924.50 },
-    { ate: 301688, taxa: 0.07, deducao: 9545.18 },
-    { ate: 603290, taxa: 0.08, deducao: 12562.06 },
-    { ate: 1050400, taxa: 0.06, deducao: 0 },  // taxa única a partir daqui
-    { ate: Infinity, taxa: 0.075, deducao: 0 },
+    { ate: 106346,   taxa: 0.01,   deducao: 0       },
+    { ate: 145470,   taxa: 0.02,   deducao: 1063.46 },
+    { ate: 198347,   taxa: 0.05,   deducao: 5427.56 },
+    { ate: 330539,   taxa: 0.07,   deducao: 9394.50 },
+    { ate: 633931,   taxa: 0.08,   deducao: 12699.89 },
+    { ate: 1150853,  taxa: 0.06,   deducao: 0       },
+    { ate: Infinity, taxa: 0.075,  deducao: 0       },
   ]
 
   for (const escalao of tabela) {
