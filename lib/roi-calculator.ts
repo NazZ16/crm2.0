@@ -166,13 +166,14 @@ export function calcularFixFlip(opp: Opportunity): FixFlipMetrics {
   const lucroLiquidoAntesImpostos = lucroBruto  // antes de IRC
 
   // ─── Capital Próprio Necessário ───────────────────────────────
-  // = entrada + custos aquisição + obras + transitórios + venda (tudo exceto financiamento bancário)
+  // = preço de aquisição + custos de aquisição + custos de financiamento + obras + transitórios
+  // (os custos de venda saem do produto da venda, não são capital a mobilizar)
   const capitalProprio = Math.round(
-    preco * (entryPct / 100)
+    preco
     + totalCustosAquisicao
+    + totalCustosFinanciamento
     + totalObras
     + totalCustosTransitorios
-    + totalCustosVenda
   )
 
   // ─── Rentabilidade ────────────────────────────────────────────

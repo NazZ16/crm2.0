@@ -67,9 +67,11 @@ function previewFf(form: Record<string, string>) {
   const comissao = sellPrice * parseFloat(form.sale_commission_pct || '4') / 100 * 1.23
   const totalVenda = comissao + (financingAmt * parseFloat(form.early_repayment_penalty_pct || '0') / 100)
 
+  const totalFinanciamento = totalJuros + (financingAmt * parseFloat(form.financing_stamp_duty_pct || '0.6') / 100)
   const custoTotal = preco + totalAquisicao + totalJuros + totalObras + totalTransit + totalVenda
   const lucroBruto = sellPrice - custoTotal
-  const capitalProprio = preco * (entryPct / 100) + totalAquisicao + totalObras + totalTransit + totalVenda
+  // Capital investido = preço + custos aquisição + custos financiamento + obras + transitórios
+  const capitalProprio = preco + totalAquisicao + totalFinanciamento + totalObras + totalTransit
   const ircValor = lucroBruto > 0 ? lucroBruto * parseFloat(form.irc_rate || '19') / 100 : 0
   const lucroLiquidoIrc = lucroBruto - ircValor
   const operadorPct = parseFloat(form.operator_profit_pct || '25') / 100
@@ -83,12 +85,13 @@ function previewFf(form: Record<string, string>) {
 }
 
 function calcImtSimple(preco: number) {
-  if (preco <= 97064) return 0
-  if (preco <= 132774) return Math.max(0, preco * 0.02 - 1941)
-  if (preco <= 181034) return Math.max(0, preco * 0.05 - 5924)
-  if (preco <= 301688) return Math.max(0, preco * 0.07 - 9545)
-  if (preco <= 603290) return Math.max(0, preco * 0.08 - 12562)
-  return preco * 0.075
+  if (preco <= 106346) return Math.round(preco * 0.01)
+  if (preco <= 145470) return Math.max(0, Math.round(preco * 0.02 - 1063.46))
+  if (preco <= 198347) return Math.max(0, Math.round(preco * 0.05 - 5427.56))
+  if (preco <= 330539) return Math.max(0, Math.round(preco * 0.07 - 9394.50))
+  if (preco <= 633931) return Math.max(0, Math.round(preco * 0.08 - 12699.89))
+  if (preco <= 1150853) return Math.round(preco * 0.06)
+  return Math.round(preco * 0.075)
 }
 
 function NumInput({ id, label, value, onChange, placeholder = '0', step, hint }: {

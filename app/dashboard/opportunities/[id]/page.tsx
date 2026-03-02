@@ -134,8 +134,11 @@ export default function OpportunityDetailPage() {
   const ff = isFF ? calcularFixFlip(opp) : null
   const preco = opp.negotiated_price ?? opp.asking_price
 
-  // Calcular total capital investidores reais
-  const totalCapital = opp.deal_investors.reduce((s, di) => s + di.capital_invested, 0)
+  // totalCapital = capital total do negócio (base para % de cada investidor)
+  // A % de cada investidor = capital_invested / capital_proprio_necessario
+  const totalCapital = ff ? ff.capital_proprio_necessario : opp.deal_investors.reduce((s, di) => s + di.capital_invested, 0)
+  // totalContributed = soma do capital já comprometido pelos investidores (para mostrar progresso)
+  const totalContributed = opp.deal_investors.reduce((s, di) => s + di.capital_invested, 0)
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4">
@@ -391,9 +394,15 @@ export default function OpportunityDetailPage() {
                       )
                     })}
                     <div className="flex justify-between pt-1 border-t text-xs font-bold">
-                      <span>Total</span>
-                      <span>{formatEur(totalCapital)}</span>
+                      <span>Comprometido</span>
+                      <span>{formatEur(totalContributed)}</span>
                     </div>
+                    {ff && totalContributed < ff.capital_proprio_necessario && (
+                      <div className="flex justify-between text-xs text-amber-600 font-medium">
+                        <span>Em falta</span>
+                        <span>{formatEur(ff.capital_proprio_necessario - totalContributed)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -460,11 +469,19 @@ export default function OpportunityDetailPage() {
                   <tr className="font-bold border-t-2 text-sm">
                     <td className="py-2 pr-4">Total</td>
                     <td />
-                    <td className="text-right px-2">{formatEur(totalCapital)}</td>
-                    <td className="text-right px-2">100%</td>
+                    <td className="text-right px-2">{formatEur(totalContributed)}</td>
+                    <td className="text-right px-2">{totalCapital > 0 ? formatPct(totalContributed / totalCapital * 100) : '—'}</td>
                     <td className="text-right px-2 text-green-700">{formatEur(ff.investidores_total_lucro)}</td>
                     <td colSpan={3} />
                   </tr>
+                  {totalContributed < totalCapital && (
+                    <tr className="text-xs text-amber-600">
+                      <td className="py-1 pr-4 font-medium">Capital em falta</td>
+                      <td />
+                      <td className="text-right px-2 font-medium">{formatEur(totalCapital - totalContributed)}</td>
+                      <td colSpan={5} />
+                    </tr>
+                  )}
                 </tfoot>
               </table>
             </div>
