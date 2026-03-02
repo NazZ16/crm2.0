@@ -17,12 +17,17 @@ function slugify(name: string): string {
 }
 
 export async function POST(request: Request) {
+  // Verificar autenticação com client normal (RLS)
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
+  // Operações de escrita com service role (bypassa RLS para bootstrap da equipa)
+  const { createServiceClient } = await import('@/lib/supabase/server')
+  const admin = createServiceClient()
+
   // Check if user already has a team
-  const { data: existingMember } = await supabase
+  const { data: existingMember } = await admin
     .from('team_members')
     .select('team_id')
     .eq('user_id', user.id)
@@ -44,7 +49,7 @@ export async function POST(request: Request) {
   let slug = baseSlug
   let attempt = 0
   while (attempt < 10) {
-    const { data: existing } = await supabase
+    const { data: existing } = await admin
       .from('teams')
       .select('id')
       .eq('slug', slug)
@@ -56,7 +61,7 @@ export async function POST(request: Request) {
   }
 
   // Create team
-  const { data: team, error: teamError } = await supabase
+  const { data: team, error: teamError } = await admin
     .from('teams')
     .insert({ name: parsed.data.team_name, slug })
     .select()
@@ -65,12 +70,12 @@ export async function POST(request: Request) {
   if (teamError) return NextResponse.json({ error: teamError.message }, { status: 500 })
 
   // Add user as admin
-  const { error: memberError } = await supabase
+  const { error: memberError } = await admin
     .from('team_members')
     .insert({ team_id: team.id, user_id: user.id, role: 'admin' })
 
   if (memberError) {
-    await supabase.from('teams').delete().eq('id', team.id)
+    await admin.from('teams').delete().eq('id', team.id)
     return NextResponse.json({ error: memberError.message }, { status: 500 })
   }
 
