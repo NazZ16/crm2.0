@@ -2,19 +2,49 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
-const updateOpportunitySchema = z.object({
+const updateSchema = z.object({
   title: z.string().min(1).max(300).optional(),
   address: z.string().max(500).optional().nullable(),
   zone: z.string().min(1).max(100).optional(),
   typology: z.string().max(10).optional().nullable(),
   property_type: z.enum(['apartment', 'house', 'commercial', 'land']).optional(),
+  deal_type: z.enum(['buy_to_let', 'fix_and_flip']).optional(),
   asking_price: z.number().int().positive().optional(),
   negotiated_price: z.number().int().positive().optional().nullable(),
+  area_m2: z.number().int().positive().optional().nullable(),
+  vpt: z.number().int().positive().optional().nullable(),
   estimated_monthly_rent: z.number().int().positive().optional().nullable(),
   condo_fee: z.number().int().min(0).optional(),
   annual_imi: z.number().int().min(0).optional(),
   renovation_cost: z.number().int().min(0).optional(),
+  imposto_selo_pct: z.number().min(0).max(1).optional(),
+  escritura_cost: z.number().int().min(0).optional(),
+  financing_entry_pct: z.number().min(0).max(100).optional(),
+  financing_interest_pct: z.number().min(0).max(30).optional().nullable(),
+  financing_years: z.number().int().min(1).max(50).optional().nullable(),
+  financing_stamp_duty_pct: z.number().min(0).max(1).optional(),
+  financing_dossier: z.number().int().min(0).optional(),
+  financing_evaluation: z.number().int().min(0).optional(),
+  financing_formalization: z.number().int().min(0).optional(),
+  financing_mortgage_registry: z.number().int().min(0).optional(),
+  holding_months: z.number().int().min(0).optional(),
+  insurance_monthly: z.number().int().min(0).optional(),
+  electricity_monthly: z.number().int().min(0).optional(),
+  water_monthly: z.number().int().min(0).optional(),
+  construction_cost: z.number().int().min(0).optional(),
+  operational_expenses: z.number().int().min(0).optional(),
+  renovation_item3: z.number().int().min(0).optional(),
+  renovation_item4: z.number().int().min(0).optional(),
+  renovation_item5: z.number().int().min(0).optional(),
   estimated_sell_price: z.number().int().positive().optional().nullable(),
+  sale_commission_pct: z.number().min(0).max(20).optional(),
+  sale_commission2_pct: z.number().min(0).max(20).optional(),
+  sale_commission3_pct: z.number().min(0).max(20).optional(),
+  early_repayment_penalty_pct: z.number().min(0).max(5).optional(),
+  operator_profit_pct: z.number().min(0).max(100).optional(),
+  irc_rate: z.number().min(0).max(50).optional(),
+  reform_months: z.number().int().min(0).optional().nullable(),
+  contract_type: z.string().max(100).optional().nullable(),
   status: z.enum(['analyzing', 'available', 'under_offer', 'closed', 'passed']).optional(),
   source: z.string().max(200).optional().nullable(),
   description: z.string().max(5000).optional().nullable(),
@@ -47,7 +77,7 @@ export async function GET(
 
   if (error || !data) return NextResponse.json({ error: 'Oportunidade não encontrada' }, { status: 404 })
 
-  // Buscar matches com investidores
+  // Matches IA
   const { data: matches } = await supabase
     .from('investor_matches')
     .select('*, investors(*)')
@@ -55,7 +85,19 @@ export async function GET(
     .eq('team_id', member.team_id)
     .order('match_score', { ascending: false })
 
-  return NextResponse.json({ ...data, matches: matches ?? [] })
+  // Investidores realmente alocados
+  const { data: dealInvestors } = await supabase
+    .from('opportunity_investors')
+    .select('*, investors(id, name, phone, email, status)')
+    .eq('opportunity_id', id)
+    .eq('team_id', member.team_id)
+    .order('capital_invested', { ascending: false })
+
+  return NextResponse.json({
+    ...data,
+    matches: matches ?? [],
+    deal_investors: dealInvestors ?? [],
+  })
 }
 
 export async function PATCH(
@@ -76,7 +118,7 @@ export async function PATCH(
   if (!member) return NextResponse.json({ error: 'Equipa não encontrada' }, { status: 403 })
 
   const body = await request.json()
-  const parsed = updateOpportunitySchema.safeParse(body)
+  const parsed = updateSchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
