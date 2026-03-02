@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
@@ -22,8 +22,6 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  // Operações de escrita com service role (bypassa RLS para bootstrap da equipa)
-  const { createServiceClient } = await import('@/lib/supabase/server')
   const admin = createServiceClient()
 
   // Check if user already has a team
