@@ -135,3 +135,33 @@ export async function PATCH(
 
   return NextResponse.json(data)
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+  const { data: member } = await supabase
+    .from('team_members')
+    .select('team_id, role')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!member || member.role === 'viewer') {
+    return NextResponse.json({ error: 'Permissão insuficiente' }, { status: 403 })
+  }
+
+  const { error } = await supabase
+    .from('opportunities')
+    .delete()
+    .eq('id', id)
+    .eq('team_id', member.team_id)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  return NextResponse.json({ ok: true })
+}

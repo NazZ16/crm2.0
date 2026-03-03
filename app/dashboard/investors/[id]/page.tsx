@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ArrowLeft, Phone, Mail, MapPin, TrendingUp, Wallet, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { formatEur } from '@/lib/roi-calculator'
+import { InvestorActions } from './InvestorActions'
 
 export const dynamic = 'force-dynamic'
 
@@ -88,11 +89,12 @@ export default async function InvestorDetailPage({ params }: Props) {
             )}
           </div>
         </div>
-        <Link href="/dashboard/opportunities">
-          <Button className="gap-2">
-            Ver Oportunidades
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <InvestorActions id={id} />
+          <Link href="/dashboard/opportunities">
+            <Button size="sm" className="gap-2">Ver Oportunidades</Button>
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

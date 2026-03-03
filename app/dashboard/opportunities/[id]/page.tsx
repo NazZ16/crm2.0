@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { ArrowLeft, Bot, RefreshCw, CheckCircle2, AlertCircle, Phone, Mail, Trash2, Plus, TrendingUp } from 'lucide-react'
+import { ArrowLeft, Bot, RefreshCw, CheckCircle2, AlertCircle, Phone, Mail, Trash2, Plus, TrendingUp, Pencil } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
   analyzing: 'bg-yellow-100 text-yellow-800',
@@ -56,6 +56,7 @@ export default function OpportunityDetailPage() {
   const [loading, setLoading] = useState(true)
   const [matchLoading, setMatchLoading] = useState(false)
   const [updatingMatch, setUpdatingMatch] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Adicionar investidor
   const [availableInvestors, setAvailableInvestors] = useState<{ id: string; name: string }[]>([])
@@ -121,6 +122,19 @@ export default function OpportunityDetailPage() {
     setAddingInvestor(false)
   }
 
+  async function deleteOpportunity() {
+    if (!confirm('Apagar esta oportunidade? Esta ação não pode ser revertida.')) return
+    setDeleting(true)
+    const res = await fetch(`/api/opportunities/${id}`, { method: 'DELETE' })
+    if (res.ok) {
+      toast.success('Oportunidade apagada')
+      router.push('/dashboard/opportunities')
+    } else {
+      toast.error('Erro ao apagar')
+      setDeleting(false)
+    }
+  }
+
   async function removeInvestor(investorId: string) {
     const res = await fetch(`/api/opportunities/${id}/investors?investor_id=${investorId}`, { method: 'DELETE' })
     if (res.ok) { toast.success('Removido'); await loadOpportunity() }
@@ -157,10 +171,22 @@ export default function OpportunityDetailPage() {
             </div>
           </div>
         </div>
-        <Button onClick={runMatchingAgent} disabled={matchLoading} className="gap-2" size="sm">
-          {matchLoading ? <RefreshCw size={14} className="animate-spin" /> : <Bot size={14} />}
-          {matchLoading ? 'A analisar...' : 'Encontrar Investidores'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link href={`/dashboard/opportunities/${id}/edit`}>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Pencil size={13} /> Editar
+            </Button>
+          </Link>
+          <Button variant="outline" size="sm" className="gap-1.5 text-red-600 hover:text-red-700 hover:border-red-300"
+            onClick={deleteOpportunity} disabled={deleting}>
+            {deleting ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {deleting ? 'A apagar...' : 'Apagar'}
+          </Button>
+          <Button onClick={runMatchingAgent} disabled={matchLoading} className="gap-2" size="sm">
+            {matchLoading ? <RefreshCw size={14} className="animate-spin" /> : <Bot size={14} />}
+            {matchLoading ? 'A analisar...' : 'Encontrar Investidores'}
+          </Button>
+        </div>
       </div>
 
       {/* ══ BUY-TO-LET ══ */}
@@ -354,10 +380,10 @@ export default function OpportunityDetailPage() {
                       <Input type="number" placeholder="Capital (€)" value={capitalInput}
                         onChange={(e) => setCapitalInput(e.target.value)} className="h-7 text-xs flex-1" />
                       <Select value={tipoAssociado} onValueChange={(v) => setTipoAssociado(v as 'E' | 'P')}>
-                        <SelectTrigger className="h-7 text-xs w-16"><SelectValue /></SelectTrigger>
+                        <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="E">E</SelectItem>
-                          <SelectItem value="P">P</SelectItem>
+                          <SelectItem value="E">Empresa (IRC 7%)</SelectItem>
+                          <SelectItem value="P">Particular (IRS 28%)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -378,7 +404,7 @@ export default function OpportunityDetailPage() {
                         <div key={di.id} className="flex items-center justify-between gap-2 py-0.5">
                           <div className="min-w-0">
                             <span className="font-medium text-xs">{inv?.name ?? '—'}</span>
-                            <span className="text-gray-400 text-xs ml-1">({di.tipo_associado})</span>
+                            <span className="text-gray-400 text-xs ml-1">({di.tipo_associado === 'E' ? 'Empresa' : 'Particular'})</span>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <span className="text-xs text-gray-500">{pct}%</span>
@@ -454,7 +480,7 @@ export default function OpportunityDetailPage() {
                             </div>
                           )}
                         </td>
-                        <td className="text-center px-2 text-gray-500">{di.tipo_associado}</td>
+                        <td className="text-center px-2 text-gray-500 text-xs">{di.tipo_associado === 'E' ? 'Empresa' : 'Particular'}</td>
                         <td className="text-right px-2 font-medium">{formatEur(di.capital_invested)}</td>
                         <td className="text-right px-2 text-gray-500">{(pct * 100).toFixed(1)}%</td>
                         <td className="text-right px-2 font-medium text-green-700">{formatEur(lucroInvestidor)}</td>
