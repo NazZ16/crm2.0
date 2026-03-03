@@ -117,7 +117,7 @@ export default async function DashboardPage() {
               <div>
                 <p className="text-sm text-gray-500">Total Leads</p>
                 <p className="text-3xl font-bold mt-1">{totalLeads}</p>
-                <p className="text-xs text-gray-400 mt-1">{newLeads} novas esta semana</p>
+                <p className="text-xs text-gray-500 mt-1">{newLeads} novas esta semana</p>
               </div>
               <div className="p-3 bg-blue-50 rounded-full">
                 <Users size={22} className="text-blue-600" />
@@ -132,7 +132,7 @@ export default async function DashboardPage() {
               <div>
                 <p className="text-sm text-gray-500">Em Pipeline</p>
                 <p className="text-3xl font-bold mt-1">{activeLeads}</p>
-                <p className="text-xs text-gray-400 mt-1">leads ativas</p>
+                <p className="text-xs text-gray-500 mt-1">leads ativas</p>
               </div>
               <div className="p-3 bg-green-50 rounded-full">
                 <TrendingUp size={22} className="text-green-600" />
@@ -147,7 +147,7 @@ export default async function DashboardPage() {
               <div>
                 <p className="text-sm text-gray-500">Taxa Conversão</p>
                 <p className="text-3xl font-bold mt-1">{conversionRate}%</p>
-                <p className="text-xs text-gray-400 mt-1">{wonLeads} ganhos</p>
+                <p className="text-xs text-gray-500 mt-1">{wonLeads} ganhos</p>
               </div>
               <div className="p-3 bg-purple-50 rounded-full">
                 <Target size={22} className="text-purple-600" />
@@ -164,7 +164,7 @@ export default async function DashboardPage() {
                 <p className={`text-3xl font-bold mt-1 ${coldLeads.length > 0 ? 'text-red-600' : ''}`}>
                   {coldLeads.length}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">sem contacto &gt;7 dias</p>
+                <p className="text-xs text-gray-500 mt-1">sem contacto &gt;7 dias</p>
               </div>
               <div className={`p-3 rounded-full ${coldLeads.length > 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
                 <AlertTriangle size={22} className={coldLeads.length > 0 ? 'text-red-500' : 'text-gray-400'} />
@@ -211,7 +211,7 @@ export default async function DashboardPage() {
         {/* Agent Activity */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Actividade dos Agentes</CardTitle>
+            <CardTitle className="text-base">Atividade dos Agentes</CardTitle>
             <Link href="/dashboard/agents" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
               Ver tudo <ArrowRight size={12} />
             </Link>
@@ -237,7 +237,7 @@ export default async function DashboardPage() {
                       {run.input_summary && (
                         <p className="text-xs text-gray-400 truncate">{run.input_summary}</p>
                       )}
-                      <p className="text-xs text-gray-300">{formatRelativeTime(run.created_at)}</p>
+                      <p className="text-xs text-gray-500">{formatRelativeTime(run.created_at)}</p>
                     </div>
                   </div>
                 ))}
@@ -295,7 +295,10 @@ export default async function DashboardPage() {
                             </span>
                           )}
                           {task.created_by === 'agent' && (
-                            <span className="text-xs text-purple-500">🤖 Agente</span>
+                            <span className="flex items-center gap-1 text-xs text-purple-500">
+                              <Bot size={11} />
+                              Agente
+                            </span>
                           )}
                         </div>
                       </div>
