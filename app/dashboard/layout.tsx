@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { NotificationBell } from '@/components/layout/NotificationBell'
 
 export default async function DashboardLayout({
   children,
@@ -34,6 +35,9 @@ export default async function DashboardLayout({
         teamName={teamName}
       />
       <main className="flex-1 overflow-y-auto">
+        <div className="flex justify-end px-4 pt-3 pb-0">
+          <NotificationBell />
+        </div>
         {children}
       </main>
     </div>

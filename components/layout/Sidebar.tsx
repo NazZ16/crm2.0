@@ -18,6 +18,7 @@ import {
   Building2,
   Home,
   GitMerge,
+  UsersRound,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
 ]
 
 const BOTTOM_ITEMS = [
+  { href: '/dashboard/team', label: 'Equipa', icon: UsersRound },
   { href: '/dashboard/settings', label: 'Definições', icon: Settings },
 ]
 
