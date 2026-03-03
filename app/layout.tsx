@@ -20,7 +20,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt">
-      <body className={`${geist.variable} antialiased`}>
+      <body className={`${geist.variable} antialiased`} suppressHydrationWarning>
         {children}
         <Toaster richColors position="top-right" />
       </body>
