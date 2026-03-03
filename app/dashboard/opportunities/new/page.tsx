@@ -247,7 +247,7 @@ export default function NewOpportunityPage() {
   const isFf = mode === 'fix_and_flip'
 
   return (
-    <div className={`p-6 max-w-${isFf ? '4xl' : '2xl'} mx-auto`}>
+    <div className={isFf ? 'p-6 max-w-4xl mx-auto' : 'p-6 max-w-2xl mx-auto'}>
       <div className="flex items-center gap-3 mb-6">
         <button onClick={() => setMode(null)} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
           <ArrowLeft size={14} /> Voltar

@@ -15,7 +15,6 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Bell,
   Building2,
   Home,
   GitMerge,
@@ -70,13 +69,14 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'flex flex-col h-screen bg-gray-900 text-gray-100 transition-all duration-200',
+        'flex flex-col h-screen bg-gray-900 text-gray-100',
+        'transition-[width] duration-200 motion-reduce:transition-none',
         collapsed ? 'w-16' : 'w-60'
       )}
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-700">
-        <span className="text-2xl flex-shrink-0">🏠</span>
+        <Building2 size={20} className="text-teal-400 flex-shrink-0" />
         {!collapsed && (
           <div className="min-w-0">
             <div className="font-bold text-white text-sm truncate">CRM 2.0</div>
@@ -87,7 +87,8 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
         )}
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="ml-auto text-gray-400 hover:text-white flex-shrink-0"
+          aria-label={collapsed ? 'Expandir sidebar' : 'Colapsar sidebar'}
+          className="ml-auto p-2 text-gray-400 hover:text-white cursor-pointer flex-shrink-0 rounded-md hover:bg-gray-800 transition-colors"
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
@@ -100,9 +101,9 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
             key={href}
             href={href}
             className={cn(
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer',
               isActive(href, exact)
-                ? 'bg-blue-600 text-white'
+                ? 'bg-teal-700 text-white'
                 : 'text-gray-300 hover:bg-gray-800 hover:text-white'
             )}
             title={collapsed ? label : undefined}
@@ -120,9 +121,9 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
             key={href}
             href={href}
             className={cn(
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+              'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer',
               isActive(href)
-                ? 'bg-blue-600 text-white'
+                ? 'bg-teal-700 text-white'
                 : 'text-gray-300 hover:bg-gray-800 hover:text-white'
             )}
             title={collapsed ? label : undefined}
@@ -134,8 +135,8 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
 
         {/* User */}
         <div className="flex items-center gap-3 px-3 py-2.5">
-          <Avatar className="h-7 w-7 flex-shrink-0 bg-blue-500">
-            <AvatarFallback className="text-xs text-white bg-blue-500">
+          <Avatar className="h-9 w-9 flex-shrink-0">
+            <AvatarFallback className="text-xs text-white bg-teal-700">
               {initials}
             </AvatarFallback>
           </Avatar>
@@ -153,11 +154,12 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-gray-400 hover:text-white hover:bg-gray-800"
+              className="h-10 w-10 text-gray-400 hover:text-white hover:bg-gray-800 cursor-pointer"
               onClick={handleLogout}
+              aria-label="Terminar sessão"
               title="Terminar sessão"
             >
-              <LogOut size={14} />
+              <LogOut size={16} />
             </Button>
           )}
         </div>

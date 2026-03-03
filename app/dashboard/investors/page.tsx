@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
-import { Plus, MapPin, TrendingUp, Wallet, ArrowRight } from 'lucide-react'
+import { Plus, MapPin, TrendingUp, Wallet, Building2 } from 'lucide-react'
 import { formatEur } from '@/lib/roi-calculator'
 
 export const dynamic = 'force-dynamic'
@@ -69,7 +69,7 @@ export default async function InvestorsPage({ searchParams }: Props) {
           <p className="text-sm text-gray-500 mt-0.5">{investors?.length ?? 0} investidores</p>
         </div>
         <Link href="/dashboard/investors/new">
-          <Button className="gap-2">
+          <Button className="gap-2 cursor-pointer">
             <Plus size={16} />
             Novo Investidor
           </Button>
@@ -95,10 +95,11 @@ export default async function InvestorsPage({ searchParams }: Props) {
       {/* Grid */}
       {!investors?.length ? (
         <div className="text-center py-20 text-gray-400">
+          <Building2 size={40} className="mx-auto mb-3 text-gray-300" />
           <p className="text-lg font-medium">Sem investidores ainda</p>
-          <p className="text-sm mt-1">Adiciona o primeiro investidor para começar a fazer match</p>
+          <p className="text-sm mt-1 text-gray-500">Adiciona o primeiro investidor para começar a fazer match</p>
           <Link href="/dashboard/investors/new">
-            <Button className="mt-4 gap-2">
+            <Button className="mt-4 gap-2 cursor-pointer">
               <Plus size={16} />
               Novo Investidor
             </Button>
@@ -107,71 +108,72 @@ export default async function InvestorsPage({ searchParams }: Props) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {(investors as Investor[]).map((inv) => (
-            <Card key={inv.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4 space-y-3">
-                {/* Nome + status */}
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{inv.name}</h3>
-                    {inv.phone && <p className="text-sm text-gray-500">{inv.phone}</p>}
+            <Link
+              key={inv.id}
+              href={`/dashboard/investors/${inv.id}`}
+              className="block cursor-pointer group"
+            >
+              <Card className="h-full hover:shadow-md transition-shadow group-hover:border-gray-300">
+                <CardContent className="p-4 space-y-3">
+                  {/* Nome + status */}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{inv.name}</h3>
+                      {inv.phone && <p className="text-sm text-gray-500">{inv.phone}</p>}
+                    </div>
+                    <Badge className={STATUS_COLORS[inv.status]}>
+                      {INVESTOR_STATUS_LABELS[inv.status]}
+                    </Badge>
                   </div>
-                  <Badge className={STATUS_COLORS[inv.status]}>
-                    {INVESTOR_STATUS_LABELS[inv.status]}
-                  </Badge>
-                </div>
 
-                {/* Orçamento */}
-                {(inv.budget_min || inv.budget_max) && (
-                  <div className="flex items-center gap-1.5 text-sm text-gray-700">
-                    <Wallet size={14} className="text-gray-400" />
-                    <span>
-                      {inv.budget_min ? formatEur(inv.budget_min) : '?'}
-                      {' – '}
-                      {inv.budget_max ? formatEur(inv.budget_max) : '?'}
+                  {/* Orçamento */}
+                  {(inv.budget_min || inv.budget_max) && (
+                    <div className="flex items-center gap-1.5 text-sm text-gray-700">
+                      <Wallet size={14} className="text-gray-400" />
+                      <span>
+                        {inv.budget_min ? formatEur(inv.budget_min) : '?'}
+                        {' – '}
+                        {inv.budget_max ? formatEur(inv.budget_max) : '?'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Yield mínimo */}
+                  {inv.min_yield && (
+                    <div className="flex items-center gap-1.5 text-sm text-gray-700">
+                      <TrendingUp size={14} className="text-gray-400" />
+                      <span>Yield mín: <strong>{inv.min_yield}%</strong></span>
+                    </div>
+                  )}
+
+                  {/* Zonas */}
+                  {inv.preferred_zones.length > 0 && (
+                    <div className="flex items-start gap-1.5 text-sm text-gray-700">
+                      <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
+                      <span className="line-clamp-1">{inv.preferred_zones.join(', ')}</span>
+                    </div>
+                  )}
+
+                  {/* Tipos de investimento */}
+                  {inv.investment_type.length > 0 && (
+                    <div className="flex gap-1 flex-wrap">
+                      {inv.investment_type.map((t) => (
+                        <Badge key={t} variant="outline" className="text-xs">
+                          {INVESTMENT_TYPE_LABELS[t as keyof typeof INVESTMENT_TYPE_LABELS]}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Matches */}
+                  <div className="pt-1 border-t border-gray-100">
+                    <span className="text-xs text-gray-500">
+                      {matchMap[inv.id] ?? 0} oportunidades em análise
                     </span>
                   </div>
-                )}
-
-                {/* Yield mínimo */}
-                {inv.min_yield && (
-                  <div className="flex items-center gap-1.5 text-sm text-gray-700">
-                    <TrendingUp size={14} className="text-gray-400" />
-                    <span>Yield mín: <strong>{inv.min_yield}%</strong></span>
-                  </div>
-                )}
-
-                {/* Zonas */}
-                {inv.preferred_zones.length > 0 && (
-                  <div className="flex items-start gap-1.5 text-sm text-gray-700">
-                    <MapPin size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
-                    <span className="line-clamp-1">{inv.preferred_zones.join(', ')}</span>
-                  </div>
-                )}
-
-                {/* Tipos de investimento */}
-                {inv.investment_type.length > 0 && (
-                  <div className="flex gap-1 flex-wrap">
-                    {inv.investment_type.map((t) => (
-                      <Badge key={t} variant="outline" className="text-xs">
-                        {INVESTMENT_TYPE_LABELS[t as keyof typeof INVESTMENT_TYPE_LABELS]}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-
-                {/* Matches + link */}
-                <div className="flex items-center justify-between pt-1 border-t border-gray-100">
-                  <span className="text-xs text-gray-400">
-                    {matchMap[inv.id] ?? 0} oportunidades em análise
-                  </span>
-                  <Link href={`/dashboard/investors/${inv.id}`}>
-                    <Button variant="ghost" size="sm" className="gap-1 text-blue-600 h-7 px-2">
-                      Ver perfil <ArrowRight size={12} />
-                    </Button>
-                  </Link>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
