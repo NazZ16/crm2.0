@@ -382,7 +382,7 @@ export default function OpportunityDetailPage() {
                       <Select value={tipoAssociado} onValueChange={(v) => setTipoAssociado(v as 'E' | 'P')}>
                         <SelectTrigger className="h-7 text-xs w-28"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="E">Empresa (IRC 7%)</SelectItem>
+                          <SelectItem value="E">Empresa (IRC 19%)</SelectItem>
                           <SelectItem value="P">Particular (IRS 28%)</SelectItem>
                         </SelectContent>
                       </Select>
@@ -467,7 +467,7 @@ export default function OpportunityDetailPage() {
                     const inv = di.investors as { name: string; phone: string | null; email: string | null } | null
                     const pct = totalCapital > 0 ? di.capital_invested / totalCapital : 0
                     const lucroInvestidor = Math.round(ff.investidores_total_lucro * pct)
-                    const retencao = di.tipo_associado === 'P' ? Math.round(lucroInvestidor * 0.28) : Math.round(lucroInvestidor * 0.0701)
+                    const retencao = di.tipo_associado === 'P' ? Math.round(lucroInvestidor * 0.28) : Math.round(lucroInvestidor * 0.19)
                     const valorReceber = lucroInvestidor - retencao
                     const cashOnCash = di.capital_invested > 0 ? ((di.capital_invested + valorReceber) / di.capital_invested - 1) * 100 : 0
                     return (
