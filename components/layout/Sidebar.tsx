@@ -16,6 +16,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Bell,
+  Building2,
+  Home,
+  GitMerge,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -26,6 +29,9 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
+  { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
+  { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },
+  { href: '/dashboard/matching', label: 'Matches', icon: GitMerge },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
