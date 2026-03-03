@@ -132,15 +132,15 @@ export default function MarketingAnalysisButton() {
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-center mb-2">
                           <div>
-                            <div className="text-sm font-semibold text-gray-700">€{c.cpl.toFixed(2)}</div>
+                            <div className="text-sm font-semibold text-gray-700">€{(c.cpl ?? 0).toFixed(2)}</div>
                             <div className="text-xs text-gray-400">CPL</div>
                           </div>
                           <div>
-                            <div className="text-sm font-semibold text-gray-700">{c.ctr_pct.toFixed(1)}%</div>
+                            <div className="text-sm font-semibold text-gray-700">{(c.ctr_pct ?? 0).toFixed(1)}%</div>
                             <div className="text-xs text-gray-400">CTR</div>
                           </div>
                           <div>
-                            <div className="text-sm font-semibold text-gray-700">{c.conversion_rate_pct.toFixed(1)}%</div>
+                            <div className="text-sm font-semibold text-gray-700">{(c.conversion_rate_pct ?? 0).toFixed(1)}%</div>
                             <div className="text-xs text-gray-400">Conversão</div>
                           </div>
                         </div>

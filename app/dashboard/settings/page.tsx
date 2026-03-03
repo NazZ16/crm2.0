@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Settings, Key, Webhook, Bell } from 'lucide-react'
+import { Key, Webhook, Bell } from 'lucide-react'
 
 export default function SettingsPage() {
   return (
@@ -59,11 +59,11 @@ export default function SettingsPage() {
             <Bell size={16} />
             Notificações
           </CardTitle>
-          <CardDescription>Notificações em tempo real via Supabase Realtime (em breve)</CardDescription>
+          <CardDescription>Notificações em tempo real via Supabase Realtime</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-gray-500">
-            As notificações push e email estão planeadas para a Fase 4. Por agora, as notificações são visíveis no dashboard.
+            As notificações aparecem instantaneamente no sino via Supabase Realtime. Notificações push e email via Resend estão planeadas para uma fase futura.
           </p>
         </CardContent>
       </Card>

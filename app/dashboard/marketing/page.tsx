@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { AD_PLATFORM_LABELS, type AdPlatform } from '@/lib/types'
 import { Megaphone, TrendingUp, Users, Target } from 'lucide-react'
 import MarketingAnalysisButton from './MarketingAnalysisButton'
+import NewCampaignButton from './NewCampaignButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +60,6 @@ export default async function MarketingPage() {
   // Global KPIs
   const totalSpend = Object.values(metricsByCampaign).reduce((s, m) => s + m.spend, 0)
   const totalLeads = Object.values(metricsByCampaign).reduce((s, m) => s + m.leads, 0)
-  const totalConversions = Object.values(metricsByCampaign).reduce((s, m) => s + m.conversions, 0)
   const avgCPL = totalLeads > 0 ? totalSpend / totalLeads : 0
 
   // Source distribution
@@ -91,7 +91,10 @@ export default async function MarketingPage() {
           <h1 className="text-2xl font-bold text-gray-900">Marketing</h1>
           <p className="text-sm text-gray-500 mt-0.5">Performance das campanhas — últimos 30 dias</p>
         </div>
-        <MarketingAnalysisButton />
+        <div className="flex items-center gap-2">
+          <NewCampaignButton />
+          <MarketingAnalysisButton />
+        </div>
       </div>
 
       {/* KPIs */}

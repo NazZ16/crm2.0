@@ -13,6 +13,7 @@ import {
 import { cn } from '@/lib/utils'
 import type { Notification } from '@/lib/types'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -42,11 +43,34 @@ export function NotificationBell() {
     }
   }, [])
 
+  // Initial fetch + Supabase Realtime subscription for new notifications
   useEffect(() => {
     fetchNotifications()
-    // Poll every 60s
-    const interval = setInterval(fetchNotifications, 60_000)
-    return () => clearInterval(interval)
+
+    const supabase = createClient()
+
+    const channel = supabase
+      .channel('notifications-bell')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications' },
+        (payload) => {
+          const newNotif = payload.new as Notification
+          setNotifications((prev) => {
+            // Avoid duplicates
+            if (prev.some((n) => n.id === newNotif.id)) return prev
+            return [newNotif, ...prev].slice(0, 10)
+          })
+          if (!newNotif.read) {
+            setUnreadCount((c) => c + 1)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [fetchNotifications])
 
   async function markAllRead() {
