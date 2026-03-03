@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { formatDate, formatCurrency } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { AD_PLATFORM_LABELS, type AdPlatform } from '@/lib/types'
 import { Megaphone, TrendingUp, Users, Target } from 'lucide-react'
+import MarketingAnalysisButton from './MarketingAnalysisButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -85,9 +86,12 @@ export default async function MarketingPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Marketing</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Performance das campanhas — últimos 30 dias</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Marketing</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Performance das campanhas — últimos 30 dias</p>
+        </div>
+        <MarketingAnalysisButton />
       </div>
 
       {/* KPIs */}
