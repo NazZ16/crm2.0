@@ -1,13 +1,47 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Key, Webhook, Bell } from 'lucide-react'
+import { createClient } from '@/lib/supabase/server'
+import { ApiKeysSection } from './ApiKeysSection'
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  let isAdmin = false
+  if (user) {
+    const { data: member } = await supabase
+      .from('team_members')
+      .select('role')
+      .eq('user_id', user.id)
+      .single()
+    isAdmin = member?.role === 'admin'
+  }
+
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Definições</h1>
         <p className="text-sm text-gray-500 mt-0.5">Configuração do CRM, agentes e integrações</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Key size={16} />
+            API Keys — Scraper &amp; Integrações Externas
+          </CardTitle>
+          <CardDescription>
+            Gera keys para autenticar o scraper Remax e outras integrações externas.
+            Cada equipa gere as suas próprias keys de forma independente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isAdmin ? (
+            <ApiKeysSection isAdmin={isAdmin} />
+          ) : (
+            <p className="text-sm text-gray-500">Apenas admins podem gerir API keys.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
