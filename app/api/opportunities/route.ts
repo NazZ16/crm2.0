@@ -64,6 +64,9 @@ const opportunitySchema = z.object({
   source: z.string().max(200).optional(),
   description: z.string().max(5000).optional(),
   lead_id: z.string().uuid().optional().nullable(),
+  source_url: z.string().url().max(2000).optional().nullable(),
+  source_images: z.array(z.string().url()).max(20).default([]),
+  auto_imported: z.boolean().default(false),
 })
 
 export async function GET(request: Request) {
@@ -119,13 +122,53 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { data, error } = await supabase
-    .from('opportunities')
-    .insert({ ...parsed.data, team_id: member.team_id })
-    .select()
-    .single()
+  let data: Record<string, unknown> | null = null
+  let isNew = true
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (parsed.data.source_url) {
+    const { data: existing } = await supabase
+      .from('opportunities')
+      .select('id, asking_price')
+      .eq('team_id', member.team_id)
+      .eq('source_url', parsed.data.source_url)
+      .maybeSingle()
 
-  return NextResponse.json(data, { status: 201 })
+    if (existing) {
+      isNew = false
+      const { data: updated, error: updateError } = await supabase
+        .from('opportunities')
+        .update({ asking_price: parsed.data.asking_price, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+      data = updated
+    }
+  }
+
+  if (isNew) {
+    const { data: inserted, error: insertError } = await supabase
+      .from('opportunities')
+      .insert({ ...parsed.data, team_id: member.team_id })
+      .select()
+      .single()
+    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+    data = inserted
+  }
+
+  // Fire-and-forget: trigger matching async for new opportunities only
+  if (isNew && data && (data as { id?: string }).id) {
+    const oppId = (data as { id: string }).id
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    fetch(`${baseUrl}/api/agents/matching`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': process.env.INTERNAL_SECRET ?? '',
+      },
+      body: JSON.stringify({ opportunity_id: oppId }),
+    }).catch((err) => console.error('[matching trigger] erro:', err))
+  }
+
+  return NextResponse.json(data, { status: isNew ? 201 : 200 })
 }
