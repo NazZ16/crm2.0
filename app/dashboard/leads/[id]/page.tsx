@@ -8,9 +8,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { LeadDetailClient } from './LeadDetailClient'
 import { TaskList } from './TaskList'
 import { CopyButton } from './CopyButton'
+import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
-  MessageCircle, AlertTriangle,
+  MessageCircle, AlertTriangle, TrendingUp,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations } from '@/lib/types'
@@ -62,6 +63,21 @@ export default async function LeadDetailPage({ params }: Props) {
     .limit(1)
     .single()
 
+  // Check if lead already has an investor profile
+  const { data: existingInvestor } = await supabase
+    .from('investors')
+    .select('id')
+    .eq('lead_id', lead.id)
+    .eq('team_id', member.team_id)
+    .maybeSingle()
+
+  // Fetch lead_profiles for AI-suggested budget/zones
+  const { data: leadProfile } = await supabase
+    .from('lead_profiles')
+    .select('home_preferences, financial_profile')
+    .eq('lead_id', lead.id)
+    .maybeSingle()
+
   const profile = Array.isArray(lead.lead_profiles) ? lead.lead_profiles[0] : lead.lead_profiles
   const interactions = Array.isArray(lead.interactions) ? lead.interactions : []
   const tasks = Array.isArray(lead.tasks) ? lead.tasks : []
@@ -103,12 +119,29 @@ export default async function LeadDetailPage({ params }: Props) {
         </div>
 
         {/* Action buttons (client component) */}
-        <LeadDetailClient
-          leadId={lead.id}
-          leadName={lead.full_name}
-          currentStatus={lead.status as LeadStatus}
-          canEdit={member.role !== 'viewer'}
-        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <LeadDetailClient
+            leadId={lead.id}
+            leadName={lead.full_name}
+            currentStatus={lead.status as LeadStatus}
+            canEdit={member.role !== 'viewer'}
+          />
+          {member.role !== 'viewer' && !existingInvestor && (
+            <PromoteToInvestorButton
+              leadId={lead.id}
+              leadName={lead.full_name}
+              suggestedZones={(leadProfile?.home_preferences as { zonas?: string[] } | null)?.zonas}
+              suggestedBudgetMax={(leadProfile?.financial_profile as { orcamento_max?: number } | null)?.orcamento_max ?? undefined}
+            />
+          )}
+          {existingInvestor && (
+            <Link href={`/dashboard/investors/${existingInvestor.id}`}>
+              <Badge variant="outline" className="text-emerald-700 border-emerald-300 cursor-pointer">
+                <TrendingUp className="mr-1 h-3 w-3" /> Ver Perfil de Investidor
+              </Badge>
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

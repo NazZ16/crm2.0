@@ -10,7 +10,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { ArrowLeft, Phone, Mail, MapPin, TrendingUp, Wallet, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Phone, Mail, MapPin, TrendingUp, Wallet, AlertCircle, CheckCircle2, User } from 'lucide-react'
 import { formatEur } from '@/lib/roi-calculator'
 import { InvestorActions } from './InvestorActions'
 
@@ -44,7 +44,7 @@ export default async function InvestorDetailPage({ params }: Props) {
 
   const { data: investor } = await supabase
     .from('investors')
-    .select('*')
+    .select('*, lead:leads(id, full_name, status, score)')
     .eq('id', id)
     .eq('team_id', member.team_id)
     .single()
@@ -73,7 +73,7 @@ export default async function InvestorDetailPage({ params }: Props) {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">{inv.name}</h1>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
             <Badge className="bg-green-100 text-green-800">
               {INVESTOR_STATUS_LABELS[inv.status]}
             </Badge>
@@ -86,6 +86,14 @@ export default async function InvestorDetailPage({ params }: Props) {
               <span className="flex items-center gap-1 text-sm text-gray-500">
                 <Mail size={12} /> {inv.email}
               </span>
+            )}
+            {inv.lead_id && inv.lead && (
+              <Link href={`/dashboard/leads/${inv.lead_id}`}>
+                <Badge variant="outline" className="text-blue-700 border-blue-300 text-xs cursor-pointer">
+                  <User className="mr-1 h-3 w-3" />
+                  Lead de origem: {inv.lead.full_name}
+                </Badge>
+              </Link>
             )}
           </div>
         </div>
