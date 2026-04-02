@@ -115,14 +115,15 @@ export async function POST(request: Request) {
   const supabase = await createClient()
 
   // Support API key auth for scraper/N8N (no session cookie available)
+  // team_id vem do servidor (env var), nunca do cliente — evita spoofing entre equipas
   const apiKey = request.headers.get('X-API-Key')
   const validApiKey = process.env.SCRAPER_API_KEY
-  const apiKeyTeamId = request.headers.get('X-Team-Id')
+  const serverTeamId = process.env.SCRAPER_TEAM_ID  // definido no Vercel, não enviado pelo scraper
 
   let teamId: string | null = null
 
-  if (apiKey && validApiKey && validApiKey.length >= 16 && apiKey === validApiKey && apiKeyTeamId) {
-    teamId = apiKeyTeamId
+  if (apiKey && validApiKey && validApiKey.length >= 16 && apiKey === validApiKey && serverTeamId) {
+    teamId = serverTeamId
   } else {
     // Standard session auth
     const { data: { user } } = await supabase.auth.getUser()

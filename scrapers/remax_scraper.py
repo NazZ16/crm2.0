@@ -22,7 +22,7 @@ load_dotenv()
 
 CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/opportunities")
 SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
-TEAM_ID = os.getenv("X_TEAM_ID", "")
+# Nota: X_TEAM_ID já NÃO é enviado pelo scraper — está configurado no servidor (Vercel env vars)
 REMAX_ZONES_RAW = os.getenv("REMAX_ZONES", "Lisboa")
 REMAX_MAX_PRICE = int(os.getenv("REMAX_MAX_PRICE", "800000"))
 REMAX_TYPOLOGIES_RAW = os.getenv("REMAX_TYPOLOGIES", "")
@@ -162,7 +162,7 @@ def post_to_crm(listing: dict) -> bool:
     headers = {
         "Content-Type": "application/json",
         "X-API-Key": SCRAPER_API_KEY,
-        "X-Team-Id": TEAM_ID,
+        # X-Team-Id não é enviado — o servidor usa SCRAPER_TEAM_ID das suas próprias env vars
     }
 
     try:
