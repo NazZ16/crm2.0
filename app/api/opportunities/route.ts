@@ -115,16 +115,32 @@ export async function POST(request: Request) {
   const supabase = await createClient()
 
   // Support API key auth for scraper/N8N (no session cookie available)
-  // team_id vem do servidor (env var), nunca do cliente — evita spoofing entre equipas
   const apiKey = request.headers.get('X-API-Key')
-  const validApiKey = process.env.SCRAPER_API_KEY
-  const serverTeamId = process.env.SCRAPER_TEAM_ID  // definido no Vercel, não enviado pelo scraper
-
   let teamId: string | null = null
 
-  if (apiKey && validApiKey && validApiKey.length >= 16 && apiKey === validApiKey && serverTeamId) {
-    teamId = serverTeamId
-  } else {
+  if (apiKey) {
+    const { hashApiKey } = await import('@/lib/api-keys')
+    const keyHash = hashApiKey(apiKey)
+    const { data: apiKeyRow } = await supabase
+      .from('team_api_keys')
+      .select('team_id, id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
+      .single()
+
+    if (apiKeyRow) {
+      teamId = apiKeyRow.team_id
+      // Actualizar last_used_at de forma assíncrona (não bloqueia a resposta)
+      void Promise.resolve(
+        supabase
+          .from('team_api_keys')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', apiKeyRow.id)
+      ).catch(() => {})
+    }
+  }
+
+  if (!teamId) {
     // Standard session auth
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
