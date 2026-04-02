@@ -14,7 +14,15 @@ const schema = z.object({
   needs_financing: z.boolean().default(false),
   max_renovation: z.enum(['none', 'light', 'medium', 'full']).default('light'),
   notes: z.string().max(2000).optional().nullable(),
-})
+}).refine(
+  (data) => {
+    if (data.budget_min != null && data.budget_max != null) {
+      return data.budget_min <= data.budget_max
+    }
+    return true
+  },
+  { message: 'budget_min não pode ser maior que budget_max', path: ['budget_min'] }
+)
 
 interface Props {
   params: Promise<{ id: string }>

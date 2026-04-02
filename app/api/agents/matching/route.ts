@@ -2,7 +2,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { scoreAllInvestors } from '@/lib/matching-engine'
+import { scoreAllInvestors, DEFAULT_SCORE_THRESHOLD, DEFAULT_PITCH_THRESHOLD } from '@/lib/matching-engine'
 import { generatePitches } from '@/lib/agents/matching-agent'
 import type { Investor, Opportunity } from '@/lib/types'
 
@@ -10,7 +10,8 @@ const schema = z.object({ opportunity_id: z.string().uuid() })
 
 export async function POST(request: Request) {
   const internalSecret = request.headers.get('X-Internal-Secret')
-  const isInternalCall = internalSecret && internalSecret === process.env.INTERNAL_SECRET
+  const secret = process.env.INTERNAL_SECRET
+  const isInternalCall = !!(internalSecret && secret && secret.length >= 16 && internalSecret === secret)
 
   const supabase = await createClient()
   let teamId: string | null = null
@@ -65,8 +66,8 @@ export async function POST(request: Request) {
   }
 
   // LAYER 2: TypeScript scoring (free)
-  const SCORE_THRESHOLD = 50
-  const PITCH_THRESHOLD = 65
+  const SCORE_THRESHOLD = DEFAULT_SCORE_THRESHOLD
+  const PITCH_THRESHOLD = DEFAULT_PITCH_THRESHOLD
   const scored = scoreAllInvestors(investors as Investor[], opp as Opportunity, SCORE_THRESHOLD)
 
   if (scored.length === 0) {

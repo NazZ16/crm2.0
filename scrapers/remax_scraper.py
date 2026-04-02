@@ -13,8 +13,6 @@ Uso:
 import os
 import json
 import re
-import hmac
-import hashlib
 import time
 import requests
 from dotenv import load_dotenv
@@ -23,7 +21,8 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 load_dotenv()
 
 CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/opportunities")
-WEBHOOK_SECRET = os.getenv("CRM_WEBHOOK_SECRET", "")
+SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
+TEAM_ID = os.getenv("X_TEAM_ID", "")
 REMAX_ZONES_RAW = os.getenv("REMAX_ZONES", "Lisboa")
 REMAX_MAX_PRICE = int(os.getenv("REMAX_MAX_PRICE", "800000"))
 REMAX_TYPOLOGIES_RAW = os.getenv("REMAX_TYPOLOGIES", "")
@@ -32,14 +31,6 @@ ZONES = [z.strip() for z in REMAX_ZONES_RAW.split(",") if z.strip()]
 TYPOLOGIES = [t.strip() for t in REMAX_TYPOLOGIES_RAW.split(",") if t.strip()]
 
 BASE_SEARCH_URL = "https://www.remax.pt/imoveis"
-
-
-def sign_payload(body: str) -> str:
-    """Gera HMAC-SHA256 para o header X-N8N-Signature."""
-    if not WEBHOOK_SECRET:
-        return ""
-    mac = hmac.new(WEBHOOK_SECRET.encode(), body.encode(), hashlib.sha256)
-    return f"sha256={mac.hexdigest()}"
 
 
 def parse_price(text: str) -> int | None:
@@ -111,7 +102,9 @@ def extract_card_data(card) -> dict | None:
                 location = line
                 break
 
-        zone = normalize_zone(location) if location else ZONES[0]
+        if not location:
+            return None  # skip listings without identifiable location
+        zone = normalize_zone(location)
         title = lines[0][:300] if lines else "Imóvel Remax"
 
         return {
@@ -168,7 +161,8 @@ def post_to_crm(listing: dict) -> bool:
     body = json.dumps(listing)
     headers = {
         "Content-Type": "application/json",
-        "X-N8N-Signature": sign_payload(body),
+        "X-API-Key": SCRAPER_API_KEY,
+        "X-Team-Id": TEAM_ID,
     }
 
     try:

@@ -67,7 +67,15 @@ const opportunitySchema = z.object({
   source_url: z.string().url().max(2000).optional().nullable(),
   source_images: z.array(z.string().url()).max(20).default([]),
   auto_imported: z.boolean().default(false),
-})
+}).refine(
+  (data) => {
+    if (data.negotiated_price != null && data.asking_price != null) {
+      return data.negotiated_price <= data.asking_price * 2
+    }
+    return true
+  },
+  { message: 'negotiated_price parece demasiado alto face ao asking_price', path: ['negotiated_price'] }
+)
 
 export async function GET(request: Request) {
   const supabase = await createClient()
@@ -105,16 +113,30 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
 
-  const { data: member } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('user_id', user.id)
-    .single()
+  // Support API key auth for scraper/N8N (no session cookie available)
+  const apiKey = request.headers.get('X-API-Key')
+  const validApiKey = process.env.SCRAPER_API_KEY
+  const apiKeyTeamId = request.headers.get('X-Team-Id')
 
-  if (!member) return NextResponse.json({ error: 'Equipa não encontrada' }, { status: 403 })
+  let teamId: string | null = null
+
+  if (apiKey && validApiKey && validApiKey.length >= 16 && apiKey === validApiKey && apiKeyTeamId) {
+    teamId = apiKeyTeamId
+  } else {
+    // Standard session auth
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+    const { data: member } = await supabase
+      .from('team_members')
+      .select('team_id')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member) return NextResponse.json({ error: 'Equipa não encontrada' }, { status: 403 })
+    teamId = member.team_id
+  }
 
   const body = await request.json()
   const parsed = opportunitySchema.safeParse(body)
@@ -129,7 +151,7 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from('opportunities')
       .select('id, asking_price')
-      .eq('team_id', member.team_id)
+      .eq('team_id', teamId)
       .eq('source_url', parsed.data.source_url)
       .maybeSingle()
 
@@ -149,7 +171,7 @@ export async function POST(request: Request) {
   if (isNew) {
     const { data: inserted, error: insertError } = await supabase
       .from('opportunities')
-      .insert({ ...parsed.data, team_id: member.team_id })
+      .insert({ ...parsed.data, team_id: teamId })
       .select()
       .single()
     if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
@@ -164,7 +186,7 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Internal-Secret': process.env.INTERNAL_SECRET ?? '',
+        'X-Internal-Secret': process.env.INTERNAL_SECRET ?? 'not-configured',
       },
       body: JSON.stringify({ opportunity_id: oppId }),
     }).catch((err) => console.error('[matching trigger] erro:', err))

@@ -157,3 +157,6 @@ export function scoreAllInvestors(
     .filter((r) => r.passes_hard_filter && r.score >= threshold)
     .sort((a, b) => b.score - a.score)
 }
+
+export const DEFAULT_SCORE_THRESHOLD = 50
+export const DEFAULT_PITCH_THRESHOLD = 65

@@ -12,7 +12,7 @@ Responde SEMPRE em JSON válido com o array "pitches".`
 
 export interface PitchResult {
   investor_id: string
-  pitch_draft: string
+  pitch_draft: string | null
 }
 
 export async function generatePitches(
@@ -57,6 +57,6 @@ export async function generatePitches(
     return parsed.pitches
   } catch {
     console.error('[matching-agent] Falha ao fazer parse dos pitches:', text)
-    return matches.map((m) => ({ investor_id: m.investor_id, pitch_draft: '' }))
+    return matches.map((m) => ({ investor_id: m.investor_id, pitch_draft: null }))
   }
 }
