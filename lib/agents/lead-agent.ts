@@ -142,7 +142,7 @@ ${conversationText}`
     const { text, inputTokens, outputTokens } = await this.callClaude(
       SYSTEM_PROMPT,
       userMessage,
-      4096
+      2048
     )
     const durationMs = Date.now() - startMs
 

@@ -17,7 +17,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
 
-  // Fetch all open leads
+  // Fetch prioritised open leads: urgency ≥ 3, OR not contacted in 5+ days, OR never contacted
+  const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+
   const { data: leads } = await supabase
     .from('leads')
     .select(`
@@ -26,8 +28,9 @@ export async function POST(request: Request) {
     `)
     .eq('team_id', member.team_id)
     .not('status', 'in', '("won","lost")')
+    .or(`urgency.gte.3,last_contact_at.lte.${fiveDaysAgo},last_contact_at.is.null`)
     .order('urgency', { ascending: false })
-    .limit(50)
+    .limit(15)
 
   if (!leads || leads.length === 0) {
     return NextResponse.json({ message: 'Sem leads para analisar', items: [] })
