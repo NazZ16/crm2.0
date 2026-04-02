@@ -12,10 +12,12 @@ Schedule diário às 07:00 → executa o scraper Python → importa novos imóve
 ### Variáveis de ambiente no servidor N8N
 ```
 CRM_API_URL=https://your-crm.vercel.app/api/opportunities
-CRM_WEBHOOK_SECRET=<mesmo valor que N8N_WEBHOOK_SECRET no CRM>
+SCRAPER_API_KEY=crm_xxxx   # gerada em Dashboard → Definições → API Keys
 REMAX_ZONES=Lisboa,Porto,Cascais,Sintra,Oeiras
 REMAX_MAX_PRICE=800000
 ```
+
+> A equipa é identificada automaticamente pela API key — não é necessário configurar SCRAPER_TEAM_ID.
 
 ## Nodes do Workflow
 
