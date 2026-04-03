@@ -11,7 +11,7 @@ import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
-  MessageCircle, AlertTriangle, TrendingUp,
+  MessageCircle, AlertTriangle, TrendingUp, Bot,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations } from '@/lib/types'
@@ -62,6 +62,17 @@ export default async function LeadDetailPage({ params }: Props) {
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
+
+  // Fetch latest call upload with coach feedback for this lead
+  const { data: latestCallUpload } = await supabase
+    .from('call_uploads')
+    .select('id, coach_feedback, audio_duration_s, created_at, status')
+    .eq('team_id', member.team_id)
+    .eq('lead_id', lead.id)
+    .eq('status', 'done')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   // Check if lead already has an investor profile
   const { data: existingInvestor } = await supabase
@@ -247,6 +258,58 @@ export default async function LeadDetailPage({ params }: Props) {
               </CardContent>
             </Card>
           )}
+
+          {/* Coach Call Feedback */}
+          {latestCallUpload?.coach_feedback && (() => {
+            const feedback = latestCallUpload.coach_feedback as {
+              pontos_positivos: string[]
+              a_melhorar: string[]
+              proxima_chamada: string
+              sentimento_lead: string
+            }
+            return (
+              <Card className="border-purple-100">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                    <Bot size={14} className="text-purple-500" />
+                    Feedback da Chamada
+                    <span className="font-normal text-gray-400 normal-case text-xs ml-auto">
+                      {formatRelativeTime(latestCallUpload.created_at)}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {feedback.pontos_positivos.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-green-600 mb-1">Positivo</p>
+                      <ul className="space-y-0.5">
+                        {feedback.pontos_positivos.map((p: string, i: number) => (
+                          <li key={i} className="text-xs text-gray-600">{p}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {feedback.a_melhorar.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-orange-600 mb-1">A melhorar</p>
+                      <ul className="space-y-0.5">
+                        {feedback.a_melhorar.map((p: string, i: number) => (
+                          <li key={i} className="text-xs text-gray-600">{p}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-semibold text-blue-600 mb-1">Próxima chamada</p>
+                    <p className="text-xs text-gray-600">{feedback.proxima_chamada}</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {feedback.sentimento_lead.replace(/_/g, ' ')}
+                  </Badge>
+                </CardContent>
+              </Card>
+            )
+          })()}
         </div>
 
         {/* Middle + Right: Tasks + Interactions + Drafts */}
