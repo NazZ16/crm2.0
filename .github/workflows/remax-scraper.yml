@@ -1,0 +1,35 @@
+name: Remax Scraper
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # Daily at 07:00 UTC
+  workflow_dispatch:        # Manual trigger
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        working-directory: ./scrapers
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Run Remax scraper
+        working-directory: ./scrapers
+        env:
+          CRM_API_URL: ${{ secrets.CRM_API_URL }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+          REMAX_ZONES: ${{ vars.REMAX_ZONES }}
+          REMAX_MAX_PRICE: ${{ vars.REMAX_MAX_PRICE }}
+          REMAX_TYPOLOGIES: ${{ vars.REMAX_TYPOLOGIES }}
+        run: python remax_scraper.py
