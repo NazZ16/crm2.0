@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
-import { Plus, Search, ArrowRight, Phone, Mail, Bot } from 'lucide-react'
+import { Plus, Search, ArrowRight, Phone, Mail, Bot, Mic } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,12 +56,20 @@ export default async function LeadsPage({ searchParams }: Props) {
           <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
           <p className="text-sm text-gray-500 mt-0.5">{leads?.length ?? 0} leads encontradas</p>
         </div>
-        <Link href="/dashboard/leads/new">
-          <Button className="gap-2">
-            <Plus size={16} />
-            Nova Lead
-          </Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/dashboard/leads/upload-call">
+            <Button variant="outline" className="gap-2">
+              <Mic size={16} />
+              Upload Chamada
+            </Button>
+          </Link>
+          <Link href="/dashboard/leads/new">
+            <Button className="gap-2">
+              <Plus size={16} />
+              Nova Lead
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Status filters */}
