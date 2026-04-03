@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 export const CLAUDE_MODEL = 'claude-sonnet-4-6'
+export const CLAUDE_HAIKU = 'claude-haiku-4-5-20251001'
 
 export abstract class BaseAgent {
   protected client: Anthropic
@@ -12,10 +13,11 @@ export abstract class BaseAgent {
   protected async callClaude(
     systemPrompt: string,
     userMessage: string,
-    maxTokens = 4096
+    maxTokens = 4096,
+    model = CLAUDE_MODEL
   ): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
     const response = await this.client.messages.create({
-      model: CLAUDE_MODEL,
+      model,
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }],
