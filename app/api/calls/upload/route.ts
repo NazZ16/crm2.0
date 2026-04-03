@@ -65,8 +65,8 @@ async function runPipeline(
     }
 
     const extractedPhone = leadUpdates.phone ?? null
-    const extractedScore = leadUpdates.score ?? agentOutput.lead_updates.score
-    const extractedUrgency = leadUpdates.urgency ?? agentOutput.lead_updates.urgency
+    const extractedScore = leadUpdates.score ?? null
+    const extractedUrgency = leadUpdates.urgency ?? null
     const extractedSummary = agentOutput.lead_updates.summary ?? null
 
     // Step d: Dedup by phone
@@ -160,7 +160,7 @@ async function runPipeline(
     })
 
     // Step g: Create follow-up tasks if urgency >= 3
-    if (extractedUrgency >= 3) {
+    if (extractedUrgency != null && extractedUrgency >= 3) {
       await createFollowUpSequence(supabase, teamId, leadId, userId)
     }
 
@@ -331,6 +331,8 @@ export async function POST(request: Request) {
     .single()
 
   if (insertError || !uploadRow) {
+    // Clean up orphaned storage file before returning error
+    void supabase.storage.from('call-audio').remove([storagePath])
     return NextResponse.json(
       { error: `Erro ao criar registo: ${insertError?.message}` },
       { status: 500 }
