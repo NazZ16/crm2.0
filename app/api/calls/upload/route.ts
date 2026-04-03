@@ -54,7 +54,7 @@ async function runPipeline(
     const agentOutput = await leadAgent.analyze({
       leadName: 'Lead (chamada)',
       conversationText: transcriptText,
-      objective: 'qualificar',
+      objective: 'Extrair número de telefone (campo crítico para deduplicação), nome completo, score e urgência desta chamada.',
     })
 
     const leadUpdates = agentOutput.lead_updates as unknown as {
