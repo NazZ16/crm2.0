@@ -4,6 +4,7 @@ import { formatRelativeTime, formatCurrency } from '@/lib/utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import Link from 'next/link'
+import { Suspense } from 'react'
 import {
   Users,
   TrendingUp,
@@ -14,8 +15,137 @@ import {
   Bot,
   ArrowRight,
 } from 'lucide-react'
+import { orientatorAgent } from '@/lib/agents/orientator-agent'
 
 export const dynamic = 'force-dynamic'
+
+async function OrientatorCard({ teamId }: { teamId: string }) {
+  try {
+    const supabase = await createClient()
+    const now = new Date()
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString()
+    const endOfToday = new Date(now)
+    endOfToday.setHours(23, 59, 59, 999)
+
+    const [urgentLeadsRes, tasksTodayRes, coldLeadsRes, matchesRes, learningRes] = await Promise.all([
+      supabase
+        .from('leads')
+        .select('id, full_name, score, urgency, last_contact_at')
+        .eq('team_id', teamId)
+        .not('status', 'in', '(won,lost)')
+        .or('urgency.gte.3,score.gte.70')
+        .order('urgency', { ascending: false })
+        .limit(5),
+
+      supabase
+        .from('tasks')
+        .select('title, lead_id')
+        .eq('team_id', teamId)
+        .eq('status', 'open')
+        .lte('due_at', endOfToday.toISOString())
+        .limit(5),
+
+      supabase
+        .from('leads')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', teamId)
+        .not('status', 'in', '(won,lost)')
+        .lt('last_contact_at', sevenDaysAgo),
+
+      supabase
+        .from('investor_matches')
+        .select('id', { count: 'exact', head: true })
+        .eq('team_id', teamId)
+        .in('status', ['suggested', 'presented']),
+
+      supabase
+        .from('agent_learnings')
+        .select('content')
+        .eq('team_id', teamId)
+        .order('confidence', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    const urgentLeads = (urgentLeadsRes.data ?? []) as {
+      id: string
+      full_name: string
+      score: number
+      urgency: number
+      last_contact_at: string | null
+    }[]
+
+    const tasksDueToday = (tasksTodayRes.data ?? []) as { title: string; lead_id: string | null }[]
+    const coldLeadsCount = coldLeadsRes.count ?? 0
+    const openMatchesCount = matchesRes.count ?? 0
+    const coachLearning = learningRes.error ? null : (learningRes.data?.content ?? null)
+
+    const briefing = await orientatorAgent.generateBriefing({
+      urgentLeads,
+      tasksDueToday,
+      coldLeadsCount,
+      openMatchesCount,
+      coachLearning,
+    })
+
+    return (
+      <Card className="border-blue-100 bg-gradient-to-br from-blue-50 to-white">
+        <CardHeader className="flex flex-row items-center gap-2 pb-3">
+          <div className="p-2 bg-blue-100 rounded-full">
+            <Bot size={18} className="text-blue-600" />
+          </div>
+          <CardTitle className="text-base">O teu foco hoje</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Urgentes */}
+          {briefing.urgentes.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Urgente</p>
+              <div className="space-y-2">
+                {briefing.urgentes.map((u, i) => (
+                  <Link
+                    key={i}
+                    href={`/dashboard/leads/${u.lead_id}`}
+                    className="flex flex-col gap-0.5 p-2.5 rounded-lg bg-red-50 hover:bg-red-100 transition-colors"
+                  >
+                    <p className="text-sm font-medium text-gray-800">{u.lead_name}</p>
+                    <p className="text-xs text-red-600">{u.razao}</p>
+                    <p className="text-xs text-gray-500">{u.acao}</p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Esta semana */}
+          {briefing.esta_semana.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-yellow-600 uppercase tracking-wide mb-2">Esta semana</p>
+              <div className="space-y-2">
+                {briefing.esta_semana.map((e, i) => (
+                  <div key={i} className="p-2.5 rounded-lg bg-yellow-50">
+                    <p className="text-sm font-medium text-gray-800">{e.item}</p>
+                    <p className="text-xs text-gray-500">{e.detalhe}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Coach insight */}
+          {briefing.coach_insight && (
+            <div className="p-3 rounded-lg bg-purple-50 border border-purple-100">
+              <p className="text-xs font-semibold text-purple-600 uppercase tracking-wide mb-1">Coach IA</p>
+              <p className="text-sm text-gray-700">{briefing.coach_insight}</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    )
+  } catch {
+    return null
+  }
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -108,6 +238,11 @@ export default async function DashboardPage() {
           {new Date().toLocaleDateString('pt-PT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
         </p>
       </div>
+
+      {/* Orientator Briefing */}
+      <Suspense fallback={null}>
+        <OrientatorCard teamId={teamId} />
+      </Suspense>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
