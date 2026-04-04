@@ -364,8 +364,11 @@ export interface Investor {
   notes: string | null
   status: InvestorStatus
   last_contact: string | null
+  lead_id: string | null
   created_at: string
   updated_at: string
+  // optional join
+  lead?: { id: string; full_name: string; status: string; score: number } | null
 }
 
 export interface Opportunity {

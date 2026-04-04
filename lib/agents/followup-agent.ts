@@ -59,7 +59,7 @@ ${JSON.stringify(leads, null, 2)}
 Cria o plano de follow-up para hoje. Inclui no máximo as top 10 prioridades.
 Deteta todas as leads sem contacto há mais de 7 dias na lista cold_leads.`
 
-    const { text } = await this.callClaude(SYSTEM_PROMPT, userMessage, 2048)
+    const { text } = await this.callClaude(SYSTEM_PROMPT, userMessage, 1500)
     return this.parseJSON<FollowupPlan>(text)
   }
 }

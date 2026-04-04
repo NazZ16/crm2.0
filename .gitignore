@@ -18,9 +18,11 @@
 .env.local
 .env.*.local
 
-# supabase local
-supabase/.branches/
-supabase/.temp/
+# supabase — manter local, não enviar para GitHub
+supabase/
+
+# docs de planeamento — manter local
+docs/plans/
 
 # misc
 .DS_Store
