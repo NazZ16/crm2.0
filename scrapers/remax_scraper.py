@@ -125,18 +125,17 @@ def extract_listings(page, zone: str) -> list[dict]:
     """Extrai todos os listings da página actual."""
     listings = []
 
-    # Remax PT usa links /pt/imoveis/venda-... ou /pt/imoveis/arrendamento-...
-    # Também aceita data-id="listing-card-link" como seletor estável
-    cards = page.query_selector_all('a[data-id="listing-card-link"]')
-    if not cards:
-        cards = page.query_selector_all('a[href*="/imoveis/"]')
+    # Filtrar em Python porque CSS attr-selector [href*=...] falha com hrefs absolutos
+    all_anchors = page.query_selector_all("a[href]")
+    cards = [
+        a for a in all_anchors
+        if "/imoveis/" in (a.get_attribute("href") or "")
+    ]
 
     if not cards:
-        # Debug
         html = page.content()
         print(f"[remax] Sem cards. HTML: {len(html)} chars, URL: {page.url}")
-        all_links = page.query_selector_all("a[href]")
-        sample = [a.get_attribute("href") for a in all_links[:20] if a.get_attribute("href")]
+        sample = [a.get_attribute("href") for a in all_anchors[:20] if a.get_attribute("href")]
         print(f"[remax] Sample links: {sample}")
         return listings
 
@@ -145,7 +144,8 @@ def extract_listings(page, zone: str) -> list[dict]:
     for card in cards[:50]:
         try:
             href = card.get_attribute("href") or ""
-            if "/imoveis/" not in href:
+            # já filtrado no selector, mas garantir que tem path de imóvel
+            if "/imoveis/" not in href and "/imovel/" not in href:
                 continue
             source_url = href if href.startswith("http") else f"https://www.remax.pt{href}"
 
