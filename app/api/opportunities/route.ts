@@ -198,7 +198,9 @@ export async function POST(request: Request) {
   // Fire-and-forget: trigger matching async for new opportunities only
   if (isNew && data && (data as { id?: string }).id) {
     const oppId = (data as { id: string }).id
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
     fetch(`${baseUrl}/api/agents/matching`, {
       method: 'POST',
       headers: {
