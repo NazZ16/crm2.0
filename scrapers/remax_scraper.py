@@ -25,9 +25,42 @@ SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
 REMAX_ZONES_RAW = os.getenv("REMAX_ZONES", "Lisboa")
 REMAX_MAX_PRICE = int(os.getenv("REMAX_MAX_PRICE", "800000"))
 REMAX_TYPOLOGIES_RAW = os.getenv("REMAX_TYPOLOGIES", "")
+LEAD_ID = os.getenv("LEAD_ID", "")
 
 ZONES = [z.strip() for z in REMAX_ZONES_RAW.split(",") if z.strip()]
 TYPOLOGIES = [t.strip() for t in REMAX_TYPOLOGIES_RAW.split(",") if t.strip()]
+
+
+def fetch_config_from_api() -> dict | None:
+    """Lê configuração do CRM API. Retorna None se falhar."""
+    if not CRM_API_URL or not SCRAPER_API_KEY:
+        return None
+    try:
+        # Derive config endpoint from CRM_API_URL
+        base = CRM_API_URL.replace("/api/opportunities", "").rstrip("/")
+        resp = requests.get(
+            f"{base}/api/scraper/config",
+            headers={"X-API-Key": SCRAPER_API_KEY},
+            timeout=10
+        )
+        if resp.ok:
+            return resp.json()
+    except Exception:
+        pass
+    return None
+
+
+# Override with API config only when env vars are at defaults (not provided as workflow inputs)
+if not REMAX_ZONES_RAW or REMAX_ZONES_RAW == "Lisboa":
+    api_config = fetch_config_from_api()
+    if api_config:
+        if api_config.get("zones"):
+            ZONES = api_config["zones"]
+        if api_config.get("max_price"):
+            REMAX_MAX_PRICE = api_config["max_price"]
+        if api_config.get("typologies"):
+            TYPOLOGIES = api_config["typologies"]
+
 
 BASE_SEARCH_URL = "https://www.remax.pt/imoveis"
 
