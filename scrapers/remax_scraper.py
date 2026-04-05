@@ -125,8 +125,11 @@ def extract_listings(page, zone: str) -> list[dict]:
     """Extrai todos os listings da página actual."""
     listings = []
 
-    # Seletores por ordem de preferência — o Remax PT usa links /pt/imovel/ ou /imovel/
-    cards = page.query_selector_all('a[href*="/imovel/"]')
+    # Remax PT usa links /pt/imoveis/venda-... ou /pt/imoveis/arrendamento-...
+    # Também aceita data-id="listing-card-link" como seletor estável
+    cards = page.query_selector_all('a[data-id="listing-card-link"]')
+    if not cards:
+        cards = page.query_selector_all('a[href*="/imoveis/"]')
 
     if not cards:
         # Debug
@@ -142,7 +145,7 @@ def extract_listings(page, zone: str) -> list[dict]:
     for card in cards[:50]:
         try:
             href = card.get_attribute("href") or ""
-            if "/imovel/" not in href:
+            if "/imoveis/" not in href:
                 continue
             source_url = href if href.startswith("http") else f"https://www.remax.pt{href}"
 
@@ -206,11 +209,16 @@ def scrape_zone(page, zone: str) -> list[dict]:
         print(f"[remax] → {url}")
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Aguardar renderização JS
-            page.wait_for_timeout(3000)
+            # Aguardar renderização JS (React/Next.js precisa de tempo)
+            page.wait_for_timeout(4000)
+            # Tentar aguardar por um card visível (max 10s)
+            try:
+                page.wait_for_selector('a[data-id="listing-card-link"]', timeout=10000)
+            except PlaywrightTimeout:
+                pass
             # Scroll para carregar lazy content
             page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(1500)
 
             listings = extract_listings(page, zone)
             all_listings.extend(listings)
