@@ -9,6 +9,7 @@ import { LeadDetailClient } from './LeadDetailClient'
 import { TaskList } from './TaskList'
 import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
+import { ScraperTriggerButton } from './ScraperTriggerButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
   MessageCircle, AlertTriangle, TrendingUp, Bot,
@@ -89,6 +90,11 @@ export default async function LeadDetailPage({ params }: Props) {
     .eq('lead_id', lead.id)
     .maybeSingle()
 
+  const leadZones = (leadProfile?.home_preferences as { zonas?: string[] } | null)?.zonas ?? undefined
+  const leadBudget = (leadProfile?.financial_profile as { orcamento_max?: number } | null)?.orcamento_max ?? undefined
+  const leadTypology = (leadProfile?.home_preferences as { tipologia?: string } | null)?.tipologia
+  const leadTypologies = leadTypology ? [leadTypology] : undefined
+
   const profile = Array.isArray(lead.lead_profiles) ? lead.lead_profiles[0] : lead.lead_profiles
   const interactions = Array.isArray(lead.interactions) ? lead.interactions : []
   const tasks = Array.isArray(lead.tasks) ? lead.tasks : []
@@ -151,6 +157,14 @@ export default async function LeadDetailPage({ params }: Props) {
                 <TrendingUp className="mr-1 h-3 w-3" /> Ver Perfil de Investidor
               </Badge>
             </Link>
+          )}
+          {member.role !== 'viewer' && (
+            <ScraperTriggerButton
+              leadId={lead.id}
+              zones={leadZones}
+              maxPrice={leadBudget}
+              typologies={leadTypologies}
+            />
           )}
         </div>
       </div>
