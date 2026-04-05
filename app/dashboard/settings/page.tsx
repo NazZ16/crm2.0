@@ -1,19 +1,35 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Key, Webhook, Bell } from 'lucide-react'
+import { Key, Webhook, Bell, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { ApiKeysSection } from './ApiKeysSection'
+import { ScraperConfigSection } from './ScraperConfigSection'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   let isAdmin = false
+  let teamId: string | null = null
   if (user) {
     const { data: member } = await supabase
       .from('team_members')
-      .select('role')
+      .select('role, team_id')
       .eq('user_id', user.id)
       .single()
     isAdmin = member?.role === 'admin'
+    teamId = member?.team_id ?? null
+  }
+
+  const { data: scraperConfig } = await supabase
+    .from('team_scraper_config')
+    .select('zones, max_price, typologies, enabled')
+    .eq('team_id', teamId ?? '')
+    .maybeSingle()
+
+  const defaultScraperConfig = {
+    zones: [] as string[],
+    max_price: 800000,
+    typologies: [] as string[],
+    enabled: true,
   }
 
   return (
@@ -39,6 +55,30 @@ export default async function SettingsPage() {
             <ApiKeysSection isAdmin={isAdmin} />
           ) : (
             <p className="text-sm text-gray-500">Apenas admins podem gerir API keys.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Search size={16} />
+            Scraper Remax — Configuração
+          </CardTitle>
+          <CardDescription>
+            Define as zonas, preço máximo e tipologias que o scraper procura diariamente.
+            Podes também acionar o scraper manualmente aqui ou a partir do perfil de uma lead.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isAdmin ? (
+            <ScraperConfigSection initialConfig={scraperConfig ?? defaultScraperConfig} />
+          ) : (
+            <div className="text-sm text-gray-500 space-y-1">
+              <p>Zonas: {scraperConfig?.zones?.join(', ') || '—'}</p>
+              <p>Preço máximo: {scraperConfig?.max_price?.toLocaleString('pt-PT') ?? '—'} €</p>
+              <p>Tipologias: {scraperConfig?.typologies?.join(', ') || 'Todas'}</p>
+            </div>
           )}
         </CardContent>
       </Card>
