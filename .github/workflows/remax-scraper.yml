@@ -3,7 +3,24 @@ name: Remax Scraper
 on:
   schedule:
     - cron: '0 7 * * *'   # Daily at 07:00 UTC
-  workflow_dispatch:        # Manual trigger
+  workflow_dispatch:
+    inputs:
+      zones:
+        description: 'Zonas separadas por vírgula (ex: Lisboa,Cascais)'
+        required: false
+        default: ''
+      max_price:
+        description: 'Preço máximo em €'
+        required: false
+        default: ''
+      typologies:
+        description: 'Tipologias separadas por vírgula (ex: T2,T3)'
+        required: false
+        default: ''
+      lead_id:
+        description: 'UUID da lead (opcional — para acionar a partir do perfil)'
+        required: false
+        default: ''
 
 jobs:
   scrape:
@@ -29,7 +46,8 @@ jobs:
         env:
           CRM_API_URL: ${{ secrets.CRM_API_URL }}
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
-          REMAX_ZONES: ${{ vars.REMAX_ZONES }}
-          REMAX_MAX_PRICE: ${{ vars.REMAX_MAX_PRICE }}
-          REMAX_TYPOLOGIES: ${{ vars.REMAX_TYPOLOGIES }}
+          REMAX_ZONES: ${{ inputs.zones || vars.REMAX_ZONES }}
+          REMAX_MAX_PRICE: ${{ inputs.max_price || vars.REMAX_MAX_PRICE }}
+          REMAX_TYPOLOGIES: ${{ inputs.typologies || vars.REMAX_TYPOLOGIES }}
+          LEAD_ID: ${{ inputs.lead_id }}
         run: python remax_scraper.py
