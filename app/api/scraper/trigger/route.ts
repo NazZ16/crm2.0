@@ -74,10 +74,11 @@ export async function POST(request: Request) {
   // 5. Check env vars
   const githubToken = process.env.GITHUB_TOKEN
   const githubRepo = process.env.GITHUB_REPO
+  const githubBranch = process.env.GITHUB_BRANCH ?? 'main'
 
   if (!githubToken || !githubRepo) {
     return NextResponse.json(
-      { error: 'Configuração GitHub em falta no servidor' },
+      { error: 'Configuração GitHub em falta no servidor (GITHUB_TOKEN e GITHUB_REPO)' },
       { status: 503 }
     )
   }
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
         'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ ref: 'main', inputs }),
+      body: JSON.stringify({ ref: githubBranch, inputs }),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Erro de rede'
