@@ -4,18 +4,23 @@ Scraper Remax PT → CRM 2.0
 Extrai listings e faz POST para /api/opportunities com dedup por source_url.
 Usa Playwright (headless) porque o Remax carrega via JavaScript.
 
+URL format descoberto:
+  https://www.remax.pt/pt/comprar/imoveis/habitacao/{zona}/r/r/{tipologia},preco__{preco}
+  ?s={"rg":"{Zona}"}&p=1&o=-PublishDate
+
 Uso:
   pip install -r requirements.txt
   playwright install chromium
   python remax_scraper.py
 """
 
-import os
 import re
 import time
+import json
 import requests
-from urllib.parse import quote_plus
+from urllib.parse import quote
 from dotenv import load_dotenv
+import os
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 load_dotenv()
@@ -49,7 +54,7 @@ def fetch_config_from_api() -> dict | None:
     return None
 
 
-# Override with API config only when env vars are at defaults (not provided as workflow inputs)
+# Override com config da API se env vars estão nos defaults
 if not REMAX_ZONES_RAW or REMAX_ZONES_RAW == "Lisboa":
     api_config = fetch_config_from_api()
     if api_config:
@@ -61,104 +66,86 @@ if not REMAX_ZONES_RAW or REMAX_ZONES_RAW == "Lisboa":
             TYPOLOGIES = api_config["typologies"]
 
 
-def build_search_url(zone: str, typology: str | None = None) -> str:
-    """
-    Constrói URL de pesquisa do Remax PT.
-    Exemplo: https://www.remax.pt/imoveis?searchQueryState={"regionName":"Porto","businessType":1}
-    O Remax usa um querystring JSON — tentamos a URL simples com filtros na path.
-    """
-    # Remax PT usa URLs como:
-    # https://www.remax.pt/imoveis/comprar/apartamentos/porto
-    # Vamos usar a URL de pesquisa com query params que o site aceita
-    zone_slug = zone.lower().replace(" ", "-").replace(",", "")
+def zone_to_slug(zone: str) -> str:
+    """'Porto - arredores próximos' → 'porto---arredores-proximos'"""
+    import unicodedata
+    nfkd = unicodedata.normalize("NFKD", zone.lower())
+    ascii_str = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "-", ascii_str).strip("-")
 
-    if typology:
-        # T1 → apartamentos (simplificado)
-        url = f"https://www.remax.pt/imoveis/comprar/apartamentos/{zone_slug}"
+
+def build_search_urls(zone: str, typologies: list[str], max_price: int) -> list[str]:
+    """
+    Constrói URLs de pesquisa Remax PT.
+    Formato: /pt/comprar/imoveis/habitacao/{zona}/r/r/{tipologia},preco__{preco}
+             ?s={"rg":"{Zona}"}&p=1&o=-PublishDate
+    """
+    slug = zone_to_slug(zone)
+    s_param = quote(json.dumps({"rg": zone}, ensure_ascii=False))
+    base = f"https://www.remax.pt/pt/comprar/imoveis/habitacao/{slug}/r/r"
+    suffix = f"?s={s_param}&p=1&o=-PublishDate"
+
+    if typologies:
+        # Uma URL por tipologia
+        urls = []
+        for t in typologies:
+            typo_slug = t.lower()  # T2 → t2
+            urls.append(f"{base}/{typo_slug},preco__{max_price}{suffix}")
+        return urls
     else:
-        url = f"https://www.remax.pt/imoveis/comprar/apartamentos/{zone_slug}"
-
-    return url
+        # Sem filtro de tipologia — só preço
+        return [f"{base}/preco__{max_price}{suffix}"]
 
 
 def parse_price(text: str) -> int | None:
-    """Extrai preço inteiro de strings como '250.000 €' ou '250000€'."""
     digits = re.sub(r"[^\d]", "", text)
     return int(digits) if digits else None
 
 
 def parse_typology(text: str) -> str | None:
-    """Extrai tipologia PT: T0, T1, T2, T3, T4+"""
     match = re.search(r"T(\d+)\+?", text.upper())
     return match.group(0) if match else None
 
 
 def parse_area(text: str) -> int | None:
-    """Extrai área em m² de strings como '85 m²'."""
-    match = re.search(r"(\d+)\s*m", text.lower())
-    return int(match.group(1)) if match else None
+    match = re.search(r"(\d[\d.]*)\s*m[²2]", text.lower())
+    if match:
+        return int(re.sub(r"[^\d]", "", match.group(1)))
+    return None
 
 
-def normalize_zone(raw_location: str, target_zone: str) -> str:
-    """Mapeia a localização para a zona configurada."""
+def normalize_zone(raw_location: str, fallback: str) -> str:
     for zone in ZONES:
         if zone.lower() in raw_location.lower():
             return zone
-    return target_zone
+    return fallback
 
 
-def extract_listings_from_page(page, zone: str) -> list[dict]:
-    """Extrai listings da página actual."""
+def extract_listings(page, zone: str) -> list[dict]:
+    """Extrai todos os listings da página actual."""
     listings = []
 
-    # Debug: mostrar URL actual
-    print(f"[remax] URL: {page.url}")
-
-    # Tentar vários seletores conhecidos do Remax PT
-    selectors = [
-        'a[href*="/imovel/"]',
-        '[class*="property-card"]',
-        '[class*="listing-card"]',
-        '[class*="PropertyCard"]',
-        '[class*="ListingCard"]',
-        'article[class*="card"]',
-        '[data-testid*="property"]',
-        '[class*="result-item"]',
-        '[class*="search-result"]',
-    ]
-
-    cards = []
-    for sel in selectors:
-        found = page.query_selector_all(sel)
-        if found:
-            print(f"[remax] Seletor '{sel}' → {len(found)} elementos")
-            cards = found
-            break
+    # Seletores por ordem de preferência — o Remax PT usa links /pt/imovel/ ou /imovel/
+    cards = page.query_selector_all('a[href*="/imovel/"]')
 
     if not cards:
-        # Debug: guardar HTML para análise
+        # Debug
         html = page.content()
-        print(f"[remax] Nenhum card encontrado. HTML length: {len(html)}")
-        # Mostrar primeiros links com /imovel/ no href
-        links = page.query_selector_all('a')
-        imovel_links = [l.get_attribute('href') for l in links if l.get_attribute('href') and '/imovel/' in (l.get_attribute('href') or '')]
-        print(f"[remax] Links /imovel/ encontrados: {len(imovel_links)}")
-        for link in imovel_links[:5]:
-            print(f"  {link}")
+        print(f"[remax] Sem cards. HTML: {len(html)} chars, URL: {page.url}")
+        all_links = page.query_selector_all("a[href]")
+        sample = [a.get_attribute("href") for a in all_links[:20] if a.get_attribute("href")]
+        print(f"[remax] Sample links: {sample}")
         return listings
 
-    print(f"[remax] {len(cards)} cards encontrados para zona '{zone}'")
+    print(f"[remax] {len(cards)} cards em '{zone}'")
 
     for card in cards[:50]:
         try:
-            href = card.get_attribute("href")
-            if not href:
-                link = card.query_selector("a")
-                href = link.get_attribute("href") if link else None
-            if not href or "/imovel/" not in href:
+            href = card.get_attribute("href") or ""
+            if "/imovel/" not in href:
                 continue
-
             source_url = href if href.startswith("http") else f"https://www.remax.pt{href}"
+
             text = card.inner_text()
             lines = [l.strip() for l in text.splitlines() if l.strip()]
 
@@ -166,29 +153,25 @@ def extract_listings_from_page(page, zone: str) -> list[dict]:
             price = None
             for line in lines:
                 if "€" in line or "eur" in line.lower():
-                    price = parse_price(line)
-                    if price and price > 10000:
+                    p = parse_price(line)
+                    if p and p > 10000:
+                        price = p
                         break
-
             if not price or price > REMAX_MAX_PRICE:
                 continue
 
-            # Tipologia
             typology = None
             for line in lines:
-                typology = parse_typology(line)
-                if typology:
+                t = parse_typology(line)
+                if t:
+                    typology = t
                     break
 
-            # Filtrar por tipologia se especificada
-            if TYPOLOGIES and typology and typology not in TYPOLOGIES:
-                continue
-
-            # Área
             area = None
             for line in lines:
-                area = parse_area(line)
-                if area and area > 20:
+                a = parse_area(line)
+                if a and a > 20:
+                    area = a
                     break
 
             title = lines[0][:300] if lines else "Imóvel Remax"
@@ -208,64 +191,46 @@ def extract_listings_from_page(page, zone: str) -> list[dict]:
             })
 
         except Exception as e:
-            print(f"[remax] Erro a processar card: {e}")
+            print(f"[remax] Erro no card: {e}")
             continue
 
     return listings
 
 
 def scrape_zone(page, zone: str) -> list[dict]:
-    """Scrape de uma zona específica, tentando múltiplas URLs."""
-    listings = []
+    """Scrape de uma zona com as tipologias configuradas."""
+    all_listings = []
+    urls = build_search_urls(zone, TYPOLOGIES, REMAX_MAX_PRICE)
 
-    # Tentar diferentes variantes de URL
-    zone_slug = zone.lower().replace(" ", "-").replace(",", "").replace("  ", "-")
-    urls_to_try = [
-        f"https://www.remax.pt/imoveis/comprar/apartamentos/{quote_plus(zone)}",
-        f"https://www.remax.pt/imoveis/comprar/apartamentos/{zone_slug}",
-        f"https://www.remax.pt/imoveis?s={quote_plus(zone)}&businessType=1&listingType=2",
-        "https://www.remax.pt/imoveis",
-    ]
-
-    for url in urls_to_try:
+    for url in urls:
+        print(f"[remax] → {url}")
         try:
-            print(f"[remax] A tentar: {url}")
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Aguardar renderização JS
             page.wait_for_timeout(3000)
+            # Scroll para carregar lazy content
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
+            page.wait_for_timeout(1000)
 
-            # Verificar se há resultados
-            links = page.query_selector_all('a[href*="/imovel/"]')
-            if links:
-                print(f"[remax] {len(links)} links de imóveis encontrados")
-                listings = extract_listings_from_page(page, zone)
-                if listings:
-                    return listings
-                # Sem listings mas há links — continuar com extração
-                if links:
-                    listings = extract_listings_from_page(page, zone)
-                    return listings
-
+            listings = extract_listings(page, zone)
+            all_listings.extend(listings)
+            print(f"[remax] {len(listings)} listings em {url}")
         except PlaywrightTimeout:
             print(f"[remax] Timeout: {url}")
-            continue
         except Exception as e:
-            print(f"[remax] Erro em {url}: {e}")
-            continue
+            print(f"[remax] Erro: {e}")
 
-    return listings
+        time.sleep(1)
+
+    return all_listings
 
 
 def post_to_crm(listing: dict) -> bool:
-    """Envia um listing para o CRM via POST /api/opportunities."""
     if not CRM_API_URL or not SCRAPER_API_KEY:
-        print("  ✗ CRM_API_URL ou SCRAPER_API_KEY não configurados")
+        print("  ✗ CRM_API_URL ou SCRAPER_API_KEY não configurados — a saltar envio")
         return False
 
-    headers = {
-        "Content-Type": "application/json",
-        "X-API-Key": SCRAPER_API_KEY,
-    }
-
+    headers = {"Content-Type": "application/json", "X-API-Key": SCRAPER_API_KEY}
     try:
         resp = requests.post(CRM_API_URL, json=listing, headers=headers, timeout=15)
         if resp.status_code in (200, 201):
@@ -273,7 +238,7 @@ def post_to_crm(listing: dict) -> bool:
             print(f"  ✓ {listing['title'][:60]} — {action}")
             return True
         else:
-            print(f"  ✗ {listing['title'][:60]} — HTTP {resp.status_code}: {resp.text[:200]}")
+            print(f"  ✗ HTTP {resp.status_code}: {resp.text[:200]}")
             return False
     except requests.RequestException as e:
         print(f"  ✗ Erro de rede: {e}")
@@ -281,10 +246,9 @@ def post_to_crm(listing: dict) -> bool:
 
 
 def main():
-    print(f"[remax] A iniciar scraper para zonas: {', '.join(ZONES)}")
-    print(f"[remax] Preço máximo: €{REMAX_MAX_PRICE:,}")
-    if TYPOLOGIES:
-        print(f"[remax] Tipologias: {', '.join(TYPOLOGIES)}")
+    print(f"[remax] Zonas: {', '.join(ZONES)}")
+    print(f"[remax] Preço máx: €{REMAX_MAX_PRICE:,}")
+    print(f"[remax] Tipologias: {', '.join(TYPOLOGIES) if TYPOLOGIES else 'todas'}")
     if LEAD_ID:
         print(f"[remax] Lead ID: {LEAD_ID}")
 
@@ -299,30 +263,29 @@ def main():
         page = context.new_page()
 
         for zone in ZONES:
-            print(f"\n[remax] A pesquisar zona: {zone}")
-            zone_listings = scrape_zone(page, zone)
-            all_listings.extend(zone_listings)
-            print(f"[remax] {len(zone_listings)} listings em '{zone}'")
+            print(f"\n[remax] === Zona: {zone} ===")
+            listings = scrape_zone(page, zone)
+            all_listings.extend(listings)
 
         browser.close()
 
     # Dedup por source_url
-    seen = set()
-    unique_listings = []
+    seen: set[str] = set()
+    unique: list[dict] = []
     for l in all_listings:
         if l["source_url"] not in seen:
             seen.add(l["source_url"])
-            unique_listings.append(l)
+            unique.append(l)
 
-    print(f"\n[remax] {len(unique_listings)} listings únicos extraídos")
+    print(f"\n[remax] {len(unique)} listings únicos")
 
     success = 0
-    for listing in unique_listings:
+    for listing in unique:
         if post_to_crm(listing):
             success += 1
         time.sleep(0.3)
 
-    print(f"[remax] Concluído: {success}/{len(unique_listings)} enviados ao CRM")
+    print(f"[remax] Concluído: {success}/{len(unique)} enviados ao CRM")
     return success
 
 
