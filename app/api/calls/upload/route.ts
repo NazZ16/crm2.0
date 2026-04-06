@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { runCallPipeline } from '@/lib/call-pipeline'
 
@@ -113,8 +113,8 @@ export async function POST(request: Request) {
     )
   }
 
-  // Step 6: Return 202 immediately, fire-and-forget pipeline
-  void runCallPipeline(uploadRow.id, teamId, audioBuffer, sanitizedFilename, user.id)
+  // Step 6: Retornar 202 imediatamente, manter função viva com after()
+  after(runCallPipeline(uploadRow.id, teamId, audioBuffer, sanitizedFilename, user.id))
 
   return NextResponse.json(
     { upload_id: uploadRow.id, status: 'transcribing' },

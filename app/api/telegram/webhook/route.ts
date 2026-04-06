@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { runCallPipeline } from '@/lib/call-pipeline'
 
@@ -149,8 +149,8 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   await sendMessage(chatId, '⏳ A processar o áudio... Aguarda um momento.')
 
-  // 8. Process pipeline asynchronously
-  void processAudio(chatId, fileInfo, isVoice)
+  // 8. Manter a função Vercel viva após a resposta com after()
+  after(processAudio(chatId, fileInfo, isVoice))
 
   return NextResponse.json({ ok: true })
 }
