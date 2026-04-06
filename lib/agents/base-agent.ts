@@ -60,8 +60,36 @@ export abstract class BaseAgent {
     const start = text.indexOf('{')
     const end = text.lastIndexOf('}')
     if (start === -1 || end === -1) {
-      throw new Error('Nenhum JSON encontrado na resposta do agente')
+      throw new Error(`Nenhum JSON encontrado na resposta do agente. Raw: ${text.slice(0, 200)}`)
     }
-    return JSON.parse(text.slice(start, end + 1)) as T
+
+    const raw = text.slice(start, end + 1)
+
+    // Tentativa 1: parse direto
+    try {
+      return JSON.parse(raw) as T
+    } catch { /* continuar */ }
+
+    // Tentativa 2: remover vírgulas antes de } ou ]
+    try {
+      const cleaned = raw.replace(/,(\s*[}\]])/g, '$1')
+      return JSON.parse(cleaned) as T
+    } catch { /* continuar */ }
+
+    // Tentativa 3: truncar no último campo completo e fechar o objeto
+    try {
+      const lastComma = raw.lastIndexOf(',')
+      const lastQuote = raw.lastIndexOf('"')
+      const cutAt = Math.max(lastComma, lastQuote)
+      if (cutAt > start) {
+        // Fechar todos os arrays/objetos abertos
+        const partial = raw.slice(0, cutAt)
+        const opens = (partial.match(/\[/g) ?? []).length - (partial.match(/\]/g) ?? []).length
+        const closing = ']'.repeat(Math.max(0, opens)) + '}'
+        return JSON.parse(partial + closing) as T
+      }
+    } catch { /* continuar */ }
+
+    throw new Error(`JSON inválido na resposta do agente. Posição aprox. ${raw.length} chars. Início: ${raw.slice(0, 100)}`)
   }
 }
