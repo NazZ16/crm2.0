@@ -1,9 +1,76 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Key, Webhook, Bell, Search, Smartphone } from 'lucide-react'
+import { Key, Webhook, Bell, Search, Smartphone, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { ApiKeysSection } from './ApiKeysSection'
 import { ScraperConfigSection } from './ScraperConfigSection'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+
+function TelegramSetupCard({ siteUrl }: { siteUrl: string }) {
+  const isConfigured = Boolean(process.env.TELEGRAM_BOT_TOKEN)
+  const webhookUrl = `${siteUrl}/api/telegram/webhook`
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Send size={16} />
+          Telegram Bot — Importar Áudio do Plaud
+          {isConfigured ? (
+            <span className="ml-auto text-xs font-normal text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+              ✓ Configurado
+            </span>
+          ) : (
+            <span className="ml-auto text-xs font-normal text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+              Não configurado
+            </span>
+          )}
+        </CardTitle>
+        <CardDescription>
+          Envia áudios do Plaud (ou qualquer gravação) via Telegram para processar automaticamente no CRM — transcrição, extração de lead e coaching.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 text-sm text-gray-700">
+        <ol className="space-y-3 list-decimal list-inside">
+          <li>
+            <strong>Criar bot:</strong> Abre o Telegram, fala com{' '}
+            <code className="bg-gray-100 px-1 rounded">@BotFather</code> e envia{' '}
+            <code className="bg-gray-100 px-1 rounded">/newbot</code>. Copia o token.
+          </li>
+          <li>
+            <strong>Variáveis de ambiente</strong> (Vercel → Settings → Environment Variables):
+            <div className="mt-2 font-mono text-xs bg-gray-50 p-3 rounded-lg space-y-1">
+              <p><span className="text-purple-600">TELEGRAM_BOT_TOKEN</span>=<span className="text-gray-400">token do BotFather</span></p>
+              <p><span className="text-purple-600">TELEGRAM_WEBHOOK_SECRET</span>=<span className="text-gray-400">segredo aleatório (openssl rand -hex 32)</span></p>
+              <p><span className="text-purple-600">TELEGRAM_ALLOWED_CHAT_IDS</span>=<span className="text-gray-400">o teu chat ID (obtém enviando /start ao bot)</span></p>
+              <p><span className="text-purple-600">TELEGRAM_DEFAULT_TEAM_ID</span>=<span className="text-gray-400">UUID da equipa (ver URL do dashboard)</span></p>
+              <p><span className="text-purple-600">TELEGRAM_DEFAULT_USER_ID</span>=<span className="text-gray-400">UUID do utilizador no Supabase</span></p>
+            </div>
+          </li>
+          <li>
+            <strong>Registar webhook</strong> — executa este comando uma vez após o deploy:
+            <div className="mt-2 font-mono text-xs bg-gray-900 text-green-400 p-3 rounded-lg break-all">
+              {`curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \\`}
+              <br />
+              {`  -d "url=${webhookUrl}" \\`}
+              <br />
+              {`  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \\`}
+              <br />
+              {`  -d "allowed_updates=[\"message\"]"`}
+            </div>
+          </li>
+          <li>
+            <strong>Usar:</strong> Envia <code className="bg-gray-100 px-1 rounded">/start</code> ao bot para obter o teu Chat ID. Depois, exporta o áudio do Plaud e partilha-o no Telegram com o bot.
+          </li>
+        </ol>
+
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800">
+          <strong>Formatos suportados:</strong> MP3, M4A, WAV (ficheiros) e mensagens de voz OGG.{' '}
+          <strong>Tamanho máximo:</strong> 50MB. O Plaud exporta M4A por omissão — é suportado.
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -54,6 +121,8 @@ export default async function SettingsPage() {
           <PwaInstallButton />
         </CardContent>
       </Card>
+
+      <TelegramSetupCard siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? ''} />
 
       <Card>
         <CardHeader>
@@ -139,6 +208,12 @@ export default async function SettingsPage() {
             <p><span className="text-orange-600">META_ACCESS_TOKEN</span>=... <span className="text-gray-400 font-sans">(Meta Ads API)</span></p>
             <p><span className="text-orange-600">GOOGLE_ADS_DEVELOPER_TOKEN</span>=...</p>
             <p><span className="text-orange-600">TIKTOK_ACCESS_TOKEN</span>=...</p>
+            <p className="pt-2 text-gray-400 font-sans"># Telegram Bot (opcional)</p>
+            <p><span className="text-purple-600">TELEGRAM_BOT_TOKEN</span>=... <span className="text-gray-400 font-sans">(do @BotFather)</span></p>
+            <p><span className="text-purple-600">TELEGRAM_WEBHOOK_SECRET</span>=...</p>
+            <p><span className="text-purple-600">TELEGRAM_ALLOWED_CHAT_IDS</span>=...</p>
+            <p><span className="text-purple-600">TELEGRAM_DEFAULT_TEAM_ID</span>=...</p>
+            <p><span className="text-purple-600">TELEGRAM_DEFAULT_USER_ID</span>=...</p>
           </div>
         </CardContent>
       </Card>
