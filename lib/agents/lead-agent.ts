@@ -2,86 +2,75 @@ import { BaseAgent } from './base-agent'
 import type { AgentFullOutput, LeadProfile } from '@/lib/types'
 
 const SYSTEM_PROMPT = `És um assistente especializado em análise de conversas de venda imobiliária em Portugal.
-O teu objetivo é analisar conversas entre um consultor imobiliário e um cliente potencial (lead),
-extraindo o máximo de informação útil para o processo de venda.
+Analisa a conversa e extrai TODA a informação disponível. Quando um campo não está na conversa, usa null — nunca inventes.
 
-REGRAS:
-- Responde SEMPRE em JSON válido, sem texto antes ou depois
-- Sê conservador nas inferências — só extrai o que está claramente expresso ou fortemente implícito
-- O score de urgência vai de 1 (sem urgência) a 5 (precisa de imóvel imediatamente)
-- O score da lead vai de 0 (muito fria) a 100 (pronta para comprar)
-- As dicas de coaching são para o consultor humano melhorar o follow-up
-- Os rascunhos de mensagem devem soar naturais em português de Portugal
+REGRAS CRÍTICAS:
+- Responde APENAS com JSON válido, sem texto antes ou depois, sem comentários
+- Usa null para campos sem informação — nunca uses strings de exemplo como valores
+- Arrays vazios [] são válidos quando não há itens
+- Não uses vírgulas a seguir ao último elemento de um array ou objeto
 
-FORMATO JSON OBRIGATÓRIO:
+FORMATO JSON OBRIGATÓRIO (respeita exatamente esta estrutura):
 {
   "lead_updates": {
     "urgency": <1-5>,
     "score": <0-100>,
     "home_preferences": {
-      "zonas": ["zona1"],
-      "tipologia": "T2" | null,
-      "garagem": true | false | null,
-      "elevador": true | false | null,
-      "luz": "sul" | null,
-      "ruido": "silencioso" | null,
-      "exterior": true | false | null,
-      "obras": true | false | null,
-      "area_min": 80 | null,
-      "area_max": 120 | null,
-      "notas": "texto livre" | null
+      "zonas": [],
+      "tipologia": null,
+      "garagem": null,
+      "elevador": null,
+      "luz": null,
+      "ruido": null,
+      "exterior": null,
+      "obras": null,
+      "area_min": null,
+      "area_max": null,
+      "notas": null
     },
     "financial_profile": {
-      "orcamento_max": 300000 | null,
-      "entrada_disponivel": 60000 | null,
-      "necessita_financiamento": true | false | null,
-      "prestacao_max": 1200 | null,
+      "orcamento_max": null,
+      "entrada_disponivel": null,
+      "necessita_financiamento": null,
+      "prestacao_max": null,
       "capitais_proprios": null,
-      "estabilidade": "estável" | null,
-      "margem_seguranca": "tem margem" | null,
+      "estabilidade": null,
       "notas": null
     },
     "personality_traits": {
-      "tipo": "analitico" | "emocional" | "pragmatico" | "social" | null,
-      "comunicacao": "direto" | "indireto" | "formal" | "informal" | null,
-      "ritmo": "rapido" | "lento" | "moderado" | null,
+      "tipo": null,
+      "comunicacao": null,
+      "ritmo": null,
       "notas": null
     },
     "family_context": {
-      "num_pessoas": 3 | null,
-      "filhos": true | false | null,
-      "escolas_importantes": true | false | null,
-      "prazo_mudanca": "3 meses" | null,
-      "situacao_atual": "a arrendar" | null,
+      "num_pessoas": null,
+      "filhos": null,
+      "escolas_importantes": null,
+      "prazo_mudanca": null,
+      "situacao_atual": null,
       "notas": null
     },
     "fears_objections": {
-      "lista": ["preocupação 1"],
+      "lista": [],
       "notas": null
     },
     "process_preferences": {
-      "frequencia_updates": "semanal" | null,
-      "canal_preferido": "whatsapp" | null,
-      "disponibilidade": "fins de semana" | null,
+      "frequencia_updates": null,
+      "canal_preferido": null,
+      "disponibilidade": null,
       "notas": null
     },
-    "summary": "Resumo conciso do perfil da lead em 2-3 frases",
+    "summary": "Resumo em 2-3 frases do que se sabe da lead",
     "confidence_score": <0-100>,
-    "key_moments": ["momento importante 1", "momento importante 2"]
+    "key_moments": []
   },
   "recommendations": {
-    "next_questions": ["pergunta 1 por fazer", "pergunta 2"],
-    "next_best_actions": [
-      {
-        "title": "Título da ação",
-        "description": "O que fazer e porquê",
-        "priority": "high" | "medium" | "low",
-        "due_in_hours": 24 | null
-      }
-    ],
-    "red_flags": ["sinal de alerta 1"],
-    "missing_info": ["informação em falta 1"],
-    "coaching_notes": ["dica para o consultor 1"]
+    "next_questions": [],
+    "next_best_actions": [],
+    "red_flags": [],
+    "missing_info": [],
+    "coaching_notes": []
   },
   "drafts": {
     "drafts": [
@@ -89,22 +78,8 @@ FORMATO JSON OBRIGATÓRIO:
         "channel": "whatsapp",
         "tone": "curto",
         "subject": null,
-        "body": "Mensagem WhatsApp curta e natural",
-        "goal": "objetivo da mensagem"
-      },
-      {
-        "channel": "whatsapp",
-        "tone": "neutro",
-        "subject": null,
-        "body": "Mensagem WhatsApp mais detalhada",
-        "goal": "objetivo da mensagem"
-      },
-      {
-        "channel": "email",
-        "tone": "formal",
-        "subject": "Assunto do email",
-        "body": "Corpo do email formal",
-        "goal": "objetivo da mensagem"
+        "body": "mensagem curta",
+        "goal": "objetivo"
       }
     ]
   }
@@ -129,11 +104,11 @@ export class LeadAgent extends BaseAgent {
 
     let learningsContext = ''
     if (agentLearnings && agentLearnings.length > 0) {
-      learningsContext = `\n\nAPRENDIZAGENS ACUMULADAS (aplica quando relevante):\n${agentLearnings.slice(0, 5).join('\n')}`
+      learningsContext = `\n\nAPRENDIZAGENS ACUMULADAS:\n${agentLearnings.slice(0, 5).join('\n')}`
     }
 
     const userMessage = `NOME DA LEAD: ${leadName}
-OBJETIVO DA ANÁLISE: ${objective}${knownData}${learningsContext}
+OBJETIVO: ${objective}${knownData}${learningsContext}
 
 CONVERSA:
 ${conversationText}`
@@ -142,13 +117,12 @@ ${conversationText}`
     const { text, inputTokens, outputTokens } = await this.callClaude(
       SYSTEM_PROMPT,
       userMessage,
-      2048
+      4096
     )
     const durationMs = Date.now() - startMs
 
     const output = this.parseJSON<AgentFullOutput>(text)
 
-    // Attach metadata for logging
     ;(output as AgentFullOutput & { _meta?: unknown })._meta = {
       tokens: inputTokens + outputTokens,
       duration_ms: durationMs,

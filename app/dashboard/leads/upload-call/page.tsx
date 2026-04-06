@@ -10,11 +10,22 @@ import { Upload, Mic, CheckCircle2, AlertCircle, Loader2, ArrowLeft } from 'luci
 
 type UploadStatus = 'idle' | 'uploading' | 'transcribing' | 'analyzing' | 'done' | 'failed'
 
+interface ScriptAnalise {
+  abertura: string
+  descoberta: string
+  objecoes: string
+  fecho: string
+  perguntas_sugeridas: string[]
+  frases_a_evitar: string[]
+  nota_script: number
+}
+
 interface CoachFeedback {
+  sentimento_lead: string
   pontos_positivos: string[]
   a_melhorar: string[]
   proxima_chamada: string
-  sentimento_lead: string
+  script_analise?: ScriptAnalise
 }
 
 interface UploadStatusResponse {
@@ -433,6 +444,58 @@ export default function UploadCallPage() {
                   <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
                     <p className="text-xs font-semibold text-blue-600 mb-1">Próxima chamada</p>
                     <p className="text-sm text-gray-700">{feedback.proxima_chamada}</p>
+                  </div>
+                )}
+
+                {feedback.script_analise && (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-700">Análise do script</p>
+                      <span className="text-xs font-bold text-white bg-gray-700 rounded-full px-2 py-0.5">
+                        {feedback.script_analise.nota_script}/10
+                      </span>
+                    </div>
+                    <div className="p-3 space-y-3 text-sm">
+                      {[
+                        { label: 'Abertura', value: feedback.script_analise.abertura },
+                        { label: 'Descoberta', value: feedback.script_analise.descoberta },
+                        { label: 'Objeções', value: feedback.script_analise.objecoes },
+                        { label: 'Fecho', value: feedback.script_analise.fecho },
+                      ].map(({ label, value }) => value && (
+                        <div key={label}>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-0.5">{label}</p>
+                          <p className="text-gray-700">{value}</p>
+                        </div>
+                      ))}
+
+                      {feedback.script_analise.perguntas_sugeridas?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Perguntas que faltaram</p>
+                          <ul className="space-y-1">
+                            {feedback.script_analise.perguntas_sugeridas.map((q, i) => (
+                              <li key={i} className="flex items-start gap-2 text-gray-700">
+                                <span className="text-blue-400 flex-shrink-0">→</span>
+                                {q}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {feedback.script_analise.frases_a_evitar?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">A evitar</p>
+                          <ul className="space-y-1">
+                            {feedback.script_analise.frases_a_evitar.map((f, i) => (
+                              <li key={i} className="flex items-start gap-2 text-gray-700">
+                                <span className="text-red-400 flex-shrink-0">✕</span>
+                                {f}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
