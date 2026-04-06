@@ -39,19 +39,22 @@ export default async function DashboardLayout({
         />
       </div>
 
-      <main className="flex-1 overflow-y-auto pb-24 md:pb-0">
-        <div className="flex justify-end px-4 pt-3 pb-0">
-          <NotificationBell />
-        </div>
-        {children}
-      </main>
+      {/* Coluna direita: conteúdo + barra mobile em fluxo */}
+      <div className="flex flex-col flex-1 min-h-0">
+        <main className="flex-1 overflow-y-auto">
+          <div className="flex justify-end px-4 pt-3 pb-0">
+            <NotificationBell />
+          </div>
+          {children}
+        </main>
 
-      {/* Bottom nav — só mobile */}
-      <MobileNav
-        userEmail={userEmail}
-        userName={userName}
-        teamName={teamName}
-      />
+        {/* Bottom nav dentro do fluxo — não sobrepõe o conteúdo */}
+        <MobileNav
+          userEmail={userEmail}
+          userName={userName}
+          teamName={teamName}
+        />
+      </div>
     </div>
   )
 }
