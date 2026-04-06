@@ -1,16 +1,30 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist } from 'next/font/google'
 import './globals.css'
 import { Toaster } from '@/components/ui/sonner'
+import { PwaRegister } from '@/components/PwaRegister'
 
 const geist = Geist({
   variable: '--font-geist',
   subsets: ['latin'],
 })
 
+export const viewport: Viewport = {
+  themeColor: '#1a56db',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+}
+
 export const metadata: Metadata = {
   title: 'CRM Imobiliário 2.0',
   description: 'CRM inteligente para consultores imobiliários',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'CRM 2.0',
+  },
 }
 
 export default function RootLayout({
@@ -20,7 +34,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt">
+      <head>
+        <link rel="apple-touch-icon" href="/icons/icon.svg" />
+      </head>
       <body className={`${geist.variable} antialiased`} suppressHydrationWarning>
+        <PwaRegister />
         {children}
         <Toaster richColors position="top-right" />
       </body>
