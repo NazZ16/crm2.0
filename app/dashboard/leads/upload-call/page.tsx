@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -52,6 +52,7 @@ function isAllowedFile(file: File): boolean {
 
 export default function UploadCallPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const pollCountRef = useRef(0)
@@ -201,6 +202,27 @@ export default function UploadCallPage() {
     pollCountRef.current = 0
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [stopPolling])
+
+  // Auto-arrancar polling quando redirecionado do share target (?id=...)
+  useEffect(() => {
+    const sharedId = searchParams.get('id')
+    if (sharedId && status === 'idle') {
+      setUploadId(sharedId)
+      setStatus('transcribing')
+      startPolling(sharedId)
+    }
+    const shareError = searchParams.get('error')
+    if (shareError) {
+      const msgs: Record<string, string> = {
+        tipo_invalido: 'Tipo de ficheiro não suportado. Use mp3, m4a ou wav.',
+        ficheiro_grande: `Ficheiro demasiado grande. Máximo ${MAX_SIZE_MB}MB.`,
+        upload_falhou: 'Erro ao fazer upload do ficheiro partilhado.',
+        registo_falhou: 'Erro interno. Tente novamente.',
+      }
+      setFileError(msgs[shareError] ?? 'Erro ao processar o ficheiro partilhado.')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const isProcessing = ['uploading', 'transcribing', 'analyzing'].includes(status)
   const isDisabled = !selectedFile || isProcessing

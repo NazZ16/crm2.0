@@ -1,12 +1,16 @@
+// app/api/share-target/route.ts
+// Recebe áudio partilhado via Web Share Target API (PWA).
+// Faz upload para Supabase Storage, cria call_upload e redireciona para a página de progresso.
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { runCallPipeline } from '@/lib/call-pipeline'
 
-export const maxDuration = 120
+export const maxDuration = 30
 
-const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/wave', 'audio/m4a']
-const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav']
-const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
+const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/wave', 'audio/m4a', 'audio/ogg']
+const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav', '.ogg']
+const MAX_FILE_SIZE = 50 * 1024 * 1024
 
 function sanitizeFilename(name: string): string {
   return name
@@ -21,15 +25,15 @@ function hasAllowedExtension(filename: string): boolean {
   return ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
+const FALLBACK_URL = '/dashboard/leads/upload-call'
+
 export async function POST(request: Request) {
   const supabase = await createClient()
 
-  // Step 1: Auth
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // Auth
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
-    return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
   const { data: member } = await supabase
@@ -39,43 +43,37 @@ export async function POST(request: Request) {
     .single()
 
   if (!member || member.role === 'viewer') {
-    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    return NextResponse.redirect(new URL(FALLBACK_URL, request.url))
   }
 
   const teamId: string = member.team_id
 
-  // Step 2: Parse multipart form
+  // Parse multipart (campo "audio" configurado no manifest share_target)
   let formData: FormData
   try {
     formData = await request.formData()
   } catch {
-    return NextResponse.json({ error: 'Erro ao ler formulário multipart' }, { status: 400 })
+    return NextResponse.redirect(new URL(FALLBACK_URL, request.url))
   }
 
   const audioFile = formData.get('audio')
   if (!audioFile || !(audioFile instanceof File)) {
-    return NextResponse.json({ error: 'Campo "audio" obrigatório' }, { status: 400 })
+    return NextResponse.redirect(new URL(FALLBACK_URL, request.url))
   }
 
-  // Step 3: Validate file
+  // Validar
   if (!hasAllowedExtension(audioFile.name) && !ALLOWED_MIME_TYPES.includes(audioFile.type)) {
-    return NextResponse.json(
-      { error: 'Tipo de ficheiro não suportado. Use mp3, m4a ou wav.' },
-      { status: 400 }
-    )
+    return NextResponse.redirect(new URL(FALLBACK_URL + '?error=tipo_invalido', request.url))
   }
 
   if (audioFile.size > MAX_FILE_SIZE) {
-    return NextResponse.json(
-      { error: 'Ficheiro demasiado grande. Máximo 50MB.' },
-      { status: 400 }
-    )
+    return NextResponse.redirect(new URL(FALLBACK_URL + '?error=ficheiro_grande', request.url))
   }
 
-  const sanitizedFilename = sanitizeFilename(audioFile.name)
+  const sanitizedFilename = sanitizeFilename(audioFile.name || 'audio.mp3')
   const storagePath = `${teamId}/calls/${Date.now()}-${sanitizedFilename}`
 
-  // Step 4: Upload to Supabase Storage
+  // Upload para Supabase Storage
   const arrayBuffer = await audioFile.arrayBuffer()
   const audioBuffer = Buffer.from(arrayBuffer)
 
@@ -87,13 +85,10 @@ export async function POST(request: Request) {
     })
 
   if (storageError) {
-    return NextResponse.json(
-      { error: `Erro ao guardar ficheiro: ${storageError.message}` },
-      { status: 500 }
-    )
+    return NextResponse.redirect(new URL(FALLBACK_URL + '?error=upload_falhou', request.url))
   }
 
-  // Step 5: Create call_uploads row
+  // Criar registo call_uploads
   const { data: uploadRow, error: insertError } = await supabase
     .from('call_uploads')
     .insert({
@@ -105,19 +100,15 @@ export async function POST(request: Request) {
     .single()
 
   if (insertError || !uploadRow) {
-    // Clean up orphaned storage file before returning error
     void supabase.storage.from('call-audio').remove([storagePath])
-    return NextResponse.json(
-      { error: `Erro ao criar registo: ${insertError?.message}` },
-      { status: 500 }
-    )
+    return NextResponse.redirect(new URL(FALLBACK_URL + '?error=registo_falhou', request.url))
   }
 
-  // Step 6: Return 202 immediately, fire-and-forget pipeline
+  // Disparar pipeline em background (mesmo que /api/calls/upload)
   void runCallPipeline(uploadRow.id, teamId, audioBuffer, sanitizedFilename, user.id)
 
-  return NextResponse.json(
-    { upload_id: uploadRow.id, status: 'transcribing' },
-    { status: 202 }
+  // Redirecionar para a página de progresso
+  return NextResponse.redirect(
+    new URL(`/dashboard/leads/upload-call?id=${uploadRow.id}`, request.url)
   )
 }

@@ -125,15 +125,17 @@ def extract_listings(page, zone: str) -> list[dict]:
     """Extrai todos os listings da página actual."""
     listings = []
 
-    # Seletores por ordem de preferência — o Remax PT usa links /pt/imovel/ ou /imovel/
-    cards = page.query_selector_all('a[href*="/imovel/"]')
+    # Filtrar em Python porque CSS attr-selector [href*=...] falha com hrefs absolutos
+    all_anchors = page.query_selector_all("a[href]")
+    cards = [
+        a for a in all_anchors
+        if "/imoveis/" in (a.get_attribute("href") or "")
+    ]
 
     if not cards:
-        # Debug
         html = page.content()
         print(f"[remax] Sem cards. HTML: {len(html)} chars, URL: {page.url}")
-        all_links = page.query_selector_all("a[href]")
-        sample = [a.get_attribute("href") for a in all_links[:20] if a.get_attribute("href")]
+        sample = [a.get_attribute("href") for a in all_anchors[:20] if a.get_attribute("href")]
         print(f"[remax] Sample links: {sample}")
         return listings
 
@@ -142,7 +144,8 @@ def extract_listings(page, zone: str) -> list[dict]:
     for card in cards[:50]:
         try:
             href = card.get_attribute("href") or ""
-            if "/imovel/" not in href:
+            # já filtrado no selector, mas garantir que tem path de imóvel
+            if "/imoveis/" not in href and "/imovel/" not in href:
                 continue
             source_url = href if href.startswith("http") else f"https://www.remax.pt{href}"
 
@@ -206,11 +209,16 @@ def scrape_zone(page, zone: str) -> list[dict]:
         print(f"[remax] → {url}")
         try:
             page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Aguardar renderização JS
-            page.wait_for_timeout(3000)
+            # Aguardar renderização JS (React/Next.js precisa de tempo)
+            page.wait_for_timeout(4000)
+            # Tentar aguardar por um card visível (max 10s)
+            try:
+                page.wait_for_selector('a[data-id="listing-card-link"]', timeout=10000)
+            except PlaywrightTimeout:
+                pass
             # Scroll para carregar lazy content
             page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(1500)
 
             listings = extract_listings(page, zone)
             all_listings.extend(listings)

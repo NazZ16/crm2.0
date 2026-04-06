@@ -1,0 +1,40 @@
+{
+  "name": "CRM Imobiliário 2.0",
+  "short_name": "CRM 2.0",
+  "description": "CRM inteligente para consultores imobiliários",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#1a56db",
+  "background_color": "#ffffff",
+  "lang": "pt-PT",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [],
+  "share_target": {
+    "action": "/api/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "audio",
+          "accept": ["audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/ogg", "audio/*", ".mp3", ".m4a", ".wav", ".ogg"]
+        }
+      ]
+    }
+  }
+}
