@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { runCallPipeline } from '@/lib/call-pipeline'
 
@@ -144,6 +144,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: true })
   }
 
+  await sendMessage(chatId, '⏳ A processar o áudio... Aguarda um momento.')
+
+  // 8. Manter a função Vercel viva após a resposta com after()
+  after(processAudio(chatId, fileInfo, isVoice))
+
+  return NextResponse.json({ ok: true })
+}
+
+async function processAudio(
+  chatId: number,
+  fileInfo: TelegramFileInfo,
+  isVoice: boolean
+): Promise<void> {
   const supabase = createServiceClient()
 
   // 8. Download file from Telegram (synchronous — before returning to Telegram)
