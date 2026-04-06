@@ -103,7 +103,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   // 3. Validate configuration
   if (!DEFAULT_TEAM_ID || !DEFAULT_USER_ID) {
-    await sendMessage(chatId, '⚠️ Bot mal configurado. Contacta o administrador.')
+    await sendMessage(chatId, '⚠️ Bot mal configurado: TELEGRAM_DEFAULT_TEAM_ID ou TELEGRAM_DEFAULT_USER_ID em falta.')
     return NextResponse.json({ ok: true })
   }
 
@@ -128,14 +128,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   const fileInfo = message.voice ?? message.audio ?? message.document
 
   if (!fileInfo) {
-    await sendMessage(
-      chatId,
-      '⚠️ Envia um ficheiro de áudio (MP3, M4A, WAV) ou uma mensagem de voz.'
-    )
+    await sendMessage(chatId, '⚠️ Envia um ficheiro de áudio (MP3, M4A, WAV) ou uma mensagem de voz.')
     return NextResponse.json({ ok: true })
   }
 
-  // 6. Check for document MIME type (must be audio)
+  // 6. Document must be audio MIME
   if (message.document && fileInfo.mime_type && !fileInfo.mime_type.startsWith('audio/')) {
     await sendMessage(chatId, '⚠️ Envia apenas ficheiros de áudio (MP3, M4A, WAV, OGG).')
     return NextResponse.json({ ok: true })
@@ -147,64 +144,68 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: true })
   }
 
-  await sendMessage(chatId, '⏳ A processar o áudio... Aguarda um momento.')
-
-  // 8. Process pipeline asynchronously
-  void processAudio(chatId, fileInfo, isVoice)
-
-  return NextResponse.json({ ok: true })
-}
-
-async function processAudio(
-  chatId: number,
-  fileInfo: TelegramFileInfo,
-  isVoice: boolean
-): Promise<void> {
   const supabase = createServiceClient()
 
+  // 8. Download file from Telegram (synchronous — before returning to Telegram)
+  let audioBuffer: Buffer
+  let filename: string
+  let mimeType: string
+  let storagePath: string
+
   try {
-    // Download audio from Telegram
     const fileUrl = await getFileDownloadUrl(fileInfo.file_id)
     const fileRes = await fetch(fileUrl)
     if (!fileRes.ok) throw new Error('Falha ao descarregar ficheiro do Telegram')
 
     const arrayBuffer = await fileRes.arrayBuffer()
-    const audioBuffer = Buffer.from(arrayBuffer)
-
-    const filename = resolveAudioFilename(fileInfo, isVoice)
-    const mimeType = resolveMimeType(fileInfo, isVoice)
-    const storagePath = `${DEFAULT_TEAM_ID}/calls/${Date.now()}-${filename}`
-
-    // Upload to Supabase Storage
-    const { error: storageError } = await supabase.storage
-      .from('call-audio')
-      .upload(storagePath, audioBuffer, { contentType: mimeType, upsert: false })
-
-    if (storageError) throw new Error(`Erro de armazenamento: ${storageError.message}`)
-
-    // Create call_uploads record
-    const { data: uploadRow, error: insertError } = await supabase
-      .from('call_uploads')
-      .insert({ team_id: DEFAULT_TEAM_ID, storage_path: storagePath, status: 'transcribing' })
-      .select('id')
-      .single()
-
-    if (insertError || !uploadRow) {
-      void supabase.storage.from('call-audio').remove([storagePath])
-      throw new Error(`Erro ao criar registo: ${insertError?.message ?? 'desconhecido'}`)
-    }
-
-    // Run pipeline and notify when done
-    await runCallPipeline(uploadRow.id, DEFAULT_TEAM_ID, audioBuffer, filename, DEFAULT_USER_ID)
-
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
-    await sendMessage(
-      chatId,
-      `✅ <b>Áudio processado com sucesso!</b>\n\n` +
-        `Ver lead e transcrição:\n${siteUrl}/dashboard/leads/upload-call?id=${uploadRow.id}`
-    )
+    audioBuffer = Buffer.from(arrayBuffer)
+    filename = resolveAudioFilename(fileInfo, isVoice)
+    mimeType = resolveMimeType(fileInfo, isVoice)
+    storagePath = `${DEFAULT_TEAM_ID}/calls/${Date.now()}-${filename}`
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await sendMessage(chatId, `❌ Erro ao processar: ${msg}`)
+    await sendMessage(chatId, `❌ Erro ao descarregar áudio: ${msg}`)
+    return NextResponse.json({ ok: true })
   }
+
+  // 9. Upload to Supabase Storage (synchronous — before returning)
+  const { error: storageError } = await supabase.storage
+    .from('call-audio')
+    .upload(storagePath, audioBuffer, { contentType: mimeType, upsert: false })
+
+  if (storageError) {
+    await sendMessage(chatId, `❌ Erro ao guardar ficheiro: ${storageError.message}`)
+    return NextResponse.json({ ok: true })
+  }
+
+  // 10. Create call_uploads record (synchronous — before returning)
+  const { data: uploadRow, error: insertError } = await supabase
+    .from('call_uploads')
+    .insert({ team_id: DEFAULT_TEAM_ID, storage_path: storagePath, status: 'transcribing' })
+    .select('id')
+    .single()
+
+  if (insertError || !uploadRow) {
+    void supabase.storage.from('call-audio').remove([storagePath])
+    await sendMessage(chatId, `❌ Erro ao criar registo: ${insertError?.message ?? 'desconhecido'}`)
+    return NextResponse.json({ ok: true })
+  }
+
+  await sendMessage(chatId, '⏳ Áudio recebido! A transcrever e analisar...')
+
+  // 11. Fire-and-forget pipeline (transcrição + IA) — igual ao /api/calls/upload
+  const uploadId = uploadRow.id
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? ''
+
+  void runCallPipeline(uploadId, DEFAULT_TEAM_ID, audioBuffer, filename, DEFAULT_USER_ID).then(() =>
+    sendMessage(
+      chatId,
+      `✅ <b>Processado com sucesso!</b>\n\nVer lead:\n${siteUrl}/dashboard/leads/upload-call?id=${uploadId}`
+    )
+  ).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    return sendMessage(chatId, `❌ Erro na transcrição/análise: ${msg}`)
+  })
+
+  return NextResponse.json({ ok: true })
 }
