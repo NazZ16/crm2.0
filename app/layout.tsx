@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'CRM 2.0',
   },
 }
@@ -35,7 +35,7 @@ export default function RootLayout({
   return (
     <html lang="pt">
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon.svg" />
+        <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className={`${geist.variable} antialiased`} suppressHydrationWarning>
         <PwaRegister />

@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { MobileNav } from '@/components/layout/MobileNav'
 import { NotificationBell } from '@/components/layout/NotificationBell'
 
 export default async function DashboardLayout({
@@ -29,17 +30,28 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      <Sidebar
-        userEmail={userEmail}
-        userName={userName}
-        teamName={teamName}
-      />
-      <main className="flex-1 overflow-y-auto">
+      {/* Sidebar — só desktop */}
+      <div className="hidden md:flex">
+        <Sidebar
+          userEmail={userEmail}
+          userName={userName}
+          teamName={teamName}
+        />
+      </div>
+
+      <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
         <div className="flex justify-end px-4 pt-3 pb-0">
           <NotificationBell />
         </div>
         {children}
       </main>
+
+      {/* Bottom nav — só mobile */}
+      <MobileNav
+        userEmail={userEmail}
+        userName={userName}
+        teamName={teamName}
+      />
     </div>
   )
 }
