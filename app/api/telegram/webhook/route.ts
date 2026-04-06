@@ -2,7 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { runCallPipeline } from '@/lib/call-pipeline'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN ?? ''
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET ?? ''

@@ -2,7 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { runCallPipeline } from '@/lib/call-pipeline'
 
-export const maxDuration = 120
+export const maxDuration = 300
 
 const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/wave', 'audio/m4a']
 const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav']

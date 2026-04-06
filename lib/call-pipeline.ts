@@ -30,10 +30,20 @@ export async function runCallPipeline(
       })
       .eq('id', uploadId)
 
+    // Para chamadas longas (>10 min ≈ >8000 chars), usar apenas início + fim
+    // O início tem a apresentação/dados da lead; o fim tem a conclusão/próximos passos
+    const MAX_CHARS = 12000
+    const analysisText =
+      transcriptText.length > MAX_CHARS
+        ? transcriptText.slice(0, MAX_CHARS * 0.7) +
+          '\n\n[...transcrição resumida...]\n\n' +
+          transcriptText.slice(-MAX_CHARS * 0.3)
+        : transcriptText
+
     // Passo b: Agente de lead — extrair dados
     const agentOutput = await leadAgent.analyze({
       leadName: 'Lead (chamada)',
-      conversationText: transcriptText,
+      conversationText: analysisText,
       objective: 'Extrair número de telefone (campo crítico para deduplicação), nome completo, score e urgência desta chamada.',
     })
 
@@ -114,7 +124,7 @@ export async function runCallPipeline(
 
     // Passo e: Coach agent
     const coachFeedback = await callCoachAgent.analyze(
-      transcriptText,
+      analysisText,
       'Lead (chamada)',
       summaries
     )
@@ -131,7 +141,7 @@ export async function runCallPipeline(
       lead_id: leadId,
       team_id: teamId,
       type: 'call',
-      raw_text: transcriptText,
+      raw_text: transcriptText, // guardar transcrição completa na BD
       summary: interactionSummary,
       occurred_at: new Date().toISOString(),
     })
