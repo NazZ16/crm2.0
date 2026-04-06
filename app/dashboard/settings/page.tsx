@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Key, Webhook, Bell, Search } from 'lucide-react'
+import { Key, Webhook, Bell, Search, Smartphone } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { ApiKeysSection } from './ApiKeysSection'
 import { ScraperConfigSection } from './ScraperConfigSection'
+import { PwaInstallButton } from '@/components/PwaInstallButton'
 
 export default async function SettingsPage() {
   const supabase = await createClient()
@@ -38,6 +39,21 @@ export default async function SettingsPage() {
         <h1 className="text-2xl font-bold text-gray-900">Definições</h1>
         <p className="text-sm text-gray-500 mt-0.5">Configuração do CRM, agentes e integrações</p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Smartphone size={16} />
+            Aplicação Móvel
+          </CardTitle>
+          <CardDescription>
+            Instala o CRM como app no telemóvel para acesso rápido e para poder partilhar ficheiros de áudio diretamente.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PwaInstallButton />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

@@ -39,7 +39,7 @@ export default async function DashboardLayout({
         />
       </div>
 
-      <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+      <main className="flex-1 overflow-y-auto pb-24 md:pb-0">
         <div className="flex justify-end px-4 pt-3 pb-0">
           <NotificationBell />
         </div>
