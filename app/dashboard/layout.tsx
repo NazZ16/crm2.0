@@ -29,7 +29,7 @@ export default async function DashboardLayout({
   const userEmail = user.email
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-full overflow-hidden bg-gray-50">
       {/* Sidebar — só desktop */}
       <div className="hidden md:flex">
         <Sidebar

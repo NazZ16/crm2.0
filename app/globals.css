@@ -120,12 +120,12 @@
   * {
     @apply border-border outline-ring/50;
   }
-  html,
+  html {
+    height: 100dvh;
+  }
   body {
     height: 100%;
     overflow: hidden;
-  }
-  body {
     @apply bg-background text-foreground;
   }
 }
