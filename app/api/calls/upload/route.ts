@@ -79,6 +79,9 @@ export async function POST(request: Request) {
   const arrayBuffer = await audioFile.arrayBuffer()
   const audioBuffer = Buffer.from(arrayBuffer)
 
+  // Criar bucket se não existir (primeira execução)
+  await supabase.storage.createBucket('call-audio', { public: false, fileSizeLimit: 52428800 }).catch(() => {})
+
   const { error: storageError } = await supabase.storage
     .from('call-audio')
     .upload(storagePath, audioBuffer, {

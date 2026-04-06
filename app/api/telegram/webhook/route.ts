@@ -170,6 +170,9 @@ async function processAudio(
     const mimeType = resolveMimeType(fileInfo, isVoice)
     const storagePath = `${DEFAULT_TEAM_ID}/calls/${Date.now()}-${filename}`
 
+    // Criar bucket se não existir (primeira execução)
+    await supabase.storage.createBucket('call-audio', { public: false, fileSizeLimit: 52428800 }).catch(() => {})
+
     const { error: storageError } = await supabase.storage
       .from('call-audio')
       .upload(storagePath, audioBuffer, { contentType: mimeType, upsert: false })
