@@ -35,8 +35,8 @@ export function MobileNav({ userEmail, userName, teamName }: MobileNavProps) {
 
   return (
     <>
-      {/* Bottom tab bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900 border-t border-gray-700 flex md:hidden">
+      {/* Bottom tab bar — faz parte do fluxo, não é fixed */}
+      <nav className="bg-gray-900 border-t border-gray-700 flex md:hidden">
         {BOTTOM_NAV.map(({ href, label, icon: Icon, exact }) => (
           <Link
             key={href}
