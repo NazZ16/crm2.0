@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
@@ -98,7 +98,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return NextResponse.json(data)
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -108,8 +108,28 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   if (!member || !lead) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
   if (member.role !== 'admin') return NextResponse.json({ error: 'Apenas admins podem eliminar leads' }, { status: 403 })
 
-  const { error } = await supabase.from('leads').delete().eq('id', id)
+  // Cascata manual com service client
+  const svc = createServiceClient()
+
+  // Obter paths de áudio antes de apagar os registos
+  const { data: uploads } = await svc
+    .from('call_uploads')
+    .select('storage_path')
+    .eq('lead_id', id)
+
+  await svc.from('interactions').delete().eq('lead_id', id)
+  await svc.from('tasks').delete().eq('lead_id', id)
+  await svc.from('lead_profiles').delete().eq('lead_id', id)
+  await svc.from('agent_extractions').delete().eq('lead_id', id)
+  await svc.from('call_uploads').delete().eq('lead_id', id)
+
+  // Limpar ficheiros de áudio do storage
+  if (uploads?.length) {
+    await svc.storage.from('call-audio').remove(uploads.map((u) => u.storage_path))
+  }
+
+  const { error } = await svc.from('leads').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ ok: true })
 }

@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
   MessageSquarePlus, Bot, ChevronDown, Copy, Check,
-  AlertTriangle, Lightbulb, MessageCircle, User, Loader2,
+  AlertTriangle, Lightbulb, MessageCircle, User, Loader2, Trash2,
 } from 'lucide-react'
 import { LEAD_STATUS_LABELS, LEAD_PIPELINE_ORDER, CONVERSATION_OBJECTIVES, TASK_PRIORITY_LABELS } from '@/lib/types'
 import type { LeadStatus, AgentFullOutput } from '@/lib/types'
@@ -21,12 +21,15 @@ interface Props {
   leadName: string
   currentStatus: LeadStatus
   canEdit: boolean
+  isAdmin: boolean
 }
 
-export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit }: Props) {
+export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit, isAdmin }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<LeadStatus>(currentStatus)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   // Conversation modal state
   const [modalOpen, setModalOpen] = useState(false)
@@ -103,6 +106,27 @@ export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit }: P
     })
   }
 
+  async function handleDelete() {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('Lead eliminada')
+        router.push('/dashboard/leads')
+        router.refresh()
+      } else {
+        const data = await res.json()
+        toast.error(data.error ?? 'Erro ao eliminar')
+        setDeleteConfirm(false)
+      }
+    } catch {
+      toast.error('Erro de ligação')
+      setDeleteConfirm(false)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   function handleCloseModal() {
     setModalOpen(false)
     setConversationText('')
@@ -132,6 +156,43 @@ export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit }: P
           <MessageSquarePlus size={16} />
           Analisar Conversa
         </Button>
+
+        {isAdmin && !deleteConfirm && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+            onClick={() => setDeleteConfirm(true)}
+            title="Eliminar lead"
+          >
+            <Trash2 size={16} />
+          </Button>
+        )}
+
+        {isAdmin && deleteConfirm && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
+            <span className="text-sm text-red-700">Eliminar <strong>{leadName}</strong>?</span>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-xs gap-1"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+              Confirmar
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => setDeleteConfirm(false)}
+              disabled={deleting}
+            >
+              Cancelar
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Conversation Analysis Modal */}

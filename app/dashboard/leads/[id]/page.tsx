@@ -142,6 +142,7 @@ export default async function LeadDetailPage({ params }: Props) {
             leadName={lead.full_name}
             currentStatus={lead.status as LeadStatus}
             canEdit={member.role !== 'viewer'}
+            isAdmin={member.role === 'admin'}
           />
           {member.role !== 'viewer' && !existingInvestor && (
             <PromoteToInvestorButton
