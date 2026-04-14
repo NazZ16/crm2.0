@@ -5,6 +5,7 @@ import { transcribeAudio } from '@/lib/whisper'
 import { leadAgent } from '@/lib/agents/lead-agent'
 import { callCoachAgent } from '@/lib/agents/call-coach-agent'
 import { createServiceClient } from '@/lib/supabase/server'
+import { normalizePhone } from '@/lib/phone'
 
 export async function runCallPipeline(
   uploadId: string,
@@ -54,7 +55,7 @@ export async function runCallPipeline(
       summary?: string
     }
 
-    const extractedPhone = leadUpdates.phone ?? null
+    const extractedPhone = normalizePhone(leadUpdates.phone)
     const extractedScore = leadUpdates.score ?? null
     const extractedUrgency = leadUpdates.urgency ?? null
     const extractedSummary = agentOutput.lead_updates.summary ?? null

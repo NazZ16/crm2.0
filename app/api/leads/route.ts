@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { normalizePhone } from '@/lib/phone'
 
 const createLeadSchema = z.object({
   full_name: z.string().min(1).max(200),
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
     .from('leads')
     .insert({
       ...parsed.data,
+      phone: normalizePhone(parsed.data.phone),
       team_id: member.team_id,
       assigned_to: user.id,
     })
