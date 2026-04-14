@@ -4,6 +4,13 @@ import { normalizePhone } from '@/lib/phone'
 
 export const maxDuration = 60
 
+// Issue 4 — CSV injection: prefixar campos que começam com caracteres perigosos
+function sanitizeCsvField(val: string | null | undefined): string | null {
+  if (!val) return null
+  const s = val.trim()
+  return /^[=+\-@|]/.test(s) ? `'${s}` : s
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -22,6 +29,11 @@ export async function POST(request: Request) {
   const file = formData.get('file') as File | null
   if (!file) return NextResponse.json({ error: 'Ficheiro em falta' }, { status: 400 })
 
+  // Issue 5 — Limite de tamanho do ficheiro
+  if (file.size > 5 * 1024 * 1024) {
+    return NextResponse.json({ error: 'Ficheiro demasiado grande (máx 5 MB)' }, { status: 413 })
+  }
+
   const text = await file.text()
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   if (lines.length < 2) return NextResponse.json({ error: 'CSV vazio ou sem dados' }, { status: 400 })
@@ -39,6 +51,34 @@ export async function POST(request: Request) {
   const scoreIdx = headers.indexOf('score')
   const urgencyIdx = headers.indexOf('urgency')
 
+  // Issue 1 — Dedup em memória: recolher todos os phones/emails do CSV antes do loop
+  const rawPhones = lines.slice(1)
+    .map(l => normalizePhone(parseCSVLine(l)[phoneIdx]))
+    .filter((p): p is string => !!p)
+  const rawEmails = lines.slice(1)
+    .map(l => parseCSVLine(l)[emailIdx]?.trim())
+    .filter((e): e is string => !!e)
+
+  const existingPhones = new Set<string>()
+  const existingEmails = new Set<string>()
+
+  if (rawPhones.length > 0) {
+    const { data } = await supabase
+      .from('leads')
+      .select('phone')
+      .eq('team_id', member.team_id)
+      .in('phone', rawPhones)
+    data?.forEach(r => r.phone && existingPhones.add(r.phone))
+  }
+  if (rawEmails.length > 0) {
+    const { data } = await supabase
+      .from('leads')
+      .select('email')
+      .eq('team_id', member.team_id)
+      .in('email', rawEmails)
+    data?.forEach(r => r.email && existingEmails.add(r.email))
+  }
+
   const toInsert: Record<string, unknown>[] = []
   const errors: string[] = []
   let skipped = 0
@@ -51,34 +91,30 @@ export async function POST(request: Request) {
     const phone = normalizePhone(cols[phoneIdx]) ?? null
     const email = cols[emailIdx]?.trim() || null
 
-    // Dedup: verificar se já existe lead com mesmo phone ou email
-    if (phone || email) {
-      const query = supabase.from('leads').select('id').eq('team_id', member.team_id)
-      if (phone && email) {
-        const { data: existing } = await query.or(`phone.eq.${phone},email.eq.${email}`)
-        if (existing && existing.length > 0) { skipped++; continue }
-      } else if (phone) {
-        const { data: existing } = await query.eq('phone', phone)
-        if (existing && existing.length > 0) { skipped++; continue }
-      } else if (email) {
-        const { data: existing } = await query.eq('email', email)
-        if (existing && existing.length > 0) { skipped++; continue }
-      }
+    // Issue 1 — Verificação de duplicados em memória (sem query por linha)
+    if ((phone && existingPhones.has(phone)) || (email && existingEmails.has(email))) {
+      skipped++
+      continue
     }
 
     const validStatuses = ['new', 'qualified', 'meeting', 'active', 'won', 'lost']
     const status = validStatuses.includes(cols[statusIdx]) ? cols[statusIdx] : 'new'
 
+    // Issue 3 — parseInt anti-padrão: usar Number.isFinite para distinguir 0 de NaN
+    const rawScore = parseInt(cols[scoreIdx])
+    const rawUrgency = parseInt(cols[urgencyIdx])
+
     toInsert.push({
       team_id: member.team_id,
-      full_name,
+      // Issue 4 — sanitizar campos susceptíveis a CSV injection
+      full_name: sanitizeCsvField(cols[nameIdx]) ?? full_name,
       phone,
       email,
-      source: cols[sourceIdx]?.trim() || null,
+      source: sanitizeCsvField(cols[sourceIdx]),
       status,
-      notes: cols[notesIdx]?.trim() || null,
-      score: parseInt(cols[scoreIdx]) || 0,
-      urgency: parseInt(cols[urgencyIdx]) || 1,
+      notes: sanitizeCsvField(cols[notesIdx]),
+      score: Number.isFinite(rawScore) ? rawScore : 0,
+      urgency: Number.isFinite(rawUrgency) ? rawUrgency : 1,
     })
   }
 
@@ -104,15 +140,23 @@ function parseCSVLine(line: string): string[] {
 
   for (let i = 0; i < line.length; i++) {
     const char = line[i]
+    // Issue 6 — Tratar "" escapadas correctamente dentro de campos quoted
     if (char === '"') {
-      inQuotes = !inQuotes
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"'
+        i++ // saltar a próxima aspas
+      } else {
+        inQuotes = !inQuotes
+      }
     } else if (char === ',' && !inQuotes) {
-      result.push(current)
+      // Issue 2 — trimEnd() para remover \r residual de \r\n em campos quoted
+      result.push(current.trimEnd())
       current = ''
     } else {
       current += char
     }
   }
-  result.push(current)
+  // Issue 2 — trimEnd() também no valor final
+  result.push(current.trimEnd())
   return result
 }
