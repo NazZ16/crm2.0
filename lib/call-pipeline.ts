@@ -61,6 +61,8 @@ export async function runCallPipeline(
     const extractedSummary = agentOutput.lead_updates.summary ?? null
 
     // Passo c: Dedup por telefone
+    // Nota: assume que os telefones na BD estão normalizados (via normalizePhone no insert).
+    // Leads antigas com formato não-normalizado podem não ser detetadas como duplicadas.
     let leadId: string | null = null
 
     if (extractedPhone) {
