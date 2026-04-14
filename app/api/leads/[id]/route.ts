@@ -108,20 +108,13 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   if (!member || !lead) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
   if (member.role !== 'admin') return NextResponse.json({ error: 'Apenas admins podem eliminar leads' }, { status: 403 })
 
-  // Cascata manual com service client
   const svc = createServiceClient()
 
-  // Obter paths de áudio antes de apagar os registos
+  // Obter paths de áudio antes de apagar a lead (Storage não tem CASCADE)
   const { data: uploads } = await svc
     .from('call_uploads')
     .select('storage_path')
     .eq('lead_id', id)
-
-  await svc.from('interactions').delete().eq('lead_id', id)
-  await svc.from('tasks').delete().eq('lead_id', id)
-  await svc.from('lead_profiles').delete().eq('lead_id', id)
-  await svc.from('agent_extractions').delete().eq('lead_id', id)
-  await svc.from('call_uploads').delete().eq('lead_id', id)
 
   // Limpar ficheiros de áudio do storage
   if (uploads?.length) {
