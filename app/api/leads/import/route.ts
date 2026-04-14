@@ -101,8 +101,8 @@ export async function POST(request: Request) {
     const status = validStatuses.includes(cols[statusIdx]) ? cols[statusIdx] : 'new'
 
     // Issue 3 — parseInt anti-padrão: usar Number.isFinite para distinguir 0 de NaN
-    const rawScore = parseInt(cols[scoreIdx])
-    const rawUrgency = parseInt(cols[urgencyIdx])
+    const rawScore = Number(cols[scoreIdx])
+    const rawUrgency = Number(cols[urgencyIdx])
 
     toInsert.push({
       team_id: member.team_id,
