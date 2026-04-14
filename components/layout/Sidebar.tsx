@@ -19,6 +19,7 @@ import {
   Home,
   GitMerge,
   UsersRound,
+  Phone,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
+  { href: '/dashboard/calls/history', label: 'Chamadas', icon: Phone },
 ]
 
 const BOTTOM_ITEMS = [
