@@ -52,8 +52,8 @@ const ALLOWED_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'a
 const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav']
 const MAX_SIZE_MB = 50
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
-const POLL_INTERVAL_MS = 5000
-const MAX_POLLS = 60
+const POLL_INTERVAL_MS = 3000
+const MAX_POLLS = 40
 
 function isAllowedFile(file: File): boolean {
   const lower = file.name.toLowerCase()
