@@ -1,8 +1,7 @@
-import { NextResponse, after } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { runCallPipeline } from '@/lib/call-pipeline'
 
-export const maxDuration = 300
+export const maxDuration = 60
 
 const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/wave', 'audio/m4a']
 const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav']
@@ -96,13 +95,13 @@ export async function POST(request: Request) {
     )
   }
 
-  // Step 5: Create call_uploads row
+  // Step 5: Create call_uploads row with status 'pending'
   const { data: uploadRow, error: insertError } = await supabase
     .from('call_uploads')
     .insert({
       team_id: teamId,
       storage_path: storagePath,
-      status: 'transcribing',
+      status: 'pending',
     })
     .select('id')
     .single()
@@ -116,11 +115,9 @@ export async function POST(request: Request) {
     )
   }
 
-  // Step 6: Retornar 202 imediatamente, manter função viva com after()
-  after(runCallPipeline(uploadRow.id, teamId, audioBuffer, sanitizedFilename, user.id))
-
+  // Step 6: Retornar 202 imediatamente — o cliente chama /api/calls/process/[id] para iniciar processamento
   return NextResponse.json(
-    { upload_id: uploadRow.id, status: 'transcribing' },
+    { upload_id: uploadRow.id, status: 'pending' },
     { status: 202 }
   )
 }
