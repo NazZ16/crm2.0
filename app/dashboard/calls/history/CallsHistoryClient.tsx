@@ -14,18 +14,11 @@ import {
 } from 'recharts'
 import { ChevronDown, ChevronUp, Phone, MicOff } from 'lucide-react'
 
-interface ScriptAnalise {
-  pontos_fortes?: string[]
-  pontos_fracos?: string[]
-  sugestoes?: string[]
-  resumo?: string
-}
-
 interface CallUpload {
   id: string
   duration_seconds: number | null
   nota_script: number | null
-  script_analise: ScriptAnalise | null
+  script_analise: unknown  // JSON do Supabase, sem garantia de estrutura
   created_at: string
   lead_id: string | null
   leads: { full_name: string } | { full_name: string }[] | null
@@ -73,18 +66,24 @@ function NotaBadge({ nota }: { nota: number }) {
   return <Badge className={`text-sm font-semibold ${color}`}>{nota}/10</Badge>
 }
 
-function ScriptAnalisePanel({ analise }: { analise: ScriptAnalise }) {
+function ScriptAnalisePanel({ rawAnalise }: { rawAnalise: unknown }) {
+  const analise = rawAnalise as Record<string, unknown> | null
+  const pontosFortes = Array.isArray(analise?.pontos_fortes) ? analise.pontos_fortes as string[] : []
+  const pontosFracos = Array.isArray(analise?.pontos_fracos) ? analise.pontos_fracos as string[] : []
+  const sugestoes = Array.isArray(analise?.sugestoes) ? analise.sugestoes as string[] : []
+  const resumo = typeof analise?.resumo === 'string' ? analise.resumo : null
+
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 space-y-3 text-sm">
-      {analise.resumo && (
-        <p className="text-gray-600 italic">{analise.resumo}</p>
+      {resumo && (
+        <p className="text-gray-600 italic">{resumo}</p>
       )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {analise.pontos_fortes && analise.pontos_fortes.length > 0 && (
+        {pontosFortes.length > 0 && (
           <div>
             <p className="font-semibold text-green-700 mb-1">Pontos fortes</p>
             <ul className="space-y-1">
-              {analise.pontos_fortes.map((p, i) => (
+              {pontosFortes.map((p, i) => (
                 <li key={i} className="text-gray-600 flex gap-1.5">
                   <span className="text-green-500 flex-shrink-0">+</span>
                   {p}
@@ -93,11 +92,11 @@ function ScriptAnalisePanel({ analise }: { analise: ScriptAnalise }) {
             </ul>
           </div>
         )}
-        {analise.pontos_fracos && analise.pontos_fracos.length > 0 && (
+        {pontosFracos.length > 0 && (
           <div>
             <p className="font-semibold text-red-700 mb-1">Pontos a melhorar</p>
             <ul className="space-y-1">
-              {analise.pontos_fracos.map((p, i) => (
+              {pontosFracos.map((p, i) => (
                 <li key={i} className="text-gray-600 flex gap-1.5">
                   <span className="text-red-500 flex-shrink-0">–</span>
                   {p}
@@ -106,11 +105,11 @@ function ScriptAnalisePanel({ analise }: { analise: ScriptAnalise }) {
             </ul>
           </div>
         )}
-        {analise.sugestoes && analise.sugestoes.length > 0 && (
+        {sugestoes.length > 0 && (
           <div>
             <p className="font-semibold text-blue-700 mb-1">Sugestões</p>
             <ul className="space-y-1">
-              {analise.sugestoes.map((p, i) => (
+              {sugestoes.map((p, i) => (
                 <li key={i} className="text-gray-600 flex gap-1.5">
                   <span className="text-blue-500 flex-shrink-0">→</span>
                   {p}
@@ -155,11 +154,12 @@ export function CallsHistoryClient({ calls }: Props) {
       leadName: getLeadName(c.leads),
     }))
 
-  const avgNota =
-    calls.reduce((sum, c) => sum + (c.nota_script ?? 0), 0) / calls.length
-
-  const bestNota = Math.max(...calls.map((c) => c.nota_script ?? 0))
-  const worstNota = Math.min(...calls.map((c) => c.nota_script ?? 0))
+  const validCalls = calls.filter(c => c.nota_script !== null)
+  const avgNota = validCalls.length > 0
+    ? validCalls.reduce((sum, c) => sum + (c.nota_script ?? 0), 0) / validCalls.length
+    : null
+  const bestNota = validCalls.length > 0 ? Math.max(...validCalls.map(c => c.nota_script!)) : null
+  const worstNota = validCalls.length > 0 ? Math.min(...validCalls.map(c => c.nota_script!)) : null
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -180,7 +180,7 @@ export function CallsHistoryClient({ calls }: Props) {
                 <Phone size={18} className="text-blue-600" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-800">{avgNota.toFixed(1)}</div>
+                <div className="text-2xl font-bold text-gray-800">{avgNota !== null ? avgNota.toFixed(1) : '—'}</div>
                 <div className="text-xs text-gray-500">Nota média</div>
               </div>
             </div>
@@ -193,7 +193,7 @@ export function CallsHistoryClient({ calls }: Props) {
                 <Phone size={18} className="text-green-600" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-700">{bestNota}/10</div>
+                <div className="text-2xl font-bold text-green-700">{bestNota !== null ? `${bestNota}/10` : '—'}</div>
                 <div className="text-xs text-gray-500">Melhor nota</div>
               </div>
             </div>
@@ -206,7 +206,7 @@ export function CallsHistoryClient({ calls }: Props) {
                 <Phone size={18} className="text-red-500" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-red-600">{worstNota}/10</div>
+                <div className="text-2xl font-bold text-red-600">{worstNota !== null ? `${worstNota}/10` : '—'}</div>
                 <div className="text-xs text-gray-500">Nota mais baixa</div>
               </div>
             </div>
@@ -280,13 +280,13 @@ export function CallsHistoryClient({ calls }: Props) {
 
             {calls.map((call) => {
               const isExpanded = expandedId === call.id
-              const analise = call.script_analise
+              const rawAnalise = call.script_analise as Record<string, unknown> | null
               const hasDetails =
-                analise &&
-                (analise.resumo ||
-                  (analise.pontos_fortes?.length ?? 0) > 0 ||
-                  (analise.pontos_fracos?.length ?? 0) > 0 ||
-                  (analise.sugestoes?.length ?? 0) > 0)
+                rawAnalise != null &&
+                (typeof rawAnalise.resumo === 'string' ||
+                  (Array.isArray(rawAnalise.pontos_fortes) && rawAnalise.pontos_fortes.length > 0) ||
+                  (Array.isArray(rawAnalise.pontos_fracos) && rawAnalise.pontos_fracos.length > 0) ||
+                  (Array.isArray(rawAnalise.sugestoes) && rawAnalise.sugestoes.length > 0))
 
               return (
                 <div key={call.id} className="px-6 py-4">
@@ -307,8 +307,8 @@ export function CallsHistoryClient({ calls }: Props) {
                     </button>
                   </div>
 
-                  {isExpanded && analise && hasDetails && (
-                    <ScriptAnalisePanel analise={analise} />
+                  {isExpanded && hasDetails && (
+                    <ScriptAnalisePanel rawAnalise={call.script_analise} />
                   )}
                 </div>
               )
