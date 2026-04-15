@@ -27,6 +27,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
+  const q = searchParams.get('q') ?? searchParams.get('search')
   const limit = parseInt(searchParams.get('limit') ?? '100')
   const offset = parseInt(searchParams.get('offset') ?? '0')
 
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
     .range(offset, offset + limit - 1)
 
   if (status) query = query.eq('status', status)
+  if (q) query = query.or(`full_name.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`)
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
