@@ -33,7 +33,7 @@ export async function POST(
 
   const svc = createServiceClient()
 
-  // Buscar o upload e verificar que pertence ao team
+  // Verificar que o upload existe e pertence ao team (sem lock ainda)
   const { data: upload } = await svc
     .from('call_uploads')
     .select('id, team_id, storage_path, status')
@@ -43,18 +43,30 @@ export async function POST(
 
   if (!upload) return NextResponse.json({ error: 'Upload não encontrado' }, { status: 404 })
 
-  if (upload.status === 'transcribing' || upload.status === 'analyzing') {
-    return NextResponse.json({ error: 'Já está a ser processado' }, { status: 409 })
-  }
-  if (upload.status === 'done') {
-    return NextResponse.json({ error: 'Já foi processado' }, { status: 409 })
-  }
-
-  // Marcar como a transcrever (processing iniciado)
-  await svc
+  // Marcar atomicamente como 'transcribing' — só actualiza se ainda estiver 'pending'.
+  // Isto previne race conditions: dois requests simultâneos só um consegue o "lock".
+  const { data: claimed } = await svc
     .from('call_uploads')
     .update({ status: 'transcribing', updated_at: new Date().toISOString() })
     .eq('id', id)
+    .eq('status', 'pending') // só atualiza se ainda estiver pending
+    .select('id')
+    .maybeSingle()
+
+  if (!claimed) {
+    // Outro processo já tomou conta — verificar o estado actual
+    const { data: current } = await svc
+      .from('call_uploads')
+      .select('status')
+      .eq('id', id)
+      .single()
+    const currentStatus = current?.status ?? 'unknown'
+    if (currentStatus === 'done') {
+      return NextResponse.json({ error: 'Já foi processado' }, { status: 409 })
+    }
+    return NextResponse.json({ error: 'Já está a ser processado' }, { status: 409 })
+  }
+  // Aqui: temos o "lock" — só um processo chegou aqui com sucesso
 
   try {
     // Fazer download do ficheiro do Storage

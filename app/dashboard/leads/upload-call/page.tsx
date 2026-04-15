@@ -124,6 +124,7 @@ export default function UploadCallPage() {
   const startPolling = useCallback(
     (id: string) => {
       pollCountRef.current = 0
+      pollStatus(id) // primeiro poll imediato — não esperar pelo primeiro intervalo
       pollRef.current = setInterval(() => pollStatus(id), POLL_INTERVAL_MS)
     },
     [pollStatus]

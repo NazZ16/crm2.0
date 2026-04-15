@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   }
 
   // Step 3: Validate file
-  if (!hasAllowedExtension(audioFile.name) && !ALLOWED_MIME_TYPES.includes(audioFile.type)) {
+  if (!hasAllowedExtension(audioFile.name) || !ALLOWED_MIME_TYPES.includes(audioFile.type)) {
     return NextResponse.json(
       { error: 'Tipo de ficheiro não suportado. Use mp3, m4a ou wav.' },
       { status: 400 }
@@ -78,8 +78,14 @@ export async function POST(request: Request) {
   const arrayBuffer = await audioFile.arrayBuffer()
   const audioBuffer = Buffer.from(arrayBuffer)
 
-  // Criar bucket se não existir (primeira execução)
-  await supabase.storage.createBucket('call-audio', { public: false, fileSizeLimit: 52428800 }).catch(() => {})
+  // Criar bucket se não existir (primeira execução).
+  // Ignorar apenas erros de "already exists" — re-throw outros erros inesperados.
+  await supabase.storage
+    .createBucket('call-audio', { public: false, fileSizeLimit: 52428800 })
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes('already exist') && !msg.includes('Duplicate')) throw err
+    })
 
   const { error: storageError } = await supabase.storage
     .from('call-audio')
