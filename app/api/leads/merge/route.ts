@@ -67,9 +67,14 @@ export async function POST(request: Request) {
   }
 
   // Mover interações, tarefas, call_uploads para a primária
-  await svc.from('interactions').update({ lead_id: primary_id }).eq('lead_id', secondary_id)
-  await svc.from('tasks').update({ lead_id: primary_id }).eq('lead_id', secondary_id)
-  await svc.from('call_uploads').update({ lead_id: primary_id }).eq('lead_id', secondary_id)
+  const { error: intErr } = await svc.from('interactions').update({ lead_id: primary_id }).eq('lead_id', secondary_id)
+  if (intErr) return NextResponse.json({ error: `Erro ao mover interações: ${intErr.message}` }, { status: 500 })
+
+  const { error: taskErr } = await svc.from('tasks').update({ lead_id: primary_id }).eq('lead_id', secondary_id)
+  if (taskErr) return NextResponse.json({ error: `Erro ao mover tarefas: ${taskErr.message}` }, { status: 500 })
+
+  const { error: uploadErr } = await svc.from('call_uploads').update({ lead_id: primary_id }).eq('lead_id', secondary_id)
+  if (uploadErr) return NextResponse.json({ error: `Erro ao mover chamadas: ${uploadErr.message}` }, { status: 500 })
 
   // lead_profiles: só mover se a primária não tiver profile próprio
   const { data: primaryProfile } = await svc
