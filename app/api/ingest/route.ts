@@ -37,6 +37,36 @@ const INGEST_SECRET = process.env.CRM_INGEST_SECRET ?? ''
 const DEFAULT_TEAM_ID = process.env.TELEGRAM_DEFAULT_TEAM_ID ?? ''
 const DEFAULT_USER_ID = process.env.TELEGRAM_DEFAULT_USER_ID ?? ''
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? ''
+const HUB_NOTIFY_URL = process.env.HUB_NOTIFY_URL ?? ''
+const HUB_NOTIFY_SECRET = process.env.HUB_NOTIFY_SECRET ?? ''
+
+/**
+ * Avisa o Hub quando o pipeline termina. Falha silenciosa — o CRM nao deve
+ * crashar porque o Hub esta offline. O utilizador ficara sem notificacao
+ * mas o processamento em si concluiu.
+ */
+async function notifyHub(
+  chatId: number | undefined,
+  text: string,
+  source: 'crm' = 'crm',
+  uploadId?: string,
+): Promise<void> {
+  if (!HUB_NOTIFY_URL || !HUB_NOTIFY_SECRET) return
+  if (typeof chatId !== 'number' || !Number.isFinite(chatId)) return
+  try {
+    await fetch(HUB_NOTIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-notify-secret': HUB_NOTIFY_SECRET },
+      body: JSON.stringify({ chatId, text, source, uploadId }),
+    })
+  } catch (e) {
+    console.error('[ingest] notifyHub falhou', {
+      error: e instanceof Error ? e.message : String(e),
+      chatId,
+      uploadId,
+    })
+  }
+}
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 
@@ -173,18 +203,35 @@ export async function POST(request: Request): Promise<NextResponse> {
     return err(500, 'db_insert_failed', insertError?.message ?? 'insert sem linha devolvida')
   }
 
-  after(
-    runCallPipeline(uploadRow.id, DEFAULT_TEAM_ID, audioBuffer, filename, DEFAULT_USER_ID).catch(
-      (pipelineErr: unknown) => {
-        const msg = pipelineErr instanceof Error ? pipelineErr.message : String(pipelineErr)
-        console.error('[ingest] runCallPipeline falhou', { uploadId: uploadRow.id, msg })
-      },
-    ),
-  )
-
   const dashboardUrl = SITE_URL
     ? SITE_URL + '/dashboard/leads/upload-call?id=' + uploadRow.id
     : undefined
+
+  const hubChatId =
+    typeof payload.chatId === 'number' && Number.isFinite(payload.chatId)
+      ? payload.chatId
+      : undefined
+
+  after(
+    runCallPipeline(uploadRow.id, DEFAULT_TEAM_ID, audioBuffer, filename, DEFAULT_USER_ID).then(
+      async () => {
+        const successText = dashboardUrl
+          ? '\u2705 <b>\u00c1udio processado com sucesso!</b>\n\nVer lead e transcri\u00e7\u00e3o:\n' + dashboardUrl
+          : '\u2705 <b>\u00c1udio processado com sucesso!</b>'
+        await notifyHub(hubChatId, successText, 'crm', uploadRow.id)
+      },
+      async (pipelineErr: unknown) => {
+        const errMsg = pipelineErr instanceof Error ? pipelineErr.message : String(pipelineErr)
+        console.error('[ingest] runCallPipeline falhou', { uploadId: uploadRow.id, errMsg })
+        await notifyHub(
+          hubChatId,
+          '\u274c <b>Erro ao processar \u00e1udio no CRM</b>\n\n' + errMsg,
+          'crm',
+          uploadRow.id,
+        )
+      },
+    ),
+  )
 
   return NextResponse.json(
     {
