@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
 import { Plus, Search, ArrowRight, Phone, Mail, Bot, Mic } from 'lucide-react'
+import { ImportLeadsButton } from './ImportLeadsButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +22,7 @@ export default async function LeadsPage({ searchParams }: Props) {
 
   const { data: memberData } = await supabase
     .from('team_members')
-    .select('team_id')
+    .select('team_id, role')
     .eq('user_id', user.id)
     .single()
 
@@ -63,6 +64,7 @@ export default async function LeadsPage({ searchParams }: Props) {
               Upload Chamada
             </Button>
           </Link>
+          {memberData.role !== 'viewer' && <ImportLeadsButton />}
           <Link href="/dashboard/leads/new">
             <Button className="gap-2">
               <Plus size={16} />

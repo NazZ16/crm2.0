@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { LEAD_STATUS_LABELS, LEAD_PIPELINE_ORDER, CONVERSATION_OBJECTIVES, TASK_PRIORITY_LABELS } from '@/lib/types'
 import type { LeadStatus, AgentFullOutput } from '@/lib/types'
+import { MergeLeadsButton } from '../MergeLeadsButton'
 
 interface Props {
   leadId: string
@@ -156,6 +157,8 @@ export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit, isA
           <MessageSquarePlus size={16} />
           Analisar Conversa
         </Button>
+
+        <MergeLeadsButton leadId={leadId} leadName={leadName} isAdmin={isAdmin} />
 
         {isAdmin && !deleteConfirm && (
           <Button

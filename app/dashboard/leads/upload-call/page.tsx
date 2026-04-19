@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Upload, Mic, CheckCircle2, AlertCircle, Loader2, ArrowLeft } from 'lucide-react'
 
-type UploadStatus = 'idle' | 'uploading' | 'transcribing' | 'analyzing' | 'done' | 'failed'
+type UploadStatus = 'idle' | 'uploading' | 'pending' | 'transcribing' | 'analyzing' | 'done' | 'failed'
 
 interface ScriptAnalise {
   abertura: string
@@ -41,6 +41,7 @@ interface UploadStatusResponse {
 const STATUS_LABELS: Record<UploadStatus, string> = {
   idle: 'Pronto',
   uploading: 'A fazer upload...',
+  pending: 'A iniciar processamento...',
   transcribing: 'A transcrever áudio (Whisper)...',
   analyzing: 'A analisar com IA...',
   done: 'Concluído',
@@ -51,8 +52,8 @@ const ALLOWED_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'a
 const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav']
 const MAX_SIZE_MB = 50
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024
-const POLL_INTERVAL_MS = 5000
-const MAX_POLLS = 60
+const POLL_INTERVAL_MS = 3000
+const MAX_POLLS = 40
 
 function isAllowedFile(file: File): boolean {
   const lower = file.name.toLowerCase()
@@ -123,6 +124,7 @@ export default function UploadCallPage() {
   const startPolling = useCallback(
     (id: string) => {
       pollCountRef.current = 0
+      pollStatus(id) // primeiro poll imediato — não esperar pelo primeiro intervalo
       pollRef.current = setInterval(() => pollStatus(id), POLL_INTERVAL_MS)
     },
     [pollStatus]
@@ -194,8 +196,17 @@ export default function UploadCallPage() {
 
       const id: string = body.upload_id
       setUploadId(id)
-      setStatus(body.status ?? 'transcribing')
+      setStatus('pending')
+
+      // Iniciar o processamento em background (separado do upload para evitar timeouts)
+      // Começar polling imediatamente enquanto o processo arranca
       startPolling(id)
+
+      // Chamar o endpoint de processamento — pode demorar até 5 minutos
+      // O resultado é seguido via polling ao status endpoint
+      fetch(`/api/calls/process/${id}`, { method: 'POST' }).catch(() => {
+        // Se o fetch falhar, o polling vai detetar o status 'failed' na BD
+      })
     } catch {
       setStatus('failed')
       setError('Erro de rede. Verifique a sua ligação e tente novamente.')
@@ -219,7 +230,7 @@ export default function UploadCallPage() {
     const sharedId = searchParams.get('id')
     if (sharedId && status === 'idle') {
       setUploadId(sharedId)
-      setStatus('transcribing')
+      setStatus('pending')
       startPolling(sharedId)
     }
     const shareError = searchParams.get('error')
@@ -235,7 +246,7 @@ export default function UploadCallPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const isProcessing = ['uploading', 'transcribing', 'analyzing'].includes(status)
+  const isProcessing = ['uploading', 'pending', 'transcribing', 'analyzing'].includes(status)
   const isDisabled = !selectedFile || isProcessing
 
   return (
@@ -372,8 +383,8 @@ export default function UploadCallPage() {
             {/* Progress steps */}
             {isProcessing && (
               <div className="space-y-2">
-                {(['uploading', 'transcribing', 'analyzing'] as const).map((step) => {
-                  const stepOrder = ['uploading', 'transcribing', 'analyzing']
+                {(['uploading', 'pending', 'transcribing', 'analyzing'] as const).map((step) => {
+                  const stepOrder = ['uploading', 'pending', 'transcribing', 'analyzing']
                   const currentIdx = stepOrder.indexOf(status)
                   const stepIdx = stepOrder.indexOf(step)
                   const isDone = stepIdx < currentIdx

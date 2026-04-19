@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { normalizePhone } from '@/lib/phone'
 
 const createLeadSchema = z.object({
   full_name: z.string().min(1).max(200),
@@ -26,7 +27,8 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const status = searchParams.get('status')
-  const limit = parseInt(searchParams.get('limit') ?? '100')
+  const q = searchParams.get('q') ?? searchParams.get('search')
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') ?? '50') || 50, 1), 200)
   const offset = parseInt(searchParams.get('offset') ?? '0')
 
   let query = supabase
@@ -40,6 +42,10 @@ export async function GET(request: Request) {
     .range(offset, offset + limit - 1)
 
   if (status) query = query.eq('status', status)
+  if (q) {
+    const safe = q.replace(/[%_\\]/g, '\\$&')
+    query = query.or(`full_name.ilike.%${safe}%,phone.ilike.%${safe}%,email.ilike.%${safe}%`)
+  }
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -72,6 +78,7 @@ export async function POST(request: Request) {
     .from('leads')
     .insert({
       ...parsed.data,
+      phone: normalizePhone(parsed.data.phone),
       team_id: member.team_id,
       assigned_to: user.id,
     })

@@ -1,8 +1,7 @@
-import { NextResponse, after } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { runCallPipeline } from '@/lib/call-pipeline'
 
-export const maxDuration = 300
+export const maxDuration = 60
 
 const ALLOWED_MIME_TYPES = ['audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/wav', 'audio/wave', 'audio/m4a']
 const ALLOWED_EXTENSIONS = ['.mp3', '.m4a', '.wav']
@@ -58,7 +57,7 @@ export async function POST(request: Request) {
   }
 
   // Step 3: Validate file
-  if (!hasAllowedExtension(audioFile.name) && !ALLOWED_MIME_TYPES.includes(audioFile.type)) {
+  if (!hasAllowedExtension(audioFile.name) || !ALLOWED_MIME_TYPES.includes(audioFile.type)) {
     return NextResponse.json(
       { error: 'Tipo de ficheiro não suportado. Use mp3, m4a ou wav.' },
       { status: 400 }
@@ -79,8 +78,14 @@ export async function POST(request: Request) {
   const arrayBuffer = await audioFile.arrayBuffer()
   const audioBuffer = Buffer.from(arrayBuffer)
 
-  // Criar bucket se não existir (primeira execução)
-  await supabase.storage.createBucket('call-audio', { public: false, fileSizeLimit: 52428800 }).catch(() => {})
+  // Criar bucket se não existir (primeira execução).
+  // Ignorar apenas erros de "already exists" — re-throw outros erros inesperados.
+  await supabase.storage
+    .createBucket('call-audio', { public: false, fileSizeLimit: 52428800 })
+    .catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes('already exist') && !msg.includes('Duplicate')) throw err
+    })
 
   const { error: storageError } = await supabase.storage
     .from('call-audio')
@@ -96,13 +101,13 @@ export async function POST(request: Request) {
     )
   }
 
-  // Step 5: Create call_uploads row
+  // Step 5: Create call_uploads row with status 'pending'
   const { data: uploadRow, error: insertError } = await supabase
     .from('call_uploads')
     .insert({
       team_id: teamId,
       storage_path: storagePath,
-      status: 'transcribing',
+      status: 'pending',
     })
     .select('id')
     .single()
@@ -116,11 +121,9 @@ export async function POST(request: Request) {
     )
   }
 
-  // Step 6: Retornar 202 imediatamente, manter função viva com after()
-  after(runCallPipeline(uploadRow.id, teamId, audioBuffer, sanitizedFilename, user.id))
-
+  // Step 6: Retornar 202 imediatamente — o cliente chama /api/calls/process/[id] para iniciar processamento
   return NextResponse.json(
-    { upload_id: uploadRow.id, status: 'transcribing' },
+    { upload_id: uploadRow.id, status: 'pending' },
     { status: 202 }
   )
 }
