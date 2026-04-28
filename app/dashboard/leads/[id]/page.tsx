@@ -37,7 +37,6 @@ export default async function LeadDetailPage({ params }: Props) {
 
   if (!member) return null
 
-  // Fetch lead with all related data
   const { data: lead, error } = await supabase
     .from('leads')
     .select(`
@@ -54,20 +53,38 @@ export default async function LeadDetailPage({ params }: Props) {
 
   if (error || !lead) notFound()
 
-  // Fetch latest agent extraction for persistent drafts & suggestions
   const { data: latestExtraction } = await supabase
     .from('agent_extractions')
-    .select('id, drafts_json, recommendations_json, created_at')
+    .select('id, extracted_json, drafts_json, recommendations_json, run_id, upload_id, created_at')
     .eq('lead_id', id)
     .eq('team_id', member.team_id)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
 
-  // Fetch latest call upload with coach feedback for this lead
+  let latestRun: {
+    id: string
+    status: string
+    tokens_used: number | null
+    duration_ms: number | null
+    agent_type: string
+    output_json: unknown
+    error: string | null
+    created_at: string
+  } | null = null
+
+  if (latestExtraction?.run_id) {
+    const { data } = await supabase
+      .from('agent_runs')
+      .select('id, status, tokens_used, duration_ms, agent_type, output_json, error, created_at')
+      .eq('id', latestExtraction.run_id)
+      .maybeSingle()
+    latestRun = data
+  }
+
   const { data: latestCallUpload } = await supabase
     .from('call_uploads')
-    .select('id, coach_feedback, audio_duration_s, created_at, status')
+    .select('id, coach_feedback, transcript_text, audio_duration_s, whisper_model, created_at, status')
     .eq('team_id', member.team_id)
     .eq('lead_id', lead.id)
     .eq('status', 'done')
@@ -75,7 +92,6 @@ export default async function LeadDetailPage({ params }: Props) {
     .limit(1)
     .maybeSingle()
 
-  // Check if lead already has an investor profile
   const { data: existingInvestor } = await supabase
     .from('investors')
     .select('id')
@@ -83,7 +99,6 @@ export default async function LeadDetailPage({ params }: Props) {
     .eq('team_id', member.team_id)
     .maybeSingle()
 
-  // Fetch lead_profiles for AI-suggested budget/zones
   const { data: leadProfile } = await supabase
     .from('lead_profiles')
     .select('home_preferences, financial_profile')
@@ -106,13 +121,11 @@ export default async function LeadDetailPage({ params }: Props) {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Breadcrumb */}
       <Link href="/dashboard/leads" className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
         <ArrowLeft size={14} />
-        Voltar às leads
+        Voltar as leads
       </Link>
 
-      {/* Lead Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
           <Avatar className="h-14 w-14">
@@ -127,7 +140,7 @@ export default async function LeadDetailPage({ params }: Props) {
                 {LEAD_STATUS_LABELS[lead.status as LeadStatus]}
               </Badge>
               <span className="text-sm text-gray-500">Score: <strong>{lead.score}/100</strong></span>
-              <span className="text-sm text-gray-500">Urgência: <strong>{lead.urgency}/5</strong></span>
+              <span className="text-sm text-gray-500">Urgencia: <strong>{lead.urgency}/5</strong></span>
               {lead.source && (
                 <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{lead.source}</span>
               )}
@@ -135,7 +148,6 @@ export default async function LeadDetailPage({ params }: Props) {
           </div>
         </div>
 
-        {/* Action buttons (client component) */}
         <div className="flex items-center gap-2 flex-wrap">
           <LeadDetailClient
             leadId={lead.id}
@@ -171,9 +183,7 @@ export default async function LeadDetailPage({ params }: Props) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Contact info + Profile */}
         <div className="space-y-4">
-          {/* Contact */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Contacto</CardTitle>
@@ -198,13 +208,12 @@ export default async function LeadDetailPage({ params }: Props) {
               {lead.last_contact_at && (
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                   <Clock size={14} className="text-gray-400" />
-                  Último contacto {formatRelativeTime(lead.last_contact_at)}
+                  Ultimo contacto {formatRelativeTime(lead.last_contact_at)}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* Profile Summary */}
           {profile && (
             <Card>
               <CardHeader className="pb-3">
@@ -212,7 +221,7 @@ export default async function LeadDetailPage({ params }: Props) {
                   Perfil IA
                   {profile.confidence_score != null && (
                     <span className="ml-2 font-normal text-gray-400 normal-case">
-                      ({profile.confidence_score}% confiança)
+                      ({profile.confidence_score}% confianca)
                     </span>
                   )}
                 </CardTitle>
@@ -235,7 +244,7 @@ export default async function LeadDetailPage({ params }: Props) {
                 )}
                 {profile.financial_profile?.orcamento_max && (
                   <div>
-                    <span className="font-medium text-gray-700">Orçamento: </span>
+                    <span className="font-medium text-gray-700">Orcamento: </span>
                     <span className="text-gray-600">{formatCurrency(profile.financial_profile.orcamento_max)}</span>
                   </div>
                 )}
@@ -249,7 +258,7 @@ export default async function LeadDetailPage({ params }: Props) {
                   <div>
                     <div className="font-medium text-gray-700 mb-1 flex items-center gap-1">
                       <AlertTriangle size={12} className="text-orange-400" />
-                      Objeções:
+                      Objecoes:
                     </div>
                     <ul className="list-disc list-inside space-y-0.5">
                       {profile.fears_objections.lista.map((obj: string, i: number) => (
@@ -262,7 +271,6 @@ export default async function LeadDetailPage({ params }: Props) {
             </Card>
           )}
 
-          {/* Notes */}
           {lead.notes && (
             <Card>
               <CardHeader className="pb-3">
@@ -274,7 +282,6 @@ export default async function LeadDetailPage({ params }: Props) {
             </Card>
           )}
 
-          {/* Coach Call Feedback */}
           {latestCallUpload?.coach_feedback && (() => {
             const feedback = latestCallUpload.coach_feedback as {
               pontos_positivos: string[]
@@ -315,7 +322,7 @@ export default async function LeadDetailPage({ params }: Props) {
                     </div>
                   )}
                   <div>
-                    <p className="text-xs font-semibold text-blue-600 mb-1">Próxima chamada</p>
+                    <p className="text-xs font-semibold text-blue-600 mb-1">Proxima chamada</p>
                     <p className="text-xs text-gray-600">{feedback.proxima_chamada}</p>
                   </div>
                   <Badge variant="outline" className="text-xs">
@@ -327,9 +334,7 @@ export default async function LeadDetailPage({ params }: Props) {
           })()}
         </div>
 
-        {/* Middle + Right: Tasks + Interactions + Drafts */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Tasks */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
@@ -344,19 +349,17 @@ export default async function LeadDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {/* Latest AI Suggestions & Drafts */}
           {latestExtraction && (drafts.length > 0 || (recommendations?.next_questions && recommendations.next_questions.length > 0)) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                  Últimas Sugestões IA
+                  Ultimas Sugestoes IA
                   <span className="ml-2 font-normal text-gray-400 normal-case text-xs">
                     {formatRelativeTime(latestExtraction.created_at)}
                   </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Next Questions */}
                 {recommendations?.next_questions && recommendations.next_questions.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Perguntas por fazer</p>
@@ -369,8 +372,6 @@ export default async function LeadDetailPage({ params }: Props) {
                     </ul>
                   </div>
                 )}
-
-                {/* Message Drafts */}
                 {drafts.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
@@ -387,11 +388,10 @@ export default async function LeadDetailPage({ params }: Props) {
             </Card>
           )}
 
-          {/* Interaction Timeline */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                Histórico de Interações
+                Historico de Interacoes
                 <span className="ml-2 font-normal text-gray-400 normal-case">({interactions.length})</span>
               </CardTitle>
             </CardHeader>
@@ -399,7 +399,7 @@ export default async function LeadDetailPage({ params }: Props) {
               {interactions.length === 0 ? (
                 <div className="text-center py-6">
                   <MessageCircle size={32} className="mx-auto text-gray-200 mb-2" />
-                  <p className="text-sm text-gray-400">Sem interações registadas</p>
+                  <p className="text-sm text-gray-400">Sem interacoes registadas</p>
                   <p className="text-xs text-gray-300 mt-1">Adiciona uma conversa para o agente analisar</p>
                 </div>
               ) : (
@@ -426,20 +426,111 @@ export default async function LeadDetailPage({ params }: Props) {
               )}
             </CardContent>
           </Card>
+
+          {(latestExtraction || latestCallUpload?.transcript_text || latestRun) && (
+            <Card className="border-dashed border-gray-300">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
+                  <Bot size={14} />
+                  Debug - Analise do Agente
+                  <span className="ml-auto font-normal text-gray-400 normal-case text-xs">
+                    para verificacao
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                {latestRun && (
+                  <div className="flex flex-wrap gap-3 text-xs text-gray-600 border-b border-gray-100 pb-3">
+                    <span><strong>Status:</strong> {latestRun.status}</span>
+                    {latestRun.tokens_used != null && (
+                      <span><strong>Tokens:</strong> {latestRun.tokens_used.toLocaleString()}</span>
+                    )}
+                    {latestRun.duration_ms != null && (
+                      <span><strong>Duracao:</strong> {(latestRun.duration_ms / 1000).toFixed(1)}s</span>
+                    )}
+                    <span><strong>Tipo:</strong> {latestRun.agent_type}</span>
+                    {latestRun.error && (
+                      <span className="text-red-600"><strong>Erro:</strong> {latestRun.error}</span>
+                    )}
+                  </div>
+                )}
+
+                {latestCallUpload?.transcript_text && (
+                  <details>
+                    <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
+                      Transcricao Whisper
+                      <span className="ml-2 text-xs text-gray-400 font-normal">
+                        ({latestCallUpload.transcript_text.length.toLocaleString()} chars
+                        {latestCallUpload.audio_duration_s
+                          ? `, ${Math.round(latestCallUpload.audio_duration_s / 60)}min`
+                          : ''})
+                      </span>
+                    </summary>
+                    <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                      {latestCallUpload.transcript_text}
+                    </pre>
+                  </details>
+                )}
+
+                {latestExtraction?.extracted_json != null && (
+                  <details>
+                    <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
+                      lead_updates (extracted_json)
+                    </summary>
+                    <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                      {JSON.stringify(latestExtraction.extracted_json, null, 2)}
+                    </pre>
+                  </details>
+                )}
+
+                {latestExtraction?.recommendations_json != null && (
+                  <details>
+                    <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
+                      recommendations_json
+                    </summary>
+                    <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                      {JSON.stringify(latestExtraction.recommendations_json, null, 2)}
+                    </pre>
+                  </details>
+                )}
+
+                {latestExtraction?.drafts_json != null && (
+                  <details>
+                    <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
+                      drafts_json
+                    </summary>
+                    <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                      {JSON.stringify(latestExtraction.drafts_json, null, 2)}
+                    </pre>
+                  </details>
+                )}
+
+                {latestRun?.output_json != null && (
+                  <details>
+                    <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
+                      agent_run output (raw)
+                    </summary>
+                    <pre className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs text-gray-700 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                      {JSON.stringify(latestRun.output_json, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-// Server component helper to render a single draft card with copy button (client-side copy needs client component)
 function DraftCard({ draft, index }: { draft: AgentDraft; index: number }) {
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="text-xs">
-            {draft.channel === 'whatsapp' ? '📱 WhatsApp' : '📧 Email'}
+            {draft.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
           </Badge>
           <span className="text-xs text-gray-500">{draft.goal}</span>
         </div>
@@ -456,4 +547,3 @@ function DraftCard({ draft, index }: { draft: AgentDraft; index: number }) {
     </div>
   )
 }
-
