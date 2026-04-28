@@ -84,7 +84,7 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const { data: latestCallUpload } = await supabase
     .from('call_uploads')
-    .select('id, coach_feedback, transcript_text, audio_duration_s, whisper_model, created_at, status')
+    .select('id, coach_feedback, transcript_text, transcript_formatted, audio_duration_s, whisper_model, created_at, status')
     .eq('team_id', member.team_id)
     .eq('lead_id', lead.id)
     .eq('status', 'done')
@@ -455,10 +455,24 @@ export default async function LeadDetailPage({ params }: Props) {
                   </div>
                 )}
 
+                {latestCallUpload?.transcript_formatted && (
+                  <details open>
+                    <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
+                      Transcricao formatada (Agente / Lead)
+                      <span className="ml-2 text-xs text-gray-400 font-normal">
+                        ({latestCallUpload.transcript_formatted.length.toLocaleString()} chars - Haiku diarization)
+                      </span>
+                    </summary>
+                    <pre className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-gray-800 whitespace-pre-wrap max-h-96 overflow-y-auto">
+                      {latestCallUpload.transcript_formatted}
+                    </pre>
+                  </details>
+                )}
+
                 {latestCallUpload?.transcript_text && (
                   <details>
                     <summary className="cursor-pointer font-medium text-gray-700 hover:text-blue-600">
-                      Transcricao Whisper
+                      Transcricao Whisper (bruta)
                       <span className="ml-2 text-xs text-gray-400 font-normal">
                         ({latestCallUpload.transcript_text.length.toLocaleString()} chars
                         {latestCallUpload.audio_duration_s
