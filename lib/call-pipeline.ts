@@ -1,17 +1,18 @@
 // lib/call-pipeline.ts
-// Lógica de pipeline partilhada entre /api/calls/upload e /api/share-target.
+// Logica de pipeline partilhada entre /api/calls/upload e /api/share-target.
 //
-// Persistência completa (replica /api/agents/leads/route.ts):
+// Persistencia completa (replica /api/agents/leads/route.ts):
 //   - leads (full_name, phone, email, score, urgency, last_contact_at)
 //   - lead_profiles (deep merge dos 6 blocos + summary + confidence_score)
 //   - agent_extractions (extracted_json, recommendations_json, drafts_json)
 //   - agent_runs (status, tokens, duration)
 //   - interactions (transcript completo + summary)
-//   - tasks (a partir de next_best_actions; fallback follow-up se urgência alta)
+//   - tasks (a partir de next_best_actions; fallback follow-up se urgencia alta)
 
 import { transcribeAudio } from '@/lib/whisper'
 import { leadAgent } from '@/lib/agents/lead-agent'
 import { callCoachAgent } from '@/lib/agents/call-coach-agent'
+import { diarizationAgent } from '@/lib/agents/diarization-agent'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhone } from '@/lib/phone'
 import type { LeadProfile, AgentFullOutput } from '@/lib/types'
@@ -26,7 +27,7 @@ export async function runCallPipeline(
   const supabase = createServiceClient()
 
   try {
-    // Passo a: Transcrição
+    // Passo a: Transcricao (Whisper)
     const { text: transcriptText, duration_s } = await transcribeAudio(audioBuffer, filename)
 
     await supabase
@@ -40,14 +41,32 @@ export async function runCallPipeline(
       })
       .eq('id', uploadId)
 
-    // Para chamadas longas (>10 min ≈ >8000 chars), usar apenas início + fim
+    // Passo a.5: Diarization via Haiku (Whisper-1 nao separa oradores).
+    // Reformata transcript em dialogo Agente/Lead para o leadAgent ler melhor.
+    let transcriptFormatted: string | null = null
+    try {
+      const diarized = await diarizationAgent.reformat(transcriptText)
+      transcriptFormatted = diarized.formatted
+      await supabase
+        .from('call_uploads')
+        .update({ transcript_formatted: transcriptFormatted })
+        .eq('id', uploadId)
+    } catch (err) {
+      // Diarization e nice-to-have. Se falhar, continuamos com transcript bruto.
+      console.warn('[call-pipeline] diarization failed, using raw transcript:', err)
+    }
+
+    // Texto que vai para o leadAgent: prefere o formatado se existir
+    const sourceText = transcriptFormatted ?? transcriptText
+
+    // Para chamadas longas (>10 min ~ >8000 chars), usar apenas inicio + fim
     const MAX_CHARS = 12000
     const analysisText =
-      transcriptText.length > MAX_CHARS
-        ? transcriptText.slice(0, MAX_CHARS * 0.7) +
-          '\n\n[...transcrição resumida...]\n\n' +
-          transcriptText.slice(-MAX_CHARS * 0.3)
-        : transcriptText
+      sourceText.length > MAX_CHARS
+        ? sourceText.slice(0, MAX_CHARS * 0.7) +
+          '\n\n[...transcricao resumida...]\n\n' +
+          sourceText.slice(-MAX_CHARS * 0.3)
+        : sourceText
 
     // Passo b: Carregar agent_learnings (context-aware extraction)
     const { data: learningsData } = await supabase
@@ -65,14 +84,14 @@ export async function runCallPipeline(
         team_id: teamId,
         agent_type: 'lead',
         trigger_type: 'n8n_webhook',
-        lead_id: null, // ainda não temos lead_id
-        input_summary: `Análise de chamada: ${filename}`,
+        lead_id: null,
+        input_summary: `Analise de chamada: ${filename}`,
         status: 'running',
       })
       .select('id')
       .single()
 
-    // Passo d: Lead agent — extrair TUDO
+    // Passo d: Lead agent - extrair TUDO
     const startMs = Date.now()
     let agentOutput: AgentFullOutput
 
@@ -81,7 +100,7 @@ export async function runCallPipeline(
         leadName: 'Lead (chamada)',
         conversationText: analysisText,
         objective:
-          'Extrair nome completo, telefone, email, score, urgência e perfil da lead a partir desta chamada.',
+          'Extrair nome completo, telefone, email, score, urgencia e perfil da lead a partir desta chamada.',
         agentLearnings,
       })
     } catch (err) {
@@ -127,7 +146,6 @@ export async function runCallPipeline(
         leadId = existingLead.id
         existingLeadName = existingLead.full_name ?? null
 
-        // Atualiza lead. Só sobrepõe full_name se o atual é placeholder.
         const isPlaceholder =
           !existingLeadName ||
           existingLeadName === 'Lead (chamada)' ||
@@ -177,7 +195,6 @@ export async function runCallPipeline(
       .eq('lead_id', leadId)
       .maybeSingle()) as { data: LeadProfile | null }
 
-    // Deep merge: só sobrepõe valores não-null/não-vazios
     function mergeField<T>(
       existing: T | null | undefined,
       updated: Partial<T> | null | undefined
@@ -264,7 +281,7 @@ export async function runCallPipeline(
       summaries
     )
 
-    // Passo k: Registar interação (transcript completo + summary do agent)
+    // Passo k: Registar interacao (transcript completo + summary do agent)
     const interactionSummary = [
       ex.summary,
       `Sentimento: ${coachFeedback.sentimento_lead}`,
@@ -281,7 +298,7 @@ export async function runCallPipeline(
       occurred_at: now,
     })
 
-    // Passo l: Tasks a partir de next_best_actions (até 3) + fallback follow-up se urgência >= 3
+    // Passo l: Tasks a partir de next_best_actions (ate 3) + fallback follow-up se urgencia >= 3
     const actions = agentOutput.recommendations.next_best_actions ?? []
     let tasksCreated = 0
 
@@ -313,7 +330,7 @@ export async function runCallPipeline(
       tasksCreated = insertedTasks?.length ?? 0
     }
 
-    // Fallback: se o agent não devolveu actions e urgência for elevada, gerar follow-up sequence
+    // Fallback: se o agent nao devolveu actions e urgencia for elevada, gerar follow-up sequence
     if (tasksCreated === 0 && extractedUrgency != null && extractedUrgency >= 3) {
       await createFollowUpSequence(supabase, teamId, leadId, userId)
     }
@@ -364,8 +381,8 @@ async function createFollowUpSequence(
       team_id: teamId,
       lead_id: leadId,
       assigned_to: userId,
-      title: 'Follow-up inicial — chamada recente',
-      description: 'Contactar lead após chamada recebida. Urgência elevada.',
+      title: 'Follow-up inicial - chamada recente',
+      description: 'Contactar lead apos chamada recebida. Urgencia elevada.',
       due_at: new Date(now.getTime()).toISOString(),
       status: 'open',
       priority: 'urgent',
@@ -375,8 +392,8 @@ async function createFollowUpSequence(
       team_id: teamId,
       lead_id: leadId,
       assigned_to: userId,
-      title: 'Follow-up 3 dias — verificar interesse',
-      description: 'Verificar interesse da lead após contacto inicial.',
+      title: 'Follow-up 3 dias - verificar interesse',
+      description: 'Verificar interesse da lead apos contacto inicial.',
       due_at: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'open',
       priority: 'high',
@@ -386,8 +403,8 @@ async function createFollowUpSequence(
       team_id: teamId,
       lead_id: leadId,
       assigned_to: userId,
-      title: 'Follow-up 7 dias — decisão final',
-      description: 'Obter decisão final da lead ou reagendar.',
+      title: 'Follow-up 7 dias - decisao final',
+      description: 'Obter decisao final da lead ou reagendar.',
       due_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'open',
       priority: 'medium',
