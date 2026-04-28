@@ -15,6 +15,9 @@ FORMATO JSON OBRIGATÓRIO (respeita exatamente esta estrutura):
   "lead_updates": {
     "urgency": <1-5>,
     "score": <0-100>,
+    "full_name": <string | null - nome completo da lead se mencionado>,
+    "phone": <string | null - número de telefone se mencionado, formato +351XXXXXXXXX se possível>,
+    "email": <string | null - email se mencionado>,
     "home_preferences": {
       "zonas": [],
       "tipologia": null,

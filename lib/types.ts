@@ -218,6 +218,9 @@ export interface AgentExtraction {
 export interface AgentExtractionResult {
   urgency: number                          // 1-5
   score: number                            // 0-100
+  full_name: string | null                 // nome completo extraído (null se não detetado)
+  phone: string | null                     // telefone extraído (apenas para chamadas)
+  email: string | null                     // email extraído
   home_preferences: Partial<HomePreferences> | null
   financial_profile: Partial<FinancialProfile> | null
   personality_traits: Partial<PersonalityTraits> | null
