@@ -20,6 +20,7 @@ import {
   GitMerge,
   UsersRound,
   Phone,
+  CheckSquare,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -28,6 +29,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+  { href: '/dashboard/tasks', label: 'Tarefas', icon: CheckSquare },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
   { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
@@ -41,7 +43,7 @@ const NAV_ITEMS = [
 
 const BOTTOM_ITEMS = [
   { href: '/dashboard/team', label: 'Equipa', icon: UsersRound },
-  { href: '/dashboard/settings', label: 'Definições', icon: Settings },
+  { href: '/dashboard/settings', label: 'Definicoes', icon: Settings },
 ]
 
 interface SidebarProps {
@@ -58,7 +60,7 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
 
   async function handleLogout() {
     await supabase.auth.signOut()
-    toast.success('Sessão terminada')
+    toast.success('Sessao terminada')
     router.push('/login')
     router.refresh()
   }
@@ -78,7 +80,6 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
         collapsed ? 'w-16' : 'w-60'
       )}
     >
-      {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-700">
         <Building2 size={20} className="text-teal-400 flex-shrink-0" />
         {!collapsed && (
@@ -98,7 +99,6 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
         </button>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map(({ href, label, icon: Icon, exact }) => (
           <Link
@@ -118,7 +118,6 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Bottom */}
       <div className="px-2 py-3 border-t border-gray-700 space-y-1">
         {BOTTOM_ITEMS.map(({ href, label, icon: Icon }) => (
           <Link
@@ -137,7 +136,6 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
           </Link>
         ))}
 
-        {/* User */}
         <div className="flex items-center gap-3 px-3 py-2.5">
           <Avatar className="h-9 w-9 flex-shrink-0">
             <AvatarFallback className="text-xs text-white bg-teal-700">
@@ -160,8 +158,8 @@ export function Sidebar({ userEmail, userName, teamName }: SidebarProps) {
               size="icon"
               className="h-10 w-10 text-gray-400 hover:text-white hover:bg-gray-800 cursor-pointer"
               onClick={handleLogout}
-              aria-label="Terminar sessão"
-              title="Terminar sessão"
+              aria-label="Terminar sessao"
+              title="Terminar sessao"
             >
               <LogOut size={16} />
             </Button>

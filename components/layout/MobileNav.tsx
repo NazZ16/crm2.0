@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   Users,
   Kanban,
-  Building2,
+  CheckSquare,
   Menu,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -15,9 +15,9 @@ import { MobileDrawer } from './MobileDrawer'
 
 const BOTTOM_NAV = [
   { href: '/dashboard', label: 'Início', icon: LayoutDashboard, exact: true },
+  { href: '/dashboard/tasks', label: 'Tarefas', icon: CheckSquare },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
-  { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
 ]
 
 interface MobileNavProps {
