@@ -10,6 +10,7 @@ import { TaskList } from './TaskList'
 import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { ScraperTriggerButton } from './ScraperTriggerButton'
+import { EditLeadDetailsButton } from './EditLeadDetailsButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
   MessageCircle, AlertTriangle, TrendingUp, Bot,
@@ -156,6 +157,14 @@ export default async function LeadDetailPage({ params }: Props) {
             canEdit={member.role !== 'viewer'}
             isAdmin={member.role === 'admin'}
           />
+          {member.role !== 'viewer' && (
+            <EditLeadDetailsButton
+              leadId={lead.id}
+              initialFullName={lead.full_name}
+              initialPhone={lead.phone ?? null}
+              initialEmail={lead.email ?? null}
+            />
+          )}
           {member.role !== 'viewer' && !existingInvestor && (
             <PromoteToInvestorButton
               leadId={lead.id}
