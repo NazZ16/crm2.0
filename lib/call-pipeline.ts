@@ -42,7 +42,6 @@ export async function runCallPipeline(
       .eq('id', uploadId)
 
     // Passo a.5: Diarization via Haiku (Whisper-1 nao separa oradores).
-    // Reformata transcript em dialogo Agente/Lead para o leadAgent ler melhor.
     let transcriptFormatted: string | null = null
     try {
       const diarized = await diarizationAgent.reformat(transcriptText)
@@ -52,14 +51,11 @@ export async function runCallPipeline(
         .update({ transcript_formatted: transcriptFormatted })
         .eq('id', uploadId)
     } catch (err) {
-      // Diarization e nice-to-have. Se falhar, continuamos com transcript bruto.
       console.warn('[call-pipeline] diarization failed, using raw transcript:', err)
     }
 
-    // Texto que vai para o leadAgent: prefere o formatado se existir
     const sourceText = transcriptFormatted ?? transcriptText
 
-    // Para chamadas longas (>10 min ~ >8000 chars), usar apenas inicio + fim
     const MAX_CHARS = 12000
     const analysisText =
       sourceText.length > MAX_CHARS
@@ -68,7 +64,7 @@ export async function runCallPipeline(
           sourceText.slice(-MAX_CHARS * 0.3)
         : sourceText
 
-    // Passo b: Carregar agent_learnings (context-aware extraction)
+    // Passo b: Carregar agent_learnings
     const { data: learningsData } = await supabase
       .from('agent_learnings')
       .select('content')
@@ -77,7 +73,7 @@ export async function runCallPipeline(
       .limit(5)
     const agentLearnings = (learningsData ?? []).map((l: { content: string }) => l.content)
 
-    // Passo c: Criar agent_run para tracking
+    // Passo c: Criar agent_run
     const { data: run } = await supabase
       .from('agent_runs')
       .insert({
@@ -91,7 +87,7 @@ export async function runCallPipeline(
       .select('id')
       .single()
 
-    // Passo d: Lead agent - extrair TUDO
+    // Passo d: Lead agent
     const startMs = Date.now()
     let agentOutput: AgentFullOutput
 
@@ -188,7 +184,7 @@ export async function runCallPipeline(
 
     if (!leadId) throw new Error('Falhou a criar ou encontrar lead')
 
-    // Passo f: Carregar profile existente para merge
+    // Passo f: Carregar profile existente
     const { data: existingProfile } = (await supabase
       .from('lead_profiles')
       .select('*')
@@ -213,7 +209,7 @@ export async function runCallPipeline(
 
     const now = new Date().toISOString()
 
-    // Passo g: Upsert lead_profiles com TODOS os blocos
+    // Passo g: Upsert lead_profiles
     await supabase.from('lead_profiles').upsert(
       {
         lead_id: leadId,
@@ -236,8 +232,8 @@ export async function runCallPipeline(
       { onConflict: 'lead_id' }
     )
 
-    // Passo h: agent_extractions (raw output completo)
-    await supabase.from('agent_extractions').insert({
+    // Passo h: agent_extractions
+    const { error: extractionErr } = await supabase.from('agent_extractions').insert({
       team_id: teamId,
       lead_id: leadId,
       upload_id: uploadId,
@@ -246,8 +242,11 @@ export async function runCallPipeline(
       recommendations_json: agentOutput.recommendations,
       drafts_json: agentOutput.drafts,
     })
+    if (extractionErr) {
+      console.warn('[call-pipeline] insert agent_extractions failed:', extractionErr.message)
+    }
 
-    // Passo i: Atualizar agent_run com lead_id + tokens
+    // Passo i: Atualizar agent_run
     if (run) {
       await supabase
         .from('agent_runs')
@@ -281,7 +280,7 @@ export async function runCallPipeline(
       summaries
     )
 
-    // Passo k: Registar interacao (transcript completo + summary do agent)
+    // Passo k: Registar interacao
     const interactionSummary = [
       ex.summary,
       `Sentimento: ${coachFeedback.sentimento_lead}`,
@@ -298,24 +297,57 @@ export async function runCallPipeline(
       occurred_at: now,
     })
 
-    // Passo l: Tasks a partir de next_best_actions (ate 3) + fallback follow-up se urgencia >= 3
-    const actions = agentOutput.recommendations.next_best_actions ?? []
+    // Passo l: Tasks a partir de next_best_actions.
+    // Defensivo: aceita chaves PT (titulo/descricao/prioridade) ou EN (title/description/priority).
+    const rawActions = (agentOutput.recommendations.next_best_actions ?? []) as unknown as Array<
+      Record<string, unknown>
+    >
     let tasksCreated = 0
 
-    if (actions.length > 0) {
-      const priorityMap: Record<string, 'low' | 'medium' | 'high' | 'urgent'> = {
-        high: 'high',
-        medium: 'medium',
-        low: 'low',
-      }
+    const priorityMap: Record<string, 'low' | 'medium' | 'high' | 'urgent'> = {
+      high: 'high',
+      medium: 'medium',
+      low: 'low',
+      urgent: 'urgent',
+      alta: 'high',
+      media: 'medium',
+      'média': 'medium',
+      baixa: 'low',
+      urgente: 'urgent',
+    }
 
-      const tasksToCreate = actions.slice(0, 3).map((action) => ({
+    type NormalizedAction = {
+      title: string
+      description: string
+      priority: 'low' | 'medium' | 'high' | 'urgent'
+      due_in_hours: number | null
+    }
+
+    const normalizedActions: NormalizedAction[] = rawActions
+      .map((a) => {
+        const title = (a.title ?? a.titulo ?? '') as string
+        const description = (a.description ?? a.descricao ?? a['descrição'] ?? '') as string
+        const rawPrio = String(a.priority ?? a.prioridade ?? 'medium').toLowerCase()
+        const priority = priorityMap[rawPrio] ?? 'medium'
+        const dueRaw = a.due_in_hours ?? a.prazo_horas ?? a.due_hours ?? null
+        const due = typeof dueRaw === 'number' && Number.isFinite(dueRaw) ? dueRaw : null
+        return {
+          title: String(title).trim(),
+          description: String(description).trim(),
+          priority,
+          due_in_hours: due,
+        }
+      })
+      .filter((a) => a.title.length > 0)
+
+    if (normalizedActions.length > 0) {
+      const tasksToCreate = normalizedActions.slice(0, 3).map((action) => ({
         lead_id: leadId,
         team_id: teamId,
         assigned_to: userId,
         title: action.title,
-        description: action.description,
-        priority: priorityMap[action.priority] ?? 'medium',
+        description: action.description || null,
+        priority: action.priority,
         created_by: 'agent' as const,
         due_at: action.due_in_hours
           ? new Date(Date.now() + action.due_in_hours * 60 * 60 * 1000).toISOString()
@@ -323,14 +355,17 @@ export async function runCallPipeline(
         status: 'open' as const,
       }))
 
-      const { data: insertedTasks } = await supabase
+      const { data: insertedTasks, error: tasksErr } = await supabase
         .from('tasks')
         .insert(tasksToCreate)
         .select('id')
+      if (tasksErr) {
+        console.warn('[call-pipeline] insert tasks failed:', tasksErr.message, tasksToCreate)
+      }
       tasksCreated = insertedTasks?.length ?? 0
     }
 
-    // Fallback: se o agent nao devolveu actions e urgencia for elevada, gerar follow-up sequence
+    // Fallback: se nao houver actions e urgencia >= 3
     if (tasksCreated === 0 && extractedUrgency != null && extractedUrgency >= 3) {
       await createFollowUpSequence(supabase, teamId, leadId, userId)
     }
@@ -408,7 +443,6 @@ async function createFollowUpSequence(
       due_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       status: 'open',
       priority: 'medium',
-      created_by: 'agent',
-    },
+      created_by: 'agent',    },
   ])
 }
