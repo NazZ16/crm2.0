@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { CallsHistoryClient } from './CallsHistoryClient'
+import { CallsHistoryClient, type CallRow } from './CallsHistoryClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,21 +17,39 @@ export default async function CallsHistoryPage() {
 
   if (!member) redirect('/login')
 
-  const { data: calls } = await supabase
+  const { data: rawCalls } = await supabase
     .from('call_uploads')
     .select(`
       id,
-      duration_seconds,
-      nota_script,
-      script_analise,
+      audio_duration_s,
+      coach_feedback,
+      transcript_formatted,
+      transcript_text,
       created_at,
+      status,
       lead_id,
-      leads(full_name)
+      leads(id, full_name, phone)
     `)
     .eq('team_id', member.team_id)
-    .not('nota_script', 'is', null)
+    .eq('status', 'done')
     .order('created_at', { ascending: false })
     .limit(50)
 
-  return <CallsHistoryClient calls={calls ?? []} />
+  type LeadJoin = { id: string; full_name: string; phone: string | null } | null
+  const calls: CallRow[] = (rawCalls ?? []).map((c) => {
+    const leadObj = (Array.isArray(c.leads) ? c.leads[0] : c.leads) as LeadJoin
+    return {
+      id: c.id,
+      audio_duration_s: c.audio_duration_s as number | null,
+      coach_feedback: c.coach_feedback as Record<string, unknown> | null,
+      transcript_formatted: (c.transcript_formatted as string | null) ?? null,
+      transcript_text: (c.transcript_text as string | null) ?? null,
+      created_at: c.created_at as string,
+      lead_id: leadObj?.id ?? null,
+      lead_name: leadObj?.full_name ?? 'Lead sem nome',
+      lead_phone: leadObj?.phone ?? null,
+    }
+  })
+
+  return <CallsHistoryClient calls={calls} />
 }

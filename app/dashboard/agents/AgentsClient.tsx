@@ -31,7 +31,11 @@ export function AgentsClient() {
           `Plano gerado: ${items} leads, ${tasks} tarefa${tasks === 1 ? '' : 's'} criada${tasks === 1 ? '' : 's'}`
         )
       } else {
-        toast.success(`Coach analisou: ${data.learnings_added ?? 0} novas aprendizagens`)
+        if (data.insufficient_data) {
+          toast.warning(data.message ?? 'Dados insuficientes para o Coach analisar.')
+        } else {
+          toast.success(`Coach analisou: ${data.learnings_added ?? 0} novas aprendizagens`)
+        }
       }
       router.refresh()
     } catch {
