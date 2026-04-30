@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -12,78 +13,104 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { ChevronDown, ChevronUp, Phone, MicOff } from 'lucide-react'
+import { ChevronDown, ChevronUp, Phone, MicOff, Smile, Meh, Frown, User } from 'lucide-react'
 
-interface CallUpload {
+export interface CallRow {
   id: string
-  duration_seconds: number | null
-  nota_script: number | null
-  script_analise: unknown  // JSON do Supabase, sem garantia de estrutura
+  audio_duration_s: number | null
+  coach_feedback: Record<string, unknown> | null
+  transcript_formatted: string | null
+  transcript_text: string | null
   created_at: string
   lead_id: string | null
-  leads: { full_name: string } | { full_name: string }[] | null
+  lead_name: string
+  lead_phone: string | null
 }
 
-interface Props {
-  calls: CallUpload[]
+const SENTIMENT_LABEL: Record<string, string> = {
+  muito_positivo: 'Muito positivo',
+  positivo: 'Positivo',
+  neutro: 'Neutro',
+  negativo: 'Negativo',
+  muito_negativo: 'Muito negativo',
 }
 
-function getLeadName(leads: CallUpload['leads']): string {
-  if (!leads) return 'Lead desconhecida'
-  const lead = Array.isArray(leads) ? leads[0] : leads
-  return lead?.full_name ?? 'Lead desconhecida'
+const SENTIMENT_SCORE: Record<string, number> = {
+  muito_positivo: 10,
+  positivo: 8,
+  neutro: 6,
+  negativo: 4,
+  muito_negativo: 2,
+}
+
+const SENTIMENT_COLOR: Record<string, string> = {
+  muito_positivo: 'bg-green-100 text-green-700 border-green-200',
+  positivo: 'bg-green-50 text-green-700 border-green-200',
+  neutro: 'bg-gray-100 text-gray-700 border-gray-200',
+  negativo: 'bg-orange-100 text-orange-700 border-orange-200',
+  muito_negativo: 'bg-red-100 text-red-700 border-red-200',
+}
+
+function getSentiment(feedback: Record<string, unknown> | null): string | null {
+  if (!feedback) return null
+  const v = feedback['sentimento_lead']
+  return typeof v === 'string' ? v : null
+}
+
+function getStringArray(feedback: Record<string, unknown> | null, key: string): string[] {
+  if (!feedback) return []
+  const v = feedback[key]
+  if (!Array.isArray(v)) return []
+  return v.filter((x): x is string => typeof x === 'string')
+}
+
+function getString(feedback: Record<string, unknown> | null, key: string): string | null {
+  if (!feedback) return null
+  const v = feedback[key]
+  return typeof v === 'string' ? v : null
 }
 
 function formatDuration(seconds: number | null): string {
-  if (!seconds) return '—'
+  if (!seconds) return '-'
   const m = Math.floor(seconds / 60)
   const s = seconds % 60
   return `${m}m ${s.toString().padStart(2, '0')}s`
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
+  return new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 function formatDateShort(iso: string): string {
-  return new Date(iso).toLocaleDateString('pt-PT', {
-    day: '2-digit',
-    month: '2-digit',
-  })
+  return new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })
 }
 
-function NotaBadge({ nota }: { nota: number }) {
-  const color =
-    nota >= 8
-      ? 'bg-green-100 text-green-700'
-      : nota >= 6
-      ? 'bg-yellow-100 text-yellow-700'
-      : 'bg-red-100 text-red-700'
-  return <Badge className={`text-sm font-semibold ${color}`}>{nota}/10</Badge>
+function SentimentIcon({ sentiment }: { sentiment: string | null }) {
+  if (!sentiment) return null
+  if (sentiment === 'muito_positivo' || sentiment === 'positivo') {
+    return <Smile size={14} className="text-green-500" />
+  }
+  if (sentiment === 'negativo' || sentiment === 'muito_negativo') {
+    return <Frown size={14} className="text-red-500" />
+  }
+  return <Meh size={14} className="text-gray-400" />
 }
 
-function ScriptAnalisePanel({ rawAnalise }: { rawAnalise: unknown }) {
-  const analise = rawAnalise as Record<string, unknown> | null
-  const pontosFortes = Array.isArray(analise?.pontos_fortes) ? analise.pontos_fortes as string[] : []
-  const pontosFracos = Array.isArray(analise?.pontos_fracos) ? analise.pontos_fracos as string[] : []
-  const sugestoes = Array.isArray(analise?.sugestoes) ? analise.sugestoes as string[] : []
-  const resumo = typeof analise?.resumo === 'string' ? analise.resumo : null
+function CoachPanel({ feedback }: { feedback: Record<string, unknown> | null }) {
+  const positivos = getStringArray(feedback, 'pontos_positivos')
+  const aMelhorar = getStringArray(feedback, 'a_melhorar')
+  const proxima = getString(feedback, 'proxima_chamada')
+
+  if (positivos.length === 0 && aMelhorar.length === 0 && !proxima) return null
 
   return (
     <div className="mt-3 pt-3 border-t border-gray-100 space-y-3 text-sm">
-      {resumo && (
-        <p className="text-gray-600 italic">{resumo}</p>
-      )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {pontosFortes.length > 0 && (
+        {positivos.length > 0 && (
           <div>
-            <p className="font-semibold text-green-700 mb-1">Pontos fortes</p>
+            <p className="font-semibold text-green-700 mb-1">Pontos positivos</p>
             <ul className="space-y-1">
-              {pontosFortes.map((p, i) => (
+              {positivos.map((p, i) => (
                 <li key={i} className="text-gray-600 flex gap-1.5">
                   <span className="text-green-500 flex-shrink-0">+</span>
                   {p}
@@ -92,30 +119,23 @@ function ScriptAnalisePanel({ rawAnalise }: { rawAnalise: unknown }) {
             </ul>
           </div>
         )}
-        {pontosFracos.length > 0 && (
+        {aMelhorar.length > 0 && (
           <div>
-            <p className="font-semibold text-red-700 mb-1">Pontos a melhorar</p>
+            <p className="font-semibold text-orange-700 mb-1">A melhorar</p>
             <ul className="space-y-1">
-              {pontosFracos.map((p, i) => (
+              {aMelhorar.map((p, i) => (
                 <li key={i} className="text-gray-600 flex gap-1.5">
-                  <span className="text-red-500 flex-shrink-0">–</span>
+                  <span className="text-orange-500 flex-shrink-0">-</span>
                   {p}
                 </li>
               ))}
             </ul>
           </div>
         )}
-        {sugestoes.length > 0 && (
+        {proxima && (
           <div>
-            <p className="font-semibold text-blue-700 mb-1">Sugestões</p>
-            <ul className="space-y-1">
-              {sugestoes.map((p, i) => (
-                <li key={i} className="text-gray-600 flex gap-1.5">
-                  <span className="text-blue-500 flex-shrink-0">→</span>
-                  {p}
-                </li>
-              ))}
-            </ul>
+            <p className="font-semibold text-blue-700 mb-1">Proxima chamada</p>
+            <p className="text-gray-600">{proxima}</p>
           </div>
         )}
       </div>
@@ -123,56 +143,63 @@ function ScriptAnalisePanel({ rawAnalise }: { rawAnalise: unknown }) {
   )
 }
 
-export function CallsHistoryClient({ calls }: Props) {
+export function CallsHistoryClient({ calls }: { calls: CallRow[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   if (calls.length === 0) {
     return (
       <div className="p-6 max-w-6xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Histórico de Chamadas</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Evolução da qualidade do script ao longo do tempo</p>
+          <h1 className="text-2xl font-bold text-gray-900">Historico de Chamadas</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Sentimento das leads e feedback do Coach IA</p>
         </div>
         <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-200">
           <MicOff size={40} className="mx-auto text-gray-300 mb-3" />
           <p className="text-gray-400 font-medium">Sem chamadas analisadas ainda</p>
           <p className="text-sm text-gray-300 mt-1">
-            Faz upload de um áudio de chamada para começar
+            Faz upload de um audio de chamada para comecar
           </p>
         </div>
       </div>
     )
   }
 
-  // Prepare chart data — oldest first for the line chart
+  // Chart data com sentiment_score (0-10) por chamada
   const chartData = [...calls]
     .reverse()
-    .map((c) => ({
-      data: formatDateShort(c.created_at),
-      nota: c.nota_script ?? 0,
-      fullDate: formatDate(c.created_at),
-      leadName: getLeadName(c.leads),
-    }))
+    .map((c) => {
+      const sent = getSentiment(c.coach_feedback)
+      return {
+        data: formatDateShort(c.created_at),
+        nota: sent ? SENTIMENT_SCORE[sent] ?? 0 : 0,
+        fullDate: formatDate(c.created_at),
+        leadName: c.lead_name,
+        sentimento: sent ? SENTIMENT_LABEL[sent] ?? sent : 'Sem feedback',
+      }
+    })
 
-  const validCalls = calls.filter(c => c.nota_script !== null)
-  const avgNota = validCalls.length > 0
-    ? validCalls.reduce((sum, c) => sum + (c.nota_script ?? 0), 0) / validCalls.length
-    : null
-  const bestNota = validCalls.length > 0 ? Math.max(...validCalls.map(c => c.nota_script!)) : null
-  const worstNota = validCalls.length > 0 ? Math.min(...validCalls.map(c => c.nota_script!)) : null
+  const validCalls = calls.filter((c) => getSentiment(c.coach_feedback) != null)
+  const positiveCount = validCalls.filter((c) => {
+    const s = getSentiment(c.coach_feedback)
+    return s === 'positivo' || s === 'muito_positivo'
+  }).length
+  const negativeCount = validCalls.filter((c) => {
+    const s = getSentiment(c.coach_feedback)
+    return s === 'negativo' || s === 'muito_negativo'
+  }).length
+  const totalDurationS = calls.reduce((sum, c) => sum + (c.audio_duration_s ?? 0), 0)
+  const totalMinutes = Math.round(totalDurationS / 60)
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Histórico de Chamadas</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Historico de Chamadas</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Evolução da qualidade do script — {calls.length} chamada{calls.length !== 1 ? 's' : ''} analisada{calls.length !== 1 ? 's' : ''}
+          {calls.length} chamada{calls.length !== 1 ? 's' : ''} analisada{calls.length !== 1 ? 's' : ''}
         </p>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-3">
@@ -180,8 +207,8 @@ export function CallsHistoryClient({ calls }: Props) {
                 <Phone size={18} className="text-blue-600" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-800">{avgNota !== null ? avgNota.toFixed(1) : '—'}</div>
-                <div className="text-xs text-gray-500">Nota média</div>
+                <div className="text-2xl font-bold text-gray-800">{calls.length}</div>
+                <div className="text-xs text-gray-500">Total chamadas</div>
               </div>
             </div>
           </CardContent>
@@ -190,11 +217,11 @@ export function CallsHistoryClient({ calls }: Props) {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-50 rounded-lg">
-                <Phone size={18} className="text-green-600" />
+                <Smile size={18} className="text-green-600" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-green-700">{bestNota !== null ? `${bestNota}/10` : '—'}</div>
-                <div className="text-xs text-gray-500">Melhor nota</div>
+                <div className="text-2xl font-bold text-green-700">{positiveCount}</div>
+                <div className="text-xs text-gray-500">Sentimento positivo</div>
               </div>
             </div>
           </CardContent>
@@ -203,100 +230,124 @@ export function CallsHistoryClient({ calls }: Props) {
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-50 rounded-lg">
-                <Phone size={18} className="text-red-500" />
+                <Frown size={18} className="text-red-500" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-red-600">{worstNota !== null ? `${worstNota}/10` : '—'}</div>
-                <div className="text-xs text-gray-500">Nota mais baixa</div>
+                <div className="text-2xl font-bold text-red-600">{negativeCount}</div>
+                <div className="text-xs text-gray-500">Sentimento negativo</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-50 rounded-lg">
+                <Phone size={18} className="text-purple-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-800">{totalMinutes}m</div>
+                <div className="text-xs text-gray-500">Tempo total</div>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Line chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Evolução da nota do script</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartData} margin={{ top: 4, right: 16, left: -16, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                dataKey="data"
-                tick={{ fontSize: 12, fill: '#9ca3af' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                domain={[0, 10]}
-                ticks={[0, 2, 4, 6, 8, 10]}
-                tick={{ fontSize: 12, fill: '#9ca3af' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                content={({ active, payload }) => {
-                  if (!active || !payload?.length) return null
-                  const d = payload[0].payload as (typeof chartData)[0]
-                  return (
-                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 text-sm">
-                      <p className="font-medium text-gray-700">{d.fullDate}</p>
-                      <p className="text-gray-500 text-xs">{d.leadName}</p>
-                      <p className="mt-1 font-bold text-gray-800">Nota: {d.nota}/10</p>
-                    </div>
-                  )
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="nota"
-                stroke="#14b8a6"
-                strokeWidth={2.5}
-                dot={{ r: 4, fill: '#14b8a6', strokeWidth: 0 }}
-                activeDot={{ r: 6, fill: '#0d9488' }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      {chartData.length >= 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Sentimento das leads ao longo do tempo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 4, right: 16, left: -16, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="data" tick={{ fontSize: 12, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+                <YAxis
+                  domain={[0, 10]}
+                  ticks={[0, 2, 4, 6, 8, 10]}
+                  tick={{ fontSize: 12, fill: '#9ca3af' }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null
+                    const d = payload[0].payload as (typeof chartData)[0]
+                    return (
+                      <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 text-sm">
+                        <p className="font-medium text-gray-700">{d.fullDate}</p>
+                        <p className="text-gray-500 text-xs">{d.leadName}</p>
+                        <p className="mt-1 font-bold text-gray-800">{d.sentimento}</p>
+                      </div>
+                    )
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="nota"
+                  stroke="#14b8a6"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: '#14b8a6', strokeWidth: 0 }}
+                  activeDot={{ r: 6, fill: '#0d9488' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Table */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Detalhe por chamada</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="divide-y divide-gray-100">
-            {/* Header row */}
             <div className="grid grid-cols-[1fr_1.5fr_auto_auto_auto] gap-4 px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">
               <span>Data</span>
               <span>Lead</span>
-              <span>Nota</span>
-              <span>Duração</span>
+              <span>Sentimento</span>
+              <span>Duracao</span>
               <span />
             </div>
 
             {calls.map((call) => {
               const isExpanded = expandedId === call.id
-              const rawAnalise = call.script_analise as Record<string, unknown> | null
-              const hasDetails =
-                rawAnalise != null &&
-                (typeof rawAnalise.resumo === 'string' ||
-                  (Array.isArray(rawAnalise.pontos_fortes) && rawAnalise.pontos_fortes.length > 0) ||
-                  (Array.isArray(rawAnalise.pontos_fracos) && rawAnalise.pontos_fracos.length > 0) ||
-                  (Array.isArray(rawAnalise.sugestoes) && rawAnalise.sugestoes.length > 0))
+              const sent = getSentiment(call.coach_feedback)
+              const positivos = getStringArray(call.coach_feedback, 'pontos_positivos')
+              const aMelhorar = getStringArray(call.coach_feedback, 'a_melhorar')
+              const proxima = getString(call.coach_feedback, 'proxima_chamada')
+              const hasDetails = positivos.length + aMelhorar.length > 0 || !!proxima
 
               return (
                 <div key={call.id} className="px-6 py-4">
                   <div className="grid grid-cols-[1fr_1.5fr_auto_auto_auto] gap-4 items-center">
                     <span className="text-sm text-gray-600">{formatDate(call.created_at)}</span>
-                    <span className="text-sm font-medium text-gray-800 truncate">
-                      {getLeadName(call.leads)}
-                    </span>
-                    <NotaBadge nota={call.nota_script ?? 0} />
-                    <span className="text-sm text-gray-500">{formatDuration(call.duration_seconds)}</span>
+                    <div className="min-w-0">
+                      {call.lead_id ? (
+                        <Link
+                          href={`/dashboard/leads/${call.lead_id}`}
+                          className="text-sm font-medium text-blue-600 hover:text-blue-800 truncate inline-flex items-center gap-1"
+                        >
+                          <User size={12} />
+                          {call.lead_name}
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-gray-400">{call.lead_name}</span>
+                      )}
+                    </div>
+                    {sent ? (
+                      <Badge variant="outline" className={`text-xs ${SENTIMENT_COLOR[sent] ?? ''}`}>
+                        <span className="inline-flex items-center gap-1">
+                          <SentimentIcon sentiment={sent} />
+                          {SENTIMENT_LABEL[sent] ?? sent}
+                        </span>
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-gray-400">-</span>
+                    )}
+                    <span className="text-sm text-gray-500">{formatDuration(call.audio_duration_s)}</span>
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : call.id)}
                       disabled={!hasDetails}
@@ -307,9 +358,7 @@ export function CallsHistoryClient({ calls }: Props) {
                     </button>
                   </div>
 
-                  {isExpanded && hasDetails && (
-                    <ScriptAnalisePanel rawAnalise={call.script_analise} />
-                  )}
+                  {isExpanded && hasDetails && <CoachPanel feedback={call.coach_feedback} />}
                 </div>
               )
             })}

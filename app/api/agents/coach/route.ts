@@ -5,7 +5,7 @@ import { coachAgent, type DealAnalysis } from '@/lib/agents/coach-agent'
 export async function GET(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
 
   const { data: member } = await supabase
     .from('team_members')
@@ -13,13 +13,12 @@ export async function GET(request: Request) {
     .eq('user_id', user.id)
     .single()
 
-  if (!member) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (!member) return NextResponse.json({ error: 'Sem permissao' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type') ?? 'tips'
 
   if (type === 'tips') {
-    // Return existing learnings as tips
     const [learningsRes, leadsRes] = await Promise.all([
       supabase
         .from('agent_learnings')
@@ -31,7 +30,7 @@ export async function GET(request: Request) {
         .from('leads')
         .select('status, score, urgency, source')
         .eq('team_id', member.team_id)
-        .not('status', 'in', '("won","lost")')
+        .not('status', 'in', '(won,lost)')
         .limit(20),
     ])
 
@@ -40,7 +39,7 @@ export async function GET(request: Request) {
 
     if (learnings.length === 0) {
       return NextResponse.json({
-        tips: 'Ainda não há aprendizagens suficientes. Analisa mais conversas para que o Coach aprenda os teus padrões.',
+        tips: 'Ainda nao ha aprendizagens suficientes. Analisa mais conversas para que o Coach aprenda os teus padroes.',
         learnings_count: 0,
       })
     }
@@ -50,7 +49,6 @@ export async function GET(request: Request) {
   }
 
   if (type === 'weekly') {
-    // Analyze recent deals and extract learnings
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
 
     const { data: recentLeads } = await supabase
@@ -73,7 +71,13 @@ export async function GET(request: Request) {
       .limit(10)
 
     if (!recentLeads || recentLeads.length < 3) {
-      return NextResponse.json({ message: 'Dados insuficientes para análise semanal', learnings_added: 0 })
+      return NextResponse.json({
+        insufficient_data: true,
+        leads_found: recentLeads?.length ?? 0,
+        leads_needed: 3,
+        message: `Precisas de pelo menos 3 leads marcadas como ganhas ou perdidas nos ultimos 30 dias para o Coach extrair padroes (tens ${recentLeads?.length ?? 0}).`,
+        learnings_added: 0,
+      })
     }
 
     const deals: DealAnalysis[] = recentLeads.map((l) => {
@@ -104,13 +108,29 @@ export async function GET(request: Request) {
         team_id: member.team_id,
         agent_type: 'coach',
         trigger_type: 'manual',
-        input_summary: 'Revisão semanal e extração de aprendizagens',
+        input_summary: 'Revisao semanal e extracao de aprendizagens',
         status: 'running',
       })
       .select('id')
       .single()
 
-    const result = await coachAgent.extractLearnings(deals, existingContents)
+    const startMs = Date.now()
+    let result
+    try {
+      result = await coachAgent.extractLearnings(deals, existingContents)
+    } catch (err) {
+      if (run) {
+        await supabase
+          .from('agent_runs')
+          .update({
+            status: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+            duration_ms: Date.now() - startMs,
+          })
+          .eq('id', run.id)
+      }
+      return NextResponse.json({ error: 'Erro no Coach', details: err instanceof Error ? err.message : String(err) }, { status: 500 })
+    }
 
     if (result.learnings.length > 0) {
       await supabase.from('agent_learnings').insert(
@@ -121,12 +141,12 @@ export async function GET(request: Request) {
     if (run) {
       await supabase
         .from('agent_runs')
-        .update({ status: 'done', output_json: result })
+        .update({ status: 'done', output_json: result, duration_ms: Date.now() - startMs })
         .eq('id', run.id)
     }
 
     return NextResponse.json({ learnings_added: result.learnings.length, learnings: result.learnings })
   }
 
-  return NextResponse.json({ error: 'Tipo inválido' }, { status: 400 })
+  return NextResponse.json({ error: 'Tipo invalido' }, { status: 400 })
 }
