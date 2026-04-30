@@ -47,13 +47,12 @@ export abstract class BaseAgent {
 
         if (!shouldRetry) throw err
 
-        // Backoff exponencial: 2s, 4s, 8s, 16s
         const delay = BASE_DELAY_MS * Math.pow(2, attempt)
         await new Promise((r) => setTimeout(r, delay))
       }
     }
 
-    throw new Error('Anthropic API indisponível após várias tentativas')
+    throw new Error('Anthropic API indisponivel apos varias tentativas')
   }
 
   protected parseJSON<T>(text: string): T {
@@ -70,26 +69,54 @@ export abstract class BaseAgent {
       return JSON.parse(raw) as T
     } catch { /* continuar */ }
 
-    // Tentativa 2: remover vírgulas antes de } ou ]
+    // Tentativa 2: remover virgulas a seguir ao ultimo elemento
     try {
       const cleaned = raw.replace(/,(\s*[}\]])/g, '$1')
       return JSON.parse(cleaned) as T
     } catch { /* continuar */ }
 
-    // Tentativa 3: truncar no último campo completo e fechar o objeto
+    // Tentativa 3: andar char a char a tracar string/escape/depth, encontrar
+    // ultima posicao APOS um '}' que esta dentro de array (= fim de item completo).
+    // Cortar ai e fechar arrays/objectos abertos. Funciona quando a resposta e
+    // truncada a meio de um item de array por max_tokens.
     try {
-      const lastComma = raw.lastIndexOf(',')
-      const lastQuote = raw.lastIndexOf('"')
-      const cutAt = Math.max(lastComma, lastQuote)
-      if (cutAt > start) {
-        // Fechar todos os arrays/objetos abertos
-        const partial = raw.slice(0, cutAt)
-        const opens = (partial.match(/\[/g) ?? []).length - (partial.match(/\]/g) ?? []).length
-        const closing = ']'.repeat(Math.max(0, opens)) + '}'
+      let inString = false
+      let escape = false
+      let arrayDepth = 0
+      let lastSafeCut = -1
+      for (let i = 0; i < raw.length; i++) {
+        const c = raw[i]
+        if (escape) { escape = false; continue }
+        if (c === '\\' && inString) { escape = true; continue }
+        if (c === '"') { inString = !inString; continue }
+        if (inString) continue
+        if (c === '[') arrayDepth++
+        else if (c === ']') arrayDepth--
+        else if (c === '}' && arrayDepth > 0) lastSafeCut = i + 1
+      }
+      if (lastSafeCut > start) {
+        const partial = raw.slice(0, lastSafeCut)
+        // Recontar o que esta aberto a partir de partial, ignorando dentro de strings
+        let openArrays = 0
+        let openObjects = 0
+        let inS = false
+        let esc = false
+        for (let i = 0; i < partial.length; i++) {
+          const c = partial[i]
+          if (esc) { esc = false; continue }
+          if (c === '\\' && inS) { esc = true; continue }
+          if (c === '"') { inS = !inS; continue }
+          if (inS) continue
+          if (c === '{') openObjects++
+          else if (c === '}') openObjects--
+          else if (c === '[') openArrays++
+          else if (c === ']') openArrays--
+        }
+        const closing = ']'.repeat(Math.max(0, openArrays)) + '}'.repeat(Math.max(0, openObjects))
         return JSON.parse(partial + closing) as T
       }
     } catch { /* continuar */ }
 
-    throw new Error(`JSON inválido na resposta do agente. Posição aprox. ${raw.length} chars. Início: ${raw.slice(0, 100)}`)
+    throw new Error(`JSON invalido na resposta do agente. Posicao aprox. ${raw.length} chars. Inicio: ${raw.slice(0, 100)}`)
   }
 }

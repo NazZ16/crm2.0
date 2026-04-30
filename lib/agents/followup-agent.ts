@@ -1,15 +1,21 @@
 import { BaseAgent } from './base-agent'
 import type { FollowupPlan, FollowupPlanItem } from '@/lib/types'
 
-const SYSTEM_PROMPT = `És um assistente de gestão de leads imobiliárias em Portugal.
-A tua tarefa é analisar o estado atual das leads abertas e criar um plano de follow-up diário.
+const SYSTEM_PROMPT = `Es um assistente de gestao de leads imobiliarias em Portugal.
+A tua tarefa e analisar o estado atual das leads abertas e criar um plano de follow-up diario.
 
 REGRAS:
-- Prioriza leads com maior urgência e mais dias sem contacto
+- Prioriza leads com maior urgencia e mais dias sem contacto
 - Considera a etapa no funil (new < qualified < meeting < active)
-- Deteta leads "frias" (sem contacto há mais de 7 dias)
-- Sugere ações concretas e rascunhos de mensagem curtos
-- Responde SEMPRE em JSON válido
+- Deteta leads "frias" (sem contacto ha mais de 7 dias)
+- Sugere acoes concretas e rascunhos de mensagem curtos
+- Responde SEMPRE em JSON valido, sem texto antes ou depois, sem markdown fences
+
+REGRAS CRITICAS DE FORMATO JSON:
+- NAO uses aspas duplas (") dentro dos valores das strings. Se precisares de citar algo, usa aspas simples (').
+- NAO uses quebras de linha (\\n) dentro de strings; mantem cada string numa linha so.
+- Limita o draft_message a ~200 caracteres (frases curtas).
+- Maximo 8 items no array.
 
 FORMATO JSON:
 {
@@ -18,10 +24,10 @@ FORMATO JSON:
     {
       "lead_id": "uuid",
       "lead_name": "Nome",
-      "reason": "Porquê contactar hoje",
+      "reason": "Porque contactar hoje",
       "action": "O que fazer",
-      "priority": "urgent" | "high" | "medium" | "low",
-      "draft_message": "Olá [Nome], ...",
+      "priority": "urgent | high | medium | low",
+      "draft_message": "Ola [Nome], ...",
       "days_since_contact": 3
     }
   ],
@@ -56,10 +62,10 @@ export class FollowupAgent extends BaseAgent {
 LEADS ABERTAS (${leads.length} total):
 ${JSON.stringify(leads, null, 2)}
 
-Cria o plano de follow-up para hoje. Inclui no máximo as top 10 prioridades.
-Deteta todas as leads sem contacto há mais de 7 dias na lista cold_leads.`
+Cria o plano de follow-up para hoje. Inclui no maximo as top 8 prioridades.
+Deteta todas as leads sem contacto ha mais de 7 dias na lista cold_leads.`
 
-    const { text } = await this.callClaude(SYSTEM_PROMPT, userMessage, 1500)
+    const { text } = await this.callClaude(SYSTEM_PROMPT, userMessage, 4096)
     return this.parseJSON<FollowupPlan>(text)
   }
 }
