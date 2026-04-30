@@ -1,22 +1,22 @@
 import { BaseAgent } from './base-agent'
 import type { AgentFullOutput, LeadProfile } from '@/lib/types'
 
-const SYSTEM_PROMPT = `És um assistente especializado em análise de conversas de venda imobiliária em Portugal.
-Analisa a conversa e extrai TODA a informação disponível. Quando um campo não está na conversa, usa null — nunca inventes.
+const SYSTEM_PROMPT = `Es um assistente especializado em analise de conversas de venda imobiliaria em Portugal.
+Analisa a conversa e extrai TODA a informacao disponivel. Quando um campo nao esta na conversa, usa null - nunca inventes.
 
-REGRAS CRÍTICAS:
-- Responde APENAS com JSON válido, sem texto antes ou depois, sem comentários
-- Usa null para campos sem informação — nunca uses strings de exemplo como valores
-- Arrays vazios [] são válidos quando não há itens
-- Não uses vírgulas a seguir ao último elemento de um array ou objeto
+REGRAS CRITICAS:
+- Responde APENAS com JSON valido, sem texto antes ou depois, sem comentarios
+- Usa null para campos sem informacao - nunca uses strings de exemplo como valores
+- Arrays vazios [] sao validos quando nao ha itens
+- Nao uses virgulas a seguir ao ultimo elemento de um array ou objeto
 
-FORMATO JSON OBRIGATÓRIO (respeita exatamente esta estrutura):
+FORMATO JSON OBRIGATORIO (respeita exatamente esta estrutura):
 {
   "lead_updates": {
     "urgency": <1-5>,
     "score": <0-100>,
     "full_name": <string | null - nome completo da lead se mencionado>,
-    "phone": <string | null - número de telefone se mencionado, formato +351XXXXXXXXX se possível>,
+    "phone": <string | null - numero de telefone se mencionado, formato +351XXXXXXXXX se possivel>,
     "email": <string | null - email se mencionado>,
     "home_preferences": {
       "zonas": [],
@@ -70,7 +70,14 @@ FORMATO JSON OBRIGATÓRIO (respeita exatamente esta estrutura):
   },
   "recommendations": {
     "next_questions": [],
-    "next_best_actions": [],
+    "next_best_actions": [
+      {
+        "title": "<string - titulo curto da accao em portugues>",
+        "description": "<string - descricao concreta do que fazer>",
+        "priority": "<low | medium | high>",
+        "due_in_hours": <number | null - prazo em horas>
+      }
+    ],
     "red_flags": [],
     "missing_info": [],
     "coaching_notes": []
@@ -78,15 +85,22 @@ FORMATO JSON OBRIGATÓRIO (respeita exatamente esta estrutura):
   "drafts": {
     "drafts": [
       {
-        "channel": "whatsapp",
-        "tone": "curto",
-        "subject": null,
-        "body": "mensagem curta",
-        "goal": "objetivo"
+        "channel": "<whatsapp | email>",
+        "tone": "<curto | neutro | formal>",
+        "subject": "<string | null - apenas para email>",
+        "body": "<string - corpo da mensagem em portugues>",
+        "goal": "<string - objectivo da mensagem>"
       }
     ]
   }
-}`
+}
+
+ATENCAO IMPORTANTE:
+- As CHAVES do JSON sao SEMPRE em INGLES (title, description, priority, channel, body, goal, subject, tone) mesmo quando o conteudo (valores) e em portugues. Nunca uses "titulo", "descricao", "prioridade", "canal", "corpo".
+- Os valores de "priority" sao SEMPRE em INGLES: "low", "medium" ou "high". Nunca uses "baixa", "media", "alta".
+- Os valores de "channel" sao SEMPRE em INGLES: "whatsapp" ou "email".
+- Os valores de "tone" sao em PORTUGUES: "curto", "neutro" ou "formal".
+- Inclui SEMPRE pelo menos 1 acao em next_best_actions, mesmo para leads frias (ex: agendar recontacto longe, pedir referencias).`
 
 export interface LeadAgentInput {
   leadName: string
@@ -102,7 +116,7 @@ export class LeadAgent extends BaseAgent {
 
     let knownData = ''
     if (existingProfile) {
-      knownData = `\n\nPERFIL JÁ CONHECIDO:\n${JSON.stringify(existingProfile, null, 2)}`
+      knownData = `\n\nPERFIL JA CONHECIDO:\n${JSON.stringify(existingProfile, null, 2)}`
     }
 
     let learningsContext = ''
