@@ -63,25 +63,17 @@ export default async function LeadDetailPage({ params }: Props) {
     .limit(1)
     .single()
 
-  let latestRun: {
-    id: string
-    status: string
-    tokens_used: number | null
-    duration_ms: number | null
-    agent_type: string
-    output_json: unknown
-    error: string | null
-    created_at: string
-  } | null = null
-
-  if (latestExtraction?.run_id) {
-    const { data } = await supabase
-      .from('agent_runs')
-      .select('id, status, tokens_used, duration_ms, agent_type, output_json, error, created_at')
-      .eq('id', latestExtraction.run_id)
-      .maybeSingle()
-    latestRun = data
-  }
+  // Carregar agent_run mais recente diretamente pelo lead_id.
+  // (Antes dependia de latestExtraction.run_id, mas se o pipeline falha entre
+  // criar o run e a extraction, ficamos sem latestRun e a Debug nao aparece.)
+  const { data: latestRun } = await supabase
+    .from('agent_runs')
+    .select('id, status, tokens_used, duration_ms, agent_type, output_json, error, created_at')
+    .eq('team_id', member.team_id)
+    .eq('lead_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   const { data: latestCallUpload } = await supabase
     .from('call_uploads')
@@ -436,7 +428,7 @@ export default async function LeadDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {(latestExtraction || latestCallUpload?.transcript_text || latestRun) && (
+          {(latestExtraction || latestCallUpload || latestRun) && (
             <Card className="border-dashed border-gray-300">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-2">
