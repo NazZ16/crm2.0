@@ -100,7 +100,7 @@ export async function runCallPipeline(
         leadName: 'Lead (chamada)',
         conversationText: analysisText,
         objective:
-          'Extrair nome completo, telefone, email, score, urgencia e perfil da lead a partir desta chamada.',
+          'Analisar a chamada de fim a fim: (1) extrair nome, telefone, email, score, urgencia e perfil completo da lead; (2) sugerir ate 3 next_best_actions concretas (titulo, descricao, prioridade, due_in_hours); (3) redigir 1-2 drafts curtos para follow-up (WhatsApp e/ou email); (4) listar perguntas-chave em aberto e red flags relevantes.',
         agentLearnings,
       })
     } catch (err) {
