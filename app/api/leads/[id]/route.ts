@@ -16,6 +16,10 @@ const updateLeadSchema = z.object({
   next_action_at: z.string().datetime().nullable().optional(),
   assigned_to: z.string().uuid().nullable().optional(),
   campaign_id: z.string().uuid().nullable().optional(),
+  // Tracking financeiro (migration 014)
+  deal_value: z.number().nonnegative().nullable().optional(),
+  commission_value: z.number().nonnegative().nullable().optional(),
+  closed_at: z.string().datetime().nullable().optional(),
 })
 
 async function getLeadAndVerify(leadId: string, userId: string) {
@@ -42,7 +46,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
 
   const { data: member } = await supabase
     .from('team_members')
@@ -50,7 +54,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     .eq('user_id', user.id)
     .single()
 
-  if (!member) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (!member) return NextResponse.json({ error: 'Sem permissao' }, { status: 403 })
 
   const { data: lead, error } = await supabase
     .from('leads')
@@ -65,7 +69,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     .order('occurred_at', { foreignTable: 'interactions', ascending: false })
     .single()
 
-  if (error) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
+  if (error) return NextResponse.json({ error: 'Lead nao encontrada' }, { status: 404 })
 
   return NextResponse.json(lead)
 }
@@ -74,16 +78,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
 
   const { member, lead } = await getLeadAndVerify(id, user.id)
-  if (!member || !lead) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
-  if (member.role === 'viewer') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (!member || !lead) return NextResponse.json({ error: 'Lead nao encontrada' }, { status: 404 })
+  if (member.role === 'viewer') return NextResponse.json({ error: 'Sem permissao' }, { status: 403 })
 
   const body = await request.json()
   const parsed = updateLeadSchema.safeParse(body)
   if (!parsed.success) {
-    return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 })
+    return NextResponse.json({ error: 'Dados invalidos', details: parsed.error.flatten() }, { status: 400 })
   }
 
   const { data, error } = await supabase
@@ -102,21 +106,19 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
 
   const { member, lead } = await getLeadAndVerify(id, user.id)
-  if (!member || !lead) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
+  if (!member || !lead) return NextResponse.json({ error: 'Lead nao encontrada' }, { status: 404 })
   if (member.role !== 'admin') return NextResponse.json({ error: 'Apenas admins podem eliminar leads' }, { status: 403 })
 
   const svc = createServiceClient()
 
-  // Obter paths de áudio antes de apagar a lead (Storage não tem CASCADE)
   const { data: uploads } = await svc
     .from('call_uploads')
     .select('storage_path')
     .eq('lead_id', id)
 
-  // Limpar ficheiros de áudio do storage
   if (uploads?.length) {
     await svc.storage.from('call-audio').remove(uploads.map((u) => u.storage_path))
   }

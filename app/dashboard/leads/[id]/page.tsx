@@ -11,9 +11,10 @@ import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { ScraperTriggerButton } from './ScraperTriggerButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
+import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
-  MessageCircle, AlertTriangle, TrendingUp, Bot,
+  MessageCircle, AlertTriangle, TrendingUp, Bot, Trophy,
 } from 'lucide-react'
 import Link from 'next/link'
 import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations } from '@/lib/types'
@@ -22,6 +23,11 @@ export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+}
+
+function fmtEur(v: number | null | undefined): string {
+  if (v == null) return '-'
+  return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
 }
 
 export default async function LeadDetailPage({ params }: Props) {
@@ -63,9 +69,6 @@ export default async function LeadDetailPage({ params }: Props) {
     .limit(1)
     .single()
 
-  // Carregar agent_run mais recente diretamente pelo lead_id.
-  // (Antes dependia de latestExtraction.run_id, mas se o pipeline falha entre
-  // criar o run e a extraction, ficamos sem latestRun e a Debug nao aparece.)
   const { data: latestRun } = await supabase
     .from('agent_runs')
     .select('id, status, tokens_used, duration_ms, agent_type, output_json, error, created_at')
@@ -112,6 +115,11 @@ export default async function LeadDetailPage({ params }: Props) {
   const drafts: AgentDraft[] = (latestExtraction?.drafts_json as { drafts?: AgentDraft[] } | null)?.drafts ?? []
   const recommendations = latestExtraction?.recommendations_json as AgentRecommendations | null
 
+  const dealValue = lead.deal_value as number | null
+  const commissionValue = lead.commission_value as number | null
+  const closedAt = lead.closed_at as string | null
+  const isWon = lead.status === 'won'
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <Link href="/dashboard/leads" className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
@@ -155,6 +163,9 @@ export default async function LeadDetailPage({ params }: Props) {
               initialFullName={lead.full_name}
               initialPhone={lead.phone ?? null}
               initialEmail={lead.email ?? null}
+              initialDealValue={dealValue}
+              initialCommissionValue={commissionValue}
+              initialClosedAt={closedAt}
             />
           )}
           {member.role !== 'viewer' && !existingInvestor && (
@@ -214,6 +225,35 @@ export default async function LeadDetailPage({ params }: Props) {
               )}
             </CardContent>
           </Card>
+
+          {(isWon || dealValue != null || commissionValue != null) && (
+            <Card className="border-emerald-100 bg-emerald-50/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-emerald-800 uppercase tracking-wide flex items-center gap-2">
+                  <Trophy size={14} />
+                  Deal {isWon ? 'fechada' : 'em registo'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Valor imovel</span>
+                  <strong className="text-gray-900">{fmtEur(dealValue)}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Comissao</span>
+                  <strong className="text-emerald-700">{fmtEur(commissionValue)}</strong>
+                </div>
+                {closedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Fechada em</span>
+                    <span className="text-gray-700">
+                      {new Date(closedAt).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {profile && (
             <Card>
@@ -344,6 +384,14 @@ export default async function LeadDetailPage({ params }: Props) {
                   <Badge className="ml-2 bg-blue-100 text-blue-700 font-normal">{openTasks.length}</Badge>
                 )}
               </CardTitle>
+              {member.role !== 'viewer' && (
+                <NewTaskButton
+                  variant="outline"
+                  size="sm"
+                  label="Nova"
+                  defaultLead={{ id: lead.id, full_name: lead.full_name }}
+                />
+              )}
             </CardHeader>
             <CardContent>
               <TaskList initialOpenTasks={openTasks} initialDoneTasks={doneTasks} />
@@ -380,7 +428,7 @@ export default async function LeadDetailPage({ params }: Props) {
                     </p>
                     <div className="space-y-3">
                       {drafts.map((draft, i) => (
-                        <DraftCard key={i} draft={draft} index={i} />
+                        <DraftCard key={i} draft={draft} index={i} leadPhone={lead.phone ?? null} />
                       ))}
                     </div>
                   </div>
@@ -539,7 +587,10 @@ export default async function LeadDetailPage({ params }: Props) {
   )
 }
 
-function DraftCard({ draft, index }: { draft: AgentDraft; index: number }) {
+function DraftCard({ draft, index, leadPhone }: { draft: AgentDraft; index: number; leadPhone: string | null }) {
+  const waLink = leadPhone && draft.channel === 'whatsapp'
+    ? `https://wa.me/${leadPhone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(draft.body)}`
+    : null
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
@@ -549,7 +600,19 @@ function DraftCard({ draft, index }: { draft: AgentDraft; index: number }) {
           </Badge>
           <span className="text-xs text-gray-500">{draft.goal}</span>
         </div>
-        <CopyButton text={draft.body} id={`saved-draft-${index}`} />
+        <div className="flex items-center gap-2">
+          {waLink && (
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-green-700 hover:text-green-900 font-medium"
+            >
+              Abrir WhatsApp
+            </a>
+          )}
+          <CopyButton text={draft.body} id={`saved-draft-${index}`} />
+        </div>
       </div>
       {draft.subject && (
         <div className="px-3 py-1.5 bg-blue-50 border-b text-xs font-medium text-blue-700">

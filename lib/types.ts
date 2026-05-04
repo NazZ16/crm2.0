@@ -26,7 +26,6 @@ export interface TeamMember {
   user_id: string
   role: TeamRole
   joined_at: string
-  // joins
   user?: {
     email: string
     user_metadata?: { full_name?: string; avatar_url?: string }
@@ -49,6 +48,10 @@ export interface Lead {
   notes: string | null
   last_contact_at: string | null
   next_action_at: string | null
+  // Tracking financeiro (migration 014)
+  deal_value: number | null         // valor do imovel (EUR)
+  commission_value: number | null   // comissao recebida (EUR) - KPI 50k
+  closed_at: string | null          // data efectiva de fecho
   created_at: string
   updated_at: string
 }
@@ -81,9 +84,9 @@ export interface FinancialProfile {
 }
 
 export interface PersonalityTraits {
-  tipo: string | null        // analitico | emocional | pragmatico | social
-  comunicacao: string | null // direto | indireto | formal | informal
-  ritmo: string | null       // rapido | lento | moderado
+  tipo: string | null
+  comunicacao: string | null
+  ritmo: string | null
   notas: string | null
 }
 
@@ -216,11 +219,11 @@ export interface AgentExtraction {
 // ─── Agent Output Types ────────────────────────────────────────────────────────
 
 export interface AgentExtractionResult {
-  urgency: number                          // 1-5
-  score: number                            // 0-100
-  full_name: string | null                 // nome completo extraído (null se não detetado)
-  phone: string | null                     // telefone extraído (apenas para chamadas)
-  email: string | null                     // email extraído
+  urgency: number
+  score: number
+  full_name: string | null
+  phone: string | null
+  email: string | null
   home_preferences: Partial<HomePreferences> | null
   financial_profile: Partial<FinancialProfile> | null
   personality_traits: Partial<PersonalityTraits> | null
@@ -229,7 +232,7 @@ export interface AgentExtractionResult {
   process_preferences: Partial<ProcessPreferences> | null
   summary: string
   confidence_score: number
-  key_moments: string[]                    // momentos importantes da conversa
+  key_moments: string[]
 }
 
 export interface AgentAction {
@@ -244,13 +247,13 @@ export interface AgentRecommendations {
   next_best_actions: AgentAction[]
   red_flags: string[]
   missing_info: string[]
-  coaching_notes: string[]                 // notas para o agente (o humano)
+  coaching_notes: string[]
 }
 
 export interface AgentDraft {
   channel: 'whatsapp' | 'email'
   tone: 'curto' | 'neutro' | 'formal'
-  subject: string | null                   // apenas para email
+  subject: string | null
   body: string
   goal: string
 }
@@ -280,7 +283,7 @@ export interface FollowupPlanItem {
 export interface FollowupPlan {
   date: string
   items: FollowupPlanItem[]
-  cold_leads: string[]                     // lead_ids sem contacto >7 dias
+  cold_leads: string[]
   summary: string
 }
 
@@ -370,7 +373,6 @@ export interface Investor {
   lead_id: string | null
   created_at: string
   updated_at: string
-  // optional join
   lead?: { id: string; full_name: string; status: string; score: number } | null
 }
 
@@ -388,17 +390,14 @@ export interface Opportunity {
   area_m2: number | null
   vpt: number | null
 
-  // Buy-to-let
   estimated_monthly_rent: number | null
   condo_fee: number
   annual_imi: number
   renovation_cost: number
 
-  // Fix & flip — aquisição
   imposto_selo_pct: number
   escritura_cost: number
 
-  // Fix & flip — financiamento
   financing_entry_pct: number
   financing_interest_pct: number | null
   financing_years: number | null
@@ -408,27 +407,23 @@ export interface Opportunity {
   financing_formalization: number
   financing_mortgage_registry: number
 
-  // Fix & flip — transitórios
   holding_months: number
   insurance_monthly: number
   electricity_monthly: number
   water_monthly: number
 
-  // Fix & flip — obras detalhadas
   construction_cost: number
   operational_expenses: number
   renovation_item3: number
   renovation_item4: number
   renovation_item5: number
 
-  // Fix & flip — venda
   estimated_sell_price: number | null
   sale_commission_pct: number
   sale_commission2_pct: number
   sale_commission3_pct: number
   early_repayment_penalty_pct: number
 
-  // Fix & flip — split
   operator_profit_pct: number
   irc_rate: number
   reform_months: number | null
@@ -453,7 +448,6 @@ export interface OpportunityInvestor {
   notes: string | null
   created_at: string
   updated_at: string
-  // join
   investor?: Investor
 }
 
@@ -469,7 +463,6 @@ export interface InvestorMatch {
   status: MatchStatus
   created_at: string
   updated_at: string
-  // joins
   investor?: Investor
   opportunity?: Opportunity
 }
@@ -490,53 +483,43 @@ export interface RoiMetrics {
 }
 
 export interface FixFlipMetrics {
-  // Custos aquisição
   imt: number
   imposto_selo: number
   escritura: number
   total_custos_aquisicao: number
 
-  // Financiamento
   financing_amount: number
   prestacao_mensal: number
   total_juros: number
   is_financiamento: number
   total_custos_financiamento: number
 
-  // Obras
   total_obras: number
 
-  // Transitórios
   total_custos_transitorios: number
 
-  // Venda
   comissao1: number
   comissao2: number
   comissao3: number
   penalizacao: number
   total_custos_venda: number
 
-  // Resumo negócio
   custo_total_negocio: number
   preco_venda: number
   lucro_bruto: number
   lucro_liquido_antes_impostos: number
 
-  // Rentabilidade
   roi_total: number
   roi_anualizado: number
   cash_on_cash: number
   capital_proprio_necessario: number
 
-  // Após IRC
   irc_valor: number
   lucro_liquido_irc: number
 
-  // Split operador/investidores
   operador_resultado: number
   investidores_total_lucro: number
 
-  // Por m2
   valor_m2_compra: number | null
   valor_m2_obra: number | null
   valor_m2_venda: number | null
@@ -557,7 +540,7 @@ export const RISK_LEVEL_LABELS: Record<RiskLevel, string> = {
 
 export const INVESTMENT_HORIZON_LABELS: Record<InvestmentHorizon, string> = {
   short: 'Curto prazo (<2 anos)',
-  medium: 'Médio prazo (2-5 anos)',
+  medium: 'Medio prazo (2-5 anos)',
   long: 'Longo prazo (>5 anos)',
 }
 
@@ -568,8 +551,8 @@ export const INVESTOR_STATUS_LABELS: Record<InvestorStatus, string> = {
 }
 
 export const OPPORTUNITY_STATUS_LABELS: Record<OpportunityStatus, string> = {
-  analyzing: 'Em Análise',
-  available: 'Disponível',
+  analyzing: 'Em Analise',
+  available: 'Disponivel',
   under_offer: 'Em Oferta',
   closed: 'Fechado',
   passed: 'Passou',
@@ -593,8 +576,8 @@ export const PROPERTY_TYPE_LABELS: Record<PropertyType, string> = {
 export const MAX_RENOVATION_LABELS: Record<MaxRenovation, string> = {
   none: 'Sem obras',
   light: 'Obras ligeiras',
-  medium: 'Obras médias',
-  full: 'Remodelação total',
+  medium: 'Obras medias',
+  full: 'Remodelacao total',
 }
 
 // ─── View Models ──────────────────────────────────────────────────────────────
@@ -640,7 +623,7 @@ export interface CreateTaskPayload {
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   new: 'Novo',
   qualified: 'Qualificado',
-  meeting: 'Reunião',
+  meeting: 'Reuniao',
   active: 'Ativo',
   won: 'Ganho',
   lost: 'Perdido',
@@ -657,7 +640,7 @@ export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
 
 export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
   low: 'Baixa',
-  medium: 'Média',
+  medium: 'Media',
   high: 'Alta',
   urgent: 'Urgente',
 }
@@ -673,7 +656,7 @@ export const AD_PLATFORM_LABELS: Record<AdPlatform, string> = {
   meta: 'Facebook / Meta',
   google: 'Google Ads',
   tiktok: 'TikTok Ads',
-  organic: 'Orgânico',
+  organic: 'Organico',
   other: 'Outro',
 }
 
@@ -696,17 +679,17 @@ export const INTERACTION_TYPE_LABELS: Record<InteractionType, string> = {
   call: 'Chamada',
   whatsapp: 'WhatsApp',
   email: 'Email',
-  meeting: 'Reunião',
+  meeting: 'Reuniao',
   note: 'Nota',
-  audio: 'Áudio',
+  audio: 'Audio',
 }
 
 export const CONVERSATION_OBJECTIVES = [
   { value: 'qualificar', label: 'Qualificar lead' },
-  { value: 'reuniao', label: 'Marcar reunião' },
+  { value: 'reuniao', label: 'Marcar reuniao' },
   { value: 'followup', label: 'Follow-up geral' },
-  { value: 'pos_visita', label: 'Pós-visita' },
-  { value: 'pos_chamada', label: 'Pós-chamada' },
-  { value: 'negociacao', label: 'Negociação' },
+  { value: 'pos_visita', label: 'Pos-visita' },
+  { value: 'pos_chamada', label: 'Pos-chamada' },
+  { value: 'negociacao', label: 'Negociacao' },
   { value: 'outro', label: 'Outro' },
 ] as const
