@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -65,6 +65,15 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [hoverCol, setHoverCol] = useState<LeadStatus | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const inflightRef = useRef(0)
+
+  // Sincroniza estado local quando o servidor entrega novos dados (apos router.refresh()),
+  // mas so quando nao temos PATCHes em curso para nao apagar uma move optimista por engano.
+  useEffect(() => {
+    if (inflightRef.current > 0) return
+    setBoardState(grouped)
+    setTotalsState(totals)
+  }, [grouped, totals])
 
   function recomputeTotals(state: Record<LeadStatus, PipelineLead[]>) {
     const next: Record<LeadStatus, number> = {
@@ -99,6 +108,7 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
     setBoardState(optimistic)
     setTotalsState(recomputeTotals(optimistic))
     setSavingId(leadId)
+    inflightRef.current += 1
 
     try {
       const res = await fetch(`/api/leads/${leadId}`, {
@@ -109,6 +119,11 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
       if (!res.ok) {
         const j = await res.json().catch(() => null)
         throw new Error(j?.error || 'Falha a guardar')
+      }
+      // Verifica que o servidor confirma o novo status (defesa contra RLS silencioso)
+      const saved = await res.json().catch(() => null)
+      if (saved && saved.status && saved.status !== toStatus) {
+        throw new Error(`Servidor nao gravou: status continua ${saved.status}`)
       }
       toast.success(`${lead.full_name} -> ${LEAD_STATUS_LABELS[toStatus]}`)
       // Refresca dados do servidor para apanhar mudancas (e.g. closed_at quando vai para won)
@@ -126,6 +141,7 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
       toast.error(`Nao foi possivel mover: ${msg}`)
     } finally {
       setSavingId(null)
+      inflightRef.current = Math.max(0, inflightRef.current - 1)
     }
   }
 

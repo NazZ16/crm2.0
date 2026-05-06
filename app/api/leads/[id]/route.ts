@@ -90,14 +90,25 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Dados invalidos', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  const { data, error } = await supabase
+  // Auto-preencher closed_at quando se marca como 'won' sem data explicita
+  const updates: Record<string, unknown> = { ...parsed.data }
+  if (updates.status === 'won' && !('closed_at' in updates)) {
+    updates.closed_at = new Date().toISOString()
+  }
+
+  // Usa service client porque a posse ja foi verificada acima (member.team_id === lead.team_id).
+  // Evita falsos sucessos por RLS quando a politica permite SELECT mas recusa UPDATE.
+  const svc = createServiceClient()
+  const { data, error } = await svc
     .from('leads')
-    .update(parsed.data)
+    .update(updates)
     .eq('id', id)
+    .eq('team_id', member.team_id) // defesa em profundidade
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!data) return NextResponse.json({ error: 'Update nao afectou nenhuma linha' }, { status: 500 })
 
   return NextResponse.json(data)
 }
