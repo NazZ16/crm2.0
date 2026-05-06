@@ -16,16 +16,19 @@ import {
 import { LEAD_STATUS_LABELS, LEAD_PIPELINE_ORDER, CONVERSATION_OBJECTIVES, TASK_PRIORITY_LABELS } from '@/lib/types'
 import type { LeadStatus, AgentFullOutput } from '@/lib/types'
 import { MergeLeadsButton } from '../MergeLeadsButton'
+import { DraftSendButtons } from './DraftSendButtons'
 
 interface Props {
   leadId: string
   leadName: string
+  leadPhone: string | null
+  leadEmail: string | null
   currentStatus: LeadStatus
   canEdit: boolean
   isAdmin: boolean
 }
 
-export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit, isAdmin }: Props) {
+export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, currentStatus, canEdit, isAdmin }: Props) {
   const router = useRouter()
   const [status, setStatus] = useState<LeadStatus>(currentStatus)
   const [updatingStatus, setUpdatingStatus] = useState(false)
@@ -364,25 +367,34 @@ export function LeadDetailClient({ leadId, leadName, currentStatus, canEdit, isA
                   <div className="space-y-3">
                     {agentOutput.drafts.drafts.map((draft, i) => (
                       <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs">
-                              {draft.channel === 'whatsapp' ? '📱 WhatsApp' : '📧 Email'}
+                        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className="text-xs flex-shrink-0">
+                              {draft.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
                             </Badge>
-                            <span className="text-xs text-gray-500">{draft.goal}</span>
+                            <span className="text-xs text-gray-500 truncate">{draft.goal}</span>
                           </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => copyText(draft.body, `draft-${i}`)}
-                          >
-                            {copiedId === `draft-${i}` ? (
-                              <Check size={12} className="text-green-500" />
-                            ) : (
-                              <Copy size={12} />
-                            )}
-                          </Button>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <DraftSendButtons
+                              channel={draft.channel}
+                              body={draft.body}
+                              subject={draft.subject}
+                              leadPhone={leadPhone}
+                              leadEmail={leadEmail}
+                            />
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyText(draft.body, `draft-${i}`)}
+                            >
+                              {copiedId === `draft-${i}` ? (
+                                <Check size={12} className="text-green-500" />
+                              ) : (
+                                <Copy size={12} />
+                              )}
+                            </Button>
+                          </div>
                         </div>
                         {draft.subject && (
                           <div className="px-3 py-1.5 bg-blue-50 border-b text-xs font-medium text-blue-700">

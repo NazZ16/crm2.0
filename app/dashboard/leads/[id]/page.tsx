@@ -11,6 +11,7 @@ import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { ScraperTriggerButton } from './ScraperTriggerButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
+import { DraftSendButtons } from './DraftSendButtons'
 import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
@@ -153,6 +154,8 @@ export default async function LeadDetailPage({ params }: Props) {
           <LeadDetailClient
             leadId={lead.id}
             leadName={lead.full_name}
+            leadPhone={lead.phone ?? null}
+            leadEmail={lead.email ?? null}
             currentStatus={lead.status as LeadStatus}
             canEdit={member.role !== 'viewer'}
             isAdmin={member.role === 'admin'}
@@ -428,7 +431,13 @@ export default async function LeadDetailPage({ params }: Props) {
                     </p>
                     <div className="space-y-3">
                       {drafts.map((draft, i) => (
-                        <DraftCard key={i} draft={draft} index={i} leadPhone={lead.phone ?? null} />
+                        <DraftCard
+                          key={i}
+                          draft={draft}
+                          index={i}
+                          leadPhone={lead.phone ?? null}
+                          leadEmail={lead.email ?? null}
+                        />
                       ))}
                     </div>
                   </div>
@@ -587,30 +596,34 @@ export default async function LeadDetailPage({ params }: Props) {
   )
 }
 
-function DraftCard({ draft, index, leadPhone }: { draft: AgentDraft; index: number; leadPhone: string | null }) {
-  const waLink = leadPhone && draft.channel === 'whatsapp'
-    ? `https://wa.me/${leadPhone.replace(/[^\d]/g, '')}?text=${encodeURIComponent(draft.body)}`
-    : null
+function DraftCard({
+  draft,
+  index,
+  leadPhone,
+  leadEmail,
+}: {
+  draft: AgentDraft
+  index: number
+  leadPhone: string | null
+  leadEmail: string | null
+}) {
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="outline" className="text-xs flex-shrink-0">
             {draft.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
           </Badge>
-          <span className="text-xs text-gray-500">{draft.goal}</span>
+          <span className="text-xs text-gray-500 truncate">{draft.goal}</span>
         </div>
-        <div className="flex items-center gap-2">
-          {waLink && (
-            <a
-              href={waLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-green-700 hover:text-green-900 font-medium"
-            >
-              Abrir WhatsApp
-            </a>
-          )}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <DraftSendButtons
+            channel={draft.channel}
+            body={draft.body}
+            subject={draft.subject}
+            leadPhone={leadPhone}
+            leadEmail={leadEmail}
+          />
           <CopyButton text={draft.body} id={`saved-draft-${index}`} />
         </div>
       </div>
