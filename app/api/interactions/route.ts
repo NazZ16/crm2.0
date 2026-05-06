@@ -1,6 +1,10 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+
+// Tipos de interaccao que contam como contacto real (e por isso bumpam new -> qualified).
+// 'note' e 'audio' (raw upload pre-processamento) NAO contam.
+const CONTACT_TYPES = new Set(['call', 'whatsapp', 'email', 'meeting'])
 
 const createInteractionSchema = z.object({
   lead_id: z.string().uuid(),
@@ -61,10 +65,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Dados inválidos', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  // Verify lead belongs to team
+  // Verify lead belongs to team and capture current status para decidir auto-bump
   const { data: lead } = await supabase
     .from('leads')
-    .select('id')
+    .select('id, status')
     .eq('id', parsed.data.lead_id)
     .eq('team_id', member.team_id)
     .single()
@@ -79,11 +83,25 @@ export async function POST(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Update lead's last_contact_at
-  await supabase
-    .from('leads')
-    .update({ last_contact_at: data.occurred_at })
-    .eq('id', parsed.data.lead_id)
+  // Atualizar last_contact_at e auto-bump de status quando primeiro contacto real.
+  // Usa service client para nao depender de RLS (auth ja foi verificada acima).
+  const svc = createServiceClient()
+  const leadUpdate: Record<string, unknown> = { last_contact_at: data.occurred_at }
 
-  return NextResponse.json(data, { status: 201 })
+  const isFirstContact = lead.status === 'new' && CONTACT_TYPES.has(parsed.data.type)
+  if (isFirstContact) {
+    leadUpdate.status = 'qualified'
+  }
+
+  await svc
+    .from('leads')
+    .update(leadUpdate)
+    .eq('id', parsed.data.lead_id)
+    .eq('team_id', member.team_id)
+
+  if (isFirstContact) {
+    console.log(`[interactions] auto-bump lead ${parsed.data.lead_id} new -> qualified (interaction ${parsed.data.type})`)
+  }
+
+  return NextResponse.json({ ...data, _auto_bumped: isFirstContact ? 'qualified' : null }, { status: 201 })
 }

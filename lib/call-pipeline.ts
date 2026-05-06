@@ -28,14 +28,14 @@ export async function runCallPipeline(
 
   try {
     // Passo a: Transcricao (Whisper)
-    const { text: transcriptText, duration_s } = await transcribeAudio(audioBuffer, filename)
+    const { text: transcriptText, duration_s, model: whisperModel } = await transcribeAudio(audioBuffer, filename)
 
     await supabase
       .from('call_uploads')
       .update({
         transcript_text: transcriptText,
         audio_duration_s: duration_s,
-        whisper_model: 'whisper-1',
+        whisper_model: whisperModel,
         status: 'analyzing',
         updated_at: new Date().toISOString(),
       })
@@ -296,6 +296,28 @@ export async function runCallPipeline(
       summary: interactionSummary,
       occurred_at: now,
     })
+
+    // Auto-bump status: chamada e contacto real, lead em 'new' passa a 'qualified'.
+    {
+      const { data: leadRow } = await supabase
+        .from('leads')
+        .select('status')
+        .eq('id', leadId)
+        .single()
+      if (leadRow?.status === 'new') {
+        await supabase
+          .from('leads')
+          .update({ status: 'qualified', last_contact_at: now })
+          .eq('id', leadId)
+        console.log(`[call-pipeline] auto-bump lead ${leadId} new -> qualified`)
+      } else {
+        // Mesmo que ja nao seja 'new', atualiza last_contact_at
+        await supabase
+          .from('leads')
+          .update({ last_contact_at: now })
+          .eq('id', leadId)
+      }
+    }
 
     // Passo l: Tasks a partir de next_best_actions.
     // Defensivo: aceita chaves PT (titulo/descricao/prioridade) ou EN (title/description/priority).

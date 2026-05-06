@@ -32,6 +32,15 @@ function fmtEur(v: number): string {
   }).format(v)
 }
 
+// Probabilidades de fecho ponderadas por estado da pipeline.
+// Conservador: ajusta-se com dados reais com o tempo.
+const PIPELINE_PROBABILITIES: Record<string, number> = {
+  qualified: 0.10,
+  meeting: 0.30,
+  active: 0.60,
+}
+const COMMISSION_DEFAULT_RATE = 0.04 // fallback quando lead so tem deal_value
+
 async function RevenueCard({ teamId }: { teamId: string }) {
   const supabase = await createClient()
   const now = new Date()
@@ -40,17 +49,24 @@ async function RevenueCard({ teamId }: { teamId: string }) {
   const startOfNextYear = new Date(year + 1, 0, 1).toISOString()
   const startOfMonth = new Date(year, now.getMonth(), 1).toISOString()
 
-  const { data: closedLeads } = await supabase
-    .from('leads')
-    .select('id, full_name, commission_value, deal_value, closed_at')
-    .eq('team_id', teamId)
-    .eq('status', 'won')
-    .not('closed_at', 'is', null)
-    .gte('closed_at', startOfYear)
-    .lt('closed_at', startOfNextYear)
-    .order('closed_at', { ascending: false })
+  const [closedRes, openRes] = await Promise.all([
+    supabase
+      .from('leads')
+      .select('id, full_name, commission_value, deal_value, closed_at')
+      .eq('team_id', teamId)
+      .eq('status', 'won')
+      .not('closed_at', 'is', null)
+      .gte('closed_at', startOfYear)
+      .lt('closed_at', startOfNextYear)
+      .order('closed_at', { ascending: false }),
+    supabase
+      .from('leads')
+      .select('id, status, commission_value, deal_value')
+      .eq('team_id', teamId)
+      .in('status', ['qualified', 'meeting', 'active']),
+  ])
 
-  const all = (closedLeads ?? []) as {
+  const all = (closedRes.data ?? []) as {
     id: string
     full_name: string
     commission_value: number | null
@@ -58,10 +74,30 @@ async function RevenueCard({ teamId }: { teamId: string }) {
     closed_at: string | null
   }[]
 
+  const openLeads = (openRes.data ?? []) as {
+    id: string
+    status: string
+    commission_value: number | null
+    deal_value: number | null
+  }[]
+
   const totalYtd = all.reduce((sum, l) => sum + (l.commission_value ?? 0), 0)
   const monthLeads = all.filter((l) => l.closed_at && l.closed_at >= startOfMonth)
   const totalMonth = monthLeads.reduce((sum, l) => sum + (l.commission_value ?? 0), 0)
   const dealsCount = all.length
+
+  // Forecast ponderado: para cada lead em pipeline, valor (comissao real ou estimada) * P(fecho).
+  let forecastWeighted = 0
+  let forecastGross = 0
+  let forecastDealsCount = 0
+  for (const l of openLeads) {
+    const value = l.commission_value ?? (l.deal_value != null ? l.deal_value * COMMISSION_DEFAULT_RATE : null)
+    if (value == null || value <= 0) continue
+    const p = PIPELINE_PROBABILITIES[l.status] ?? 0
+    forecastWeighted += value * p
+    forecastGross += value
+    forecastDealsCount += 1
+  }
 
   const target = YEARLY_REVENUE_TARGET_EUR
   const pct = target > 0 ? Math.min(100, Math.round((totalYtd / target) * 100)) : 0
@@ -72,6 +108,11 @@ async function RevenueCard({ teamId }: { teamId: string }) {
   const expectedYtd = (target * dayOfYear) / daysInYear
   const onPace = totalYtd >= expectedYtd
   const paceDelta = totalYtd - expectedYtd
+
+  // Projeccao: YTD ja fechado + forecast ponderado >= target?
+  const projectedTotal = totalYtd + forecastWeighted
+  const willHitTarget = projectedTotal >= target
+  const projectedShortfall = Math.max(0, target - projectedTotal)
 
   return (
     <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-white">
@@ -109,6 +150,28 @@ async function RevenueCard({ teamId }: { teamId: string }) {
           </span>
           <span className="text-gray-500">faltam {fmtEur(remaining)}</span>
         </div>
+
+        {/* Forecast ponderado: pipeline em qualified/meeting/active * P(fecho) */}
+        {forecastDealsCount > 0 && (
+          <div className="pt-2 border-t border-emerald-100/70 space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-gray-600">Pipeline ponderado</span>
+              <span className="font-semibold text-gray-800 tabular-nums" title={`${forecastDealsCount} deal${forecastDealsCount === 1 ? '' : 's'} abertas, valor bruto ${fmtEur(forecastGross)}`}>
+                {fmtEur(forecastWeighted)}
+              </span>
+            </div>
+            <div className={`flex items-center justify-between text-xs ${willHitTarget ? 'text-emerald-600' : 'text-orange-600'}`}>
+              <span>
+                {willHitTarget
+                  ? `Projeccao: cumpres os ${fmtEur(target)} ✓`
+                  : `Projeccao: faltariam ${fmtEur(projectedShortfall)}`}
+              </span>
+              <span className="text-gray-400 font-normal" title="qualified=10%, meeting=30%, active=60%">
+                {forecastDealsCount} aberta{forecastDealsCount === 1 ? '' : 's'}
+              </span>
+            </div>
+          </div>
+        )}
 
         {monthLeads.length > 0 && (
           <div className="pt-2 border-t border-emerald-100/70">
