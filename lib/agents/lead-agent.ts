@@ -1,7 +1,8 @@
 import { BaseAgent } from './base-agent'
 import type { AgentFullOutput, LeadProfile } from '@/lib/types'
 
-const SYSTEM_PROMPT = `Es um assistente especializado em analise de conversas de venda imobiliaria em Portugal.
+const SYSTEM_PROMPT = `Es um assistente especializado em analise de conversas imobiliarias em Portugal.
+A conversa pode ser de COMPRADOR (procura comprar/arrendar) ou VENDEDOR (proprietario a vender — angariacao). Identifica primeiro qual e e adapta a extraccao.
 Analisa a conversa e extrai TODA a informacao disponivel. Quando um campo nao esta na conversa, usa null - nunca inventes.
 
 REGRAS CRITICAS:
@@ -10,9 +11,16 @@ REGRAS CRITICAS:
 - Arrays vazios [] sao validos quando nao ha itens
 - Nao uses virgulas a seguir ao ultimo elemento de um array ou objeto
 
+CLASSIFICACAO DE TIPO DE LEAD (campo "lead_type"):
+- "buyer": pessoa quer comprar ou arrendar um imovel (procura zonas, tipologias, orcamento de compra)
+- "seller": proprietario quer vender o imovel dele (angariacao). Sinais: "tenho um T2 para vender", "queria que avaliasse a minha casa", "ja tive na X mediadora", fala-se em CE, caderneta predial, preco pedido, prazo de venda
+- "both": pessoa quer vender o imovel actual E comprar um novo (caso comum em mudancas/upgrade). Preencher ambos os blocos
+- "unknown": nao da para decidir pela conversa
+
 FORMATO JSON OBRIGATORIO (respeita exatamente esta estrutura):
 {
   "lead_updates": {
+    "lead_type": "<buyer | seller | both | unknown>",
     "urgency": <1-5>,
     "score": <0-100>,
     "full_name": <string | null - nome completo da lead se mencionado>,
@@ -64,6 +72,49 @@ FORMATO JSON OBRIGATORIO (respeita exatamente esta estrutura):
       "disponibilidade": null,
       "notas": null
     },
+    "seller_profile": {
+      "imovel": {
+        "morada": null,
+        "freguesia": null,
+        "concelho": null,
+        "tipologia": null,
+        "area_util_m2": null,
+        "area_bruta_m2": null,
+        "ano_construcao": null,
+        "certificado_energetico": null,
+        "andar": null,
+        "elevador": null,
+        "varanda": null,
+        "garagem": null,
+        "estado": null,
+        "link_anuncio": null,
+        "notas": null
+      },
+      "historico": {
+        "ja_tentou_vender": null,
+        "mediadora_anterior": null,
+        "tempo_no_mercado_meses": null,
+        "preco_anunciado_anterior": null,
+        "motivo_nao_vendeu": null
+      },
+      "objectivo": {
+        "preco_pedido": null,
+        "preco_minimo_aceitavel": null,
+        "prazo_venda_meses": null,
+        "motivacao": null,
+        "flexibilidade_preco": null,
+        "urgencia_1_5": null
+      },
+      "documentacao": {
+        "caderneta_predial": null,
+        "registo_predial": null,
+        "licenca_habitacao": null,
+        "ce_disponivel": null,
+        "ipt_pago": null,
+        "notas_legais": null
+      },
+      "notas": null
+    },
     "summary": "Resumo em 2-3 frases do que se sabe da lead",
     "confidence_score": <0-100>,
     "key_moments": []
@@ -100,7 +151,14 @@ ATENCAO IMPORTANTE:
 - Os valores de "priority" sao SEMPRE em INGLES: "low", "medium" ou "high". Nunca uses "baixa", "media", "alta".
 - Os valores de "channel" sao SEMPRE em INGLES: "whatsapp" ou "email".
 - Os valores de "tone" sao em PORTUGUES: "curto", "neutro" ou "formal".
-- Inclui SEMPRE pelo menos 1 acao em next_best_actions, mesmo para leads frias (ex: agendar recontacto longe, pedir referencias).`
+- Inclui SEMPRE pelo menos 1 acao em next_best_actions, mesmo para leads frias (ex: agendar recontacto longe, pedir referencias).
+- NUNCA uses emojis (😊, 👍, 🚀, etc.) em "body", "subject" ou em qualquer texto que possa ir para WhatsApp ou email. Os links wa.me/mailto corrompem caracteres fora do BMP. Mantem o tom profissional e directo, sem icones nem decoracoes.
+
+REGRAS POR TIPO DE LEAD:
+- Se "lead_type" = "buyer": preenche home_preferences, financial_profile, family_context (perfil de quem procura). Deixa "seller_profile" todo a null. Drafts focados em proxima visita, shortlist, perguntas para apurar perfil.
+- Se "lead_type" = "seller": preenche "seller_profile" (imovel + historico + objectivo + documentacao). Deixa home_preferences/financial_profile a null EXCEPTO se ele tambem disse que vai comprar (entao "both"). Drafts focados em: agendar avaliacao do imovel, pedir caderneta/CE, explicar processo de angariacao, propor preco-alvo. NUNCA prometas "tenho propostas" a um vendedor que ainda nao foi angariado.
+- Se "lead_type" = "both": preenche AMBOS os blocos. Drafts coordenam venda do actual + procura do novo (timing critico).
+- Se "lead_type" = "unknown": deixa AMBOS os perfis a null e drafts focam em fazer perguntas diagnostico para classificar.`
 
 export interface LeadAgentInput {
   leadName: string

@@ -8,6 +8,7 @@ const updateLeadSchema = z.object({
   email: z.string().email().nullable().optional(),
   source: z.string().max(100).nullable().optional(),
   status: z.enum(['new', 'qualified', 'meeting', 'active', 'won', 'lost']).optional(),
+  lead_type: z.enum(['buyer', 'seller', 'both', 'unknown']).optional(),
   score: z.number().int().min(0).max(100).optional(),
   urgency: z.number().int().min(1).max(5).optional(),
   notes: z.string().max(2000).nullable().optional(),

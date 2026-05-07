@@ -3,6 +3,23 @@
 // Usado pelos botoes "Enviar via WhatsApp" / "Enviar via Email" nos drafts da AI.
 
 /**
+ * Limpa um texto antes de o meter num link wa.me ou mailto:.
+ * - Remove o replacement character U+FFFD (aparece quando UTF-8 foi corrompido em algum
+ *   ponto da pipeline; com isto pelo menos nao aparece "??" para o cliente).
+ * - Remove surrogates orfaos (metade de um par UTF-16 que nao tem o outro lado).
+ * - Colapsa whitespaces multiplos em um.
+ */
+function sanitizeMessage(text: string): string {
+  return text
+    .replace(/�/g, '') // replacement char
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, '') // high surrogate sem low
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '') // low surrogate sem high
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+/**
  * Constroi um link wa.me com texto pre-preenchido.
  *
  * Formato wa.me: https://wa.me/{numero-com-indicativo-sem-+}?text={url-encoded}
@@ -29,7 +46,7 @@ export function buildWaLink(phone: string | null | undefined, body: string): str
   // Se tem 11 digitos e comeca por 351 sem o leading "+", deixa estar.
   // Outros formatos: assume-se que o user ja meteu indicativo correcto.
 
-  return `https://wa.me/${formatted}?text=${encodeURIComponent(body)}`
+  return `https://wa.me/${formatted}?text=${encodeURIComponent(sanitizeMessage(body))}`
 }
 
 /**
@@ -47,10 +64,10 @@ export function buildMailtoLink(
 
   const params: string[] = []
   if (subject && subject.trim().length > 0) {
-    params.push(`subject=${encodeURIComponent(subject.trim())}`)
+    params.push(`subject=${encodeURIComponent(sanitizeMessage(subject))}`)
   }
   if (body && body.length > 0) {
-    params.push(`body=${encodeURIComponent(body)}`)
+    params.push(`body=${encodeURIComponent(sanitizeMessage(body))}`)
   }
 
   return `mailto:${trimmed}${params.length > 0 ? '?' + params.join('&') : ''}`

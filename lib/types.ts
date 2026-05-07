@@ -52,6 +52,8 @@ export interface Lead {
   deal_value: number | null         // valor do imovel (EUR)
   commission_value: number | null   // comissao recebida (EUR) - KPI 50k
   closed_at: string | null          // data efectiva de fecho
+  // Tipo de lead (migration 015) — comprador vs vendedor (angariacao)
+  lead_type: LeadType
   created_at: string
   updated_at: string
 }
@@ -111,6 +113,78 @@ export interface ProcessPreferences {
   notas: string | null
 }
 
+// ─── Seller Profile (angariacao) ──────────────────────────────────────────────
+// So preenchido quando leads.lead_type IN ('seller', 'both').
+// Captura o que e relevante para VENDER o imovel do cliente, nao o que ele procura.
+
+export interface SellerImovel {
+  morada: string | null
+  freguesia: string | null
+  concelho: string | null
+  tipologia: string | null
+  area_util_m2: number | null
+  area_bruta_m2: number | null
+  ano_construcao: number | null
+  certificado_energetico: string | null
+  andar: string | null
+  elevador: boolean | null
+  varanda: boolean | null
+  garagem: boolean | null
+  estado: string | null
+  link_anuncio: string | null
+  notas: string | null
+}
+
+export interface SellerHistorico {
+  ja_tentou_vender: boolean | null
+  mediadora_anterior: string | null
+  tempo_no_mercado_meses: number | null
+  preco_anunciado_anterior: number | null
+  motivo_nao_vendeu: string | null
+}
+
+export interface SellerObjectivo {
+  preco_pedido: number | null
+  preco_minimo_aceitavel: number | null
+  prazo_venda_meses: number | null
+  motivacao: string | null
+  flexibilidade_preco: string | null
+  urgencia_1_5: number | null
+}
+
+export interface SellerDocumentacao {
+  caderneta_predial: boolean | null
+  registo_predial: boolean | null
+  licenca_habitacao: boolean | null
+  ce_disponivel: boolean | null
+  ipt_pago: boolean | null
+  notas_legais: string | null
+}
+
+export interface SellerProfile {
+  imovel: SellerImovel | null
+  historico: SellerHistorico | null
+  objectivo: SellerObjectivo | null
+  documentacao: SellerDocumentacao | null
+  notas: string | null
+}
+
+export type LeadType = 'buyer' | 'seller' | 'both' | 'unknown'
+
+export const LEAD_TYPE_LABELS: Record<LeadType, string> = {
+  buyer: 'Comprador',
+  seller: 'Vendedor',
+  both: 'Comprador + Vendedor',
+  unknown: 'Por classificar',
+}
+
+export const LEAD_TYPE_COLORS: Record<LeadType, string> = {
+  buyer: 'bg-blue-100 text-blue-700',
+  seller: 'bg-amber-100 text-amber-800',
+  both: 'bg-purple-100 text-purple-700',
+  unknown: 'bg-gray-100 text-gray-600',
+}
+
 export interface LeadProfile {
   lead_id: string
   home_preferences: HomePreferences | null
@@ -119,6 +193,7 @@ export interface LeadProfile {
   family_context: FamilyContext | null
   fears_objections: FearsObjections | null
   process_preferences: ProcessPreferences | null
+  seller_profile: SellerProfile | null
   summary: string | null
   confidence_score: number | null
   updated_at: string
@@ -219,6 +294,7 @@ export interface AgentExtraction {
 // ─── Agent Output Types ────────────────────────────────────────────────────────
 
 export interface AgentExtractionResult {
+  lead_type?: LeadType                                     // novo (migration 015)
   urgency: number
   score: number
   full_name: string | null
@@ -230,6 +306,7 @@ export interface AgentExtractionResult {
   family_context: Partial<FamilyContext> | null
   fears_objections: Partial<FearsObjections> | null
   process_preferences: Partial<ProcessPreferences> | null
+  seller_profile?: Partial<SellerProfile> | null           // novo (migration 015)
   summary: string
   confidence_score: number
   key_moments: string[]

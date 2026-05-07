@@ -125,6 +125,13 @@ export async function runCallPipeline(
       ex.email && ex.email.trim().length > 0 ? ex.email.trim() : null
     const extractedScore = ex.score ?? null
     const extractedUrgency = ex.urgency ?? null
+    // Tipo de lead (migration 015) — buyer | seller | both | unknown.
+    // So aceita valores validos; ignora 'unknown' para nao sobrescrever uma lead ja classificada.
+    const VALID_LEAD_TYPES = ['buyer', 'seller', 'both'] as const
+    const extractedLeadType = (ex as { lead_type?: string }).lead_type
+    const newLeadType = extractedLeadType && (VALID_LEAD_TYPES as readonly string[]).includes(extractedLeadType)
+      ? extractedLeadType as 'buyer' | 'seller' | 'both'
+      : null
 
     // Passo e: Dedup por telefone
     let leadId: string | null = null
@@ -156,6 +163,18 @@ export async function runCallPipeline(
         if (extractedFullName && isPlaceholder) leadUpdate.full_name = extractedFullName
         if (extractedEmail) leadUpdate.email = extractedEmail
 
+        // Atualiza lead_type apenas se a lead estava 'unknown' (nao sobrepoe classificacao manual).
+        if (newLeadType) {
+          const { data: cur } = await supabase
+            .from('leads')
+            .select('lead_type')
+            .eq('id', leadId)
+            .single()
+          if (!cur || cur.lead_type === 'unknown' || cur.lead_type === null) {
+            leadUpdate.lead_type = newLeadType
+          }
+        }
+
         await supabase.from('leads').update(leadUpdate).eq('id', leadId)
       }
     }
@@ -173,6 +192,7 @@ export async function runCallPipeline(
           source: 'call_upload',
           score: extractedScore,
           urgency: extractedUrgency,
+          lead_type: newLeadType ?? 'unknown', // classifica logo na criacao se possivel
         })
         .select('id')
         .single()
@@ -210,6 +230,7 @@ export async function runCallPipeline(
     const now = new Date().toISOString()
 
     // Passo g: Upsert lead_profiles
+    const sellerProfileFromAgent = (ex as { seller_profile?: unknown }).seller_profile
     await supabase.from('lead_profiles').upsert(
       {
         lead_id: leadId,
@@ -224,6 +245,11 @@ export async function runCallPipeline(
         process_preferences: mergeField(
           existingProfile?.process_preferences,
           ex.process_preferences
+        ),
+        // Seller profile (migration 015) — angariacao. Deep merge dos 4 sub-blocos.
+        seller_profile: mergeField(
+          (existingProfile as { seller_profile?: Record<string, unknown> | null })?.seller_profile,
+          sellerProfileFromAgent as Partial<Record<string, unknown>> | null | undefined
         ),
         summary: ex.summary || existingProfile?.summary || null,
         confidence_score: ex.confidence_score,
