@@ -1,40 +1,52 @@
-# CLAUDE.md
+# CRM2.0 — Contexto do Projeto
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> Ver a nota-hub na rede: [[CRM2.0 (Projeto)]]
+> Ver o vault root: `../../CLAUDE.md`
+> Rede neural: `../../Index.md`
 
-## Workflow Orchestration
+## O que é este projeto
 
-### 1. Plan Mode Default
--Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions) -If something goes sideways, STOP and re-plan immediately - don't keep pushing -Use plan mode for verification steps, not just building
-Write detailed specs upfront to reduce ambiguity
+CRM imobiliário inteligente para o meu fluxo na [[RE-MAX|RE/MAX]]. Gere leads, conversas, perfis, com análise automática de interações.
 
-### 2. Subagent Strategy
--Use subagents liberally to keep main context window clean
--Offload research, exploration, and parallel analysis to subagents
--For complex problems, throw more compute at it via subagents
--One task per subagent for focused execution
+**Stack:** Next.js (App Router) + TypeScript + Supabase + Vercel
+**Estado:** em desenvolvimento — ver `../../03 Projects/CRM2.0/` para o código
 
-### 3. Self-Improvement Loop
+## Prime directive para o Claude neste projeto
 
--After ANY correction from the user: update 'tasks/lessons.md' with the pattern
--Write rules for yourself that prevent the same mistake 
--Ruthlessly iterate on these lessons until mistake rate drops
--Review lessons at session start for relevant project
+> Se uma sessão está a afastar-se de "o Élsio consegue usar isto hoje para gerir um lead real", nomeia-lo:
+> **"Isto move o CRM para uso diário, ou é feature que ninguém está a pedir?"**
 
-### 4. Verification Before Done
--Never mark a task complete without proving it works
--Diff behavior between main and your changes when relevant
--Ask yourself: "Would a staff engineer approve this?"
--Run tests, check logs, demonstrate correctness
+O risco principal aqui é o [[Pontos Cegos|builder trap]] — construir software bonito que ninguém usa. O projeto só vale se eu o uso todos os dias na frente [[RE-MAX|RE/MAX]].
 
-### 5. Demand Elegance (Balanced)
--For non-trivial changes: pause and ask "is there a more elegant way?"
--If a fix feels hacky: "Knowing everything I know now, implement the elegant solution"
--Skip this for simple, obvious fixes don't over-engineer
--Challenge your own work before presenting it
+## O que o Claude deve fazer (ordem de prioridade)
 
-### 6. Autonomous Bug Fixing
--When given a bug report: just fix it. Don't ask for hand-holding
--Point at logs, errors, failing tests - then resolve them
--Zero context switching required from the user
--Go fix failing CI tests without being told how
+1. **Desbloquear uso diário** — tudo o que me impede de usar isto todos os dias é P0
+2. **Garantir dados seguros** — Supabase RLS, auth, validação de input
+3. **Manter o código simples** — este CRM é para **um** utilizador (eu) por agora, não sobre-arquitetar
+4. **Testes só quando estabilizado** — não perder tempo a testar fluxos que ainda estão a mudar
+
+## Workflow
+
+- **Plan mode** para alterações com 3+ passos ou decisões de arquitetura
+- **Subagents** liberalmente para exploração paralela (research, análise, alternativas)
+- **Self-improvement:** após qualquer correção do utilizador, registar em `tasks/lessons.md` (a criar quando aparecer a primeira lição)
+- **Verificação:** nunca marcar tarefa como feita sem provar que corre — correr `npm run dev`, testar fluxo end-to-end, ver logs
+
+## Regras
+
+- **Nada de features que não tenham um utilizador (eu) a pedir ativamente**
+- **Commits pequenos** com mensagem clara
+- **Não reescrever código estável** para "ficar mais elegante" — só quando há motivo funcional
+
+## Próximas decisões críticas (a preencher pelo Élsio)
+
+- [ ] Qual é a **funcionalidade-chave** que falta para eu usar diariamente?
+- [ ] Status atual: desenvolvimento local / deployado / em uso?
+- [ ] Primeira métrica de uso a acompanhar (ex.: leads processadas / semana)?
+
+## Relacionado no vault
+
+- Hub: [[CRM2.0 (Projeto)]]
+- Frente de negócio: [[RE-MAX]]
+- Objetivo que serve: [[50k 2026]]
+- Risco: [[Pontos Cegos]]
