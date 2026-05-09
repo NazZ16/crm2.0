@@ -15,8 +15,10 @@ import {
   Bot,
   ArrowRight,
   Trophy,
+  CalendarDays,
 } from 'lucide-react'
 import { orientatorAgent } from '@/lib/agents/orientator-agent'
+import { listTodaysEvents, type GoogleCalendarEvent } from '@/lib/google-calendar'
 
 export const dynamic = 'force-dynamic'
 
@@ -190,6 +192,78 @@ async function RevenueCard({ teamId }: { teamId: string }) {
             </ul>
           </div>
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+async function TodayCalendarCard({ teamId }: { teamId: string }) {
+  let events: GoogleCalendarEvent[] = []
+  try {
+    events = await listTodaysEvents(teamId)
+  } catch {
+    return null
+  }
+
+  // Sem conexao Google ou sem eventos hoje — nao mostra o card.
+  if (events.length === 0) return null
+
+  function fmtTime(ev: GoogleCalendarEvent): string {
+    if (ev.start.dateTime) {
+      const d = new Date(ev.start.dateTime)
+      return d.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+    }
+    if (ev.start.date) return 'Dia inteiro'
+    return ''
+  }
+
+  function fmtRange(ev: GoogleCalendarEvent): string {
+    if (ev.start.dateTime && ev.end.dateTime) {
+      const s = new Date(ev.start.dateTime).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+      const e = new Date(ev.end.dateTime).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })
+      return `${s} – ${e}`
+    }
+    return fmtTime(ev)
+  }
+
+  return (
+    <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50/50 to-white">
+      <CardHeader className="flex flex-row items-center gap-2 pb-3">
+        <div className="p-2 bg-indigo-100 rounded-full">
+          <CalendarDays size={18} className="text-indigo-600" />
+        </div>
+        <CardTitle className="text-base">Agenda Google de hoje</CardTitle>
+        <span className="ml-auto text-xs text-gray-500">{events.length} evento{events.length === 1 ? '' : 's'}</span>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-2">
+          {events.map((ev) => {
+            const meetLink = ev.hangoutLink ?? ev.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video')?.uri
+            return (
+              <li key={ev.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-white border border-indigo-100">
+                <div className="flex flex-col items-center text-xs text-indigo-700 font-semibold tabular-nums min-w-[70px]">
+                  <span>{fmtRange(ev)}</span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <a
+                    href={ev.htmlLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm font-medium text-gray-800 hover:text-indigo-700 truncate block"
+                  >
+                    {ev.summary ?? '(sem titulo)'}
+                  </a>
+                  {ev.location && <p className="text-xs text-gray-500 truncate">{ev.location}</p>}
+                  {meetLink && (
+                    <a href={meetLink} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
+                      Entrar na reuniao
+                    </a>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
       </CardContent>
     </Card>
   )
@@ -448,6 +522,10 @@ export default async function DashboardPage() {
 
       <Suspense fallback={null}>
         <RevenueCard teamId={teamId} />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <TodayCalendarCard teamId={teamId} />
       </Suspense>
 
       <Suspense fallback={null}>
