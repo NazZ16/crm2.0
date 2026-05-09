@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
-import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, INTERACTION_TYPE_LABELS } from '@/lib/types'
+import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, INTERACTION_TYPE_LABELS, LEAD_TYPE_LABELS, LEAD_TYPE_COLORS } from '@/lib/types'
 import { formatRelativeTime, formatCurrency, getInitials } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,17 +11,24 @@ import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { ScraperTriggerButton } from './ScraperTriggerButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
+import { DraftSendButtons } from './DraftSendButtons'
+import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
-  MessageCircle, AlertTriangle, TrendingUp, Bot,
+  MessageCircle, AlertTriangle, TrendingUp, Bot, Trophy,
 } from 'lucide-react'
 import Link from 'next/link'
-import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations } from '@/lib/types'
+import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations, LeadType, SellerProfile } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+}
+
+function fmtEur(v: number | null | undefined): string {
+  if (v == null) return '-'
+  return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(v)
 }
 
 export default async function LeadDetailPage({ params }: Props) {
@@ -63,9 +70,6 @@ export default async function LeadDetailPage({ params }: Props) {
     .limit(1)
     .single()
 
-  // Carregar agent_run mais recente diretamente pelo lead_id.
-  // (Antes dependia de latestExtraction.run_id, mas se o pipeline falha entre
-  // criar o run e a extraction, ficamos sem latestRun e a Debug nao aparece.)
   const { data: latestRun } = await supabase
     .from('agent_runs')
     .select('id, status, tokens_used, duration_ms, agent_type, output_json, error, created_at')
@@ -94,7 +98,7 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const { data: leadProfile } = await supabase
     .from('lead_profiles')
-    .select('home_preferences, financial_profile')
+    .select('home_preferences, financial_profile, seller_profile')
     .eq('lead_id', lead.id)
     .maybeSingle()
 
@@ -102,6 +106,12 @@ export default async function LeadDetailPage({ params }: Props) {
   const leadBudget = (leadProfile?.financial_profile as { orcamento_max?: number } | null)?.orcamento_max ?? undefined
   const leadTypology = (leadProfile?.home_preferences as { tipologia?: string } | null)?.tipologia
   const leadTypologies = leadTypology ? [leadTypology] : undefined
+
+  // Tipo de lead (migration 015) e perfil de vendedor.
+  const leadType = ((lead.lead_type as LeadType | null | undefined) ?? 'unknown') as LeadType
+  const sellerProfile = (leadProfile?.seller_profile as SellerProfile | null) ?? null
+  const isSellerLead = leadType === 'seller' || leadType === 'both'
+  const isBuyerLead = leadType === 'buyer' || leadType === 'both' || leadType === 'unknown'
 
   const profile = Array.isArray(lead.lead_profiles) ? lead.lead_profiles[0] : lead.lead_profiles
   const interactions = Array.isArray(lead.interactions) ? lead.interactions : []
@@ -111,6 +121,11 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const drafts: AgentDraft[] = (latestExtraction?.drafts_json as { drafts?: AgentDraft[] } | null)?.drafts ?? []
   const recommendations = latestExtraction?.recommendations_json as AgentRecommendations | null
+
+  const dealValue = lead.deal_value as number | null
+  const commissionValue = lead.commission_value as number | null
+  const closedAt = lead.closed_at as string | null
+  const isWon = lead.status === 'won'
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -132,6 +147,9 @@ export default async function LeadDetailPage({ params }: Props) {
               <Badge className={LEAD_STATUS_COLORS[lead.status as LeadStatus]}>
                 {LEAD_STATUS_LABELS[lead.status as LeadStatus]}
               </Badge>
+              <Badge className={LEAD_TYPE_COLORS[leadType]}>
+                {LEAD_TYPE_LABELS[leadType]}
+              </Badge>
               <span className="text-sm text-gray-500">Score: <strong>{lead.score}/100</strong></span>
               <span className="text-sm text-gray-500">Urgencia: <strong>{lead.urgency}/5</strong></span>
               {lead.source && (
@@ -145,6 +163,8 @@ export default async function LeadDetailPage({ params }: Props) {
           <LeadDetailClient
             leadId={lead.id}
             leadName={lead.full_name}
+            leadPhone={lead.phone ?? null}
+            leadEmail={lead.email ?? null}
             currentStatus={lead.status as LeadStatus}
             canEdit={member.role !== 'viewer'}
             isAdmin={member.role === 'admin'}
@@ -155,6 +175,10 @@ export default async function LeadDetailPage({ params }: Props) {
               initialFullName={lead.full_name}
               initialPhone={lead.phone ?? null}
               initialEmail={lead.email ?? null}
+              initialLeadType={leadType}
+              initialDealValue={dealValue}
+              initialCommissionValue={commissionValue}
+              initialClosedAt={closedAt}
             />
           )}
           {member.role !== 'viewer' && !existingInvestor && (
@@ -172,7 +196,7 @@ export default async function LeadDetailPage({ params }: Props) {
               </Badge>
             </Link>
           )}
-          {member.role !== 'viewer' && (
+          {member.role !== 'viewer' && isBuyerLead && (
             <ScraperTriggerButton
               leadId={lead.id}
               zones={leadZones}
@@ -215,7 +239,39 @@ export default async function LeadDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {profile && (
+          {(isWon || dealValue != null || commissionValue != null) && (
+            <Card className="border-emerald-100 bg-emerald-50/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-emerald-800 uppercase tracking-wide flex items-center gap-2">
+                  <Trophy size={14} />
+                  Deal {isWon ? 'fechada' : 'em registo'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Valor imovel</span>
+                  <strong className="text-gray-900">{fmtEur(dealValue)}</strong>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Comissao</span>
+                  <strong className="text-emerald-700">{fmtEur(commissionValue)}</strong>
+                </div>
+                {closedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Fechada em</span>
+                    <span className="text-gray-700">
+                      {new Date(closedAt).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Imovel a vender (angariacao) — so para seller / both */}
+          {isSellerLead && sellerProfile && <SellerProfileCard profile={sellerProfile} />}
+
+          {profile && isBuyerLead && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
@@ -344,6 +400,14 @@ export default async function LeadDetailPage({ params }: Props) {
                   <Badge className="ml-2 bg-blue-100 text-blue-700 font-normal">{openTasks.length}</Badge>
                 )}
               </CardTitle>
+              {member.role !== 'viewer' && (
+                <NewTaskButton
+                  variant="outline"
+                  size="sm"
+                  label="Nova"
+                  defaultLead={{ id: lead.id, full_name: lead.full_name }}
+                />
+              )}
             </CardHeader>
             <CardContent>
               <TaskList initialOpenTasks={openTasks} initialDoneTasks={doneTasks} />
@@ -380,7 +444,13 @@ export default async function LeadDetailPage({ params }: Props) {
                     </p>
                     <div className="space-y-3">
                       {drafts.map((draft, i) => (
-                        <DraftCard key={i} draft={draft} index={i} />
+                        <DraftCard
+                          key={i}
+                          draft={draft}
+                          index={i}
+                          leadPhone={lead.phone ?? null}
+                          leadEmail={lead.email ?? null}
+                        />
                       ))}
                     </div>
                   </div>
@@ -539,17 +609,162 @@ export default async function LeadDetailPage({ params }: Props) {
   )
 }
 
-function DraftCard({ draft, index }: { draft: AgentDraft; index: number }) {
+function SellerProfileCard({ profile }: { profile: SellerProfile }) {
+  const imovel = profile.imovel
+  const historico = profile.historico
+  const objectivo = profile.objectivo
+  const documentacao = profile.documentacao
+
+  // Decide quais blocos tem informacao para mostrar (esconde os vazios)
+  const hasImovel = imovel && Object.values(imovel).some((v) => v != null && v !== '')
+  const hasHistorico = historico && Object.values(historico).some((v) => v != null && v !== '')
+  const hasObjectivo = objectivo && Object.values(objectivo).some((v) => v != null && v !== '')
+  const hasDocs = documentacao && Object.values(documentacao).some((v) => v != null && v !== '')
+
+  if (!hasImovel && !hasHistorico && !hasObjectivo && !hasDocs && !profile.notas) {
+    return (
+      <Card className="border-amber-100 bg-amber-50/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-amber-800 uppercase tracking-wide">
+            Imovel a vender (angariacao)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-gray-500">
+            Ainda nao foram extraidos dados do imovel. Faz uma chamada de angariacao ou preenche manualmente.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="border-amber-100 bg-amber-50/40">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold text-amber-800 uppercase tracking-wide">
+          Imovel a vender (angariacao)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {hasImovel && imovel && (
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-gray-500 uppercase">Imovel</p>
+            {imovel.morada && <KV k="Morada" v={imovel.morada} />}
+            {(imovel.freguesia || imovel.concelho) && (
+              <KV k="Localizacao" v={[imovel.freguesia, imovel.concelho].filter(Boolean).join(', ')} />
+            )}
+            {imovel.tipologia && <KV k="Tipologia" v={imovel.tipologia} />}
+            {imovel.area_util_m2 != null && <KV k="Area util" v={`${imovel.area_util_m2} m²`} />}
+            {imovel.area_bruta_m2 != null && <KV k="Area bruta" v={`${imovel.area_bruta_m2} m²`} />}
+            {imovel.ano_construcao != null && <KV k="Ano" v={String(imovel.ano_construcao)} />}
+            {imovel.certificado_energetico && <KV k="CE" v={imovel.certificado_energetico} />}
+            {imovel.andar && <KV k="Andar" v={imovel.andar} />}
+            {imovel.estado && <KV k="Estado" v={imovel.estado} />}
+            <div className="flex flex-wrap gap-1 mt-1">
+              {imovel.elevador && <Badge variant="outline" className="text-xs">Elevador</Badge>}
+              {imovel.varanda && <Badge variant="outline" className="text-xs">Varanda</Badge>}
+              {imovel.garagem && <Badge variant="outline" className="text-xs">Garagem</Badge>}
+            </div>
+            {imovel.link_anuncio && (
+              <a href={imovel.link_anuncio} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline break-all">
+                {imovel.link_anuncio}
+              </a>
+            )}
+          </div>
+        )}
+
+        {hasObjectivo && objectivo && (
+          <div className="space-y-1.5 pt-2 border-t border-amber-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase">Objectivo</p>
+            {objectivo.preco_pedido != null && <KV k="Preco pedido" v={formatCurrency(objectivo.preco_pedido)} />}
+            {objectivo.preco_minimo_aceitavel != null && (
+              <KV k="Minimo aceitavel" v={formatCurrency(objectivo.preco_minimo_aceitavel)} />
+            )}
+            {objectivo.prazo_venda_meses != null && <KV k="Prazo" v={`${objectivo.prazo_venda_meses} meses`} />}
+            {objectivo.motivacao && <KV k="Motivacao" v={objectivo.motivacao} />}
+            {objectivo.flexibilidade_preco && <KV k="Flexibilidade preco" v={objectivo.flexibilidade_preco} />}
+            {objectivo.urgencia_1_5 != null && <KV k="Urgencia" v={`${objectivo.urgencia_1_5}/5`} />}
+          </div>
+        )}
+
+        {hasHistorico && historico && (
+          <div className="space-y-1.5 pt-2 border-t border-amber-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase">Historico</p>
+            {historico.ja_tentou_vender != null && (
+              <KV k="Ja tentou vender" v={historico.ja_tentou_vender ? 'Sim' : 'Nao'} />
+            )}
+            {historico.mediadora_anterior && <KV k="Mediadora anterior" v={historico.mediadora_anterior} />}
+            {historico.tempo_no_mercado_meses != null && (
+              <KV k="Tempo no mercado" v={`${historico.tempo_no_mercado_meses} meses`} />
+            )}
+            {historico.preco_anunciado_anterior != null && (
+              <KV k="Preco anunciado anterior" v={formatCurrency(historico.preco_anunciado_anterior)} />
+            )}
+            {historico.motivo_nao_vendeu && <KV k="Razao" v={historico.motivo_nao_vendeu} />}
+          </div>
+        )}
+
+        {hasDocs && documentacao && (
+          <div className="space-y-1 pt-2 border-t border-amber-100">
+            <p className="text-xs font-semibold text-gray-500 uppercase">Documentacao</p>
+            <div className="flex flex-wrap gap-1">
+              {documentacao.caderneta_predial && <Badge variant="outline" className="text-xs">Caderneta</Badge>}
+              {documentacao.registo_predial && <Badge variant="outline" className="text-xs">Registo</Badge>}
+              {documentacao.licenca_habitacao && <Badge variant="outline" className="text-xs">Licenca habitacao</Badge>}
+              {documentacao.ce_disponivel && <Badge variant="outline" className="text-xs">CE</Badge>}
+              {documentacao.ipt_pago && <Badge variant="outline" className="text-xs">IPT pago</Badge>}
+            </div>
+            {documentacao.notas_legais && <p className="text-xs text-gray-500 mt-1">{documentacao.notas_legais}</p>}
+          </div>
+        )}
+
+        {profile.notas && (
+          <p className="text-xs text-gray-500 italic pt-2 border-t border-amber-100">{profile.notas}</p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function KV({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between gap-3 text-sm">
+      <span className="text-gray-500 flex-shrink-0">{k}</span>
+      <span className="text-gray-800 text-right">{v}</span>
+    </div>
+  )
+}
+
+function DraftCard({
+  draft,
+  index,
+  leadPhone,
+  leadEmail,
+}: {
+  draft: AgentDraft
+  index: number
+  leadPhone: string | null
+  leadEmail: string | null
+}) {
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-xs">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <Badge variant="outline" className="text-xs flex-shrink-0">
             {draft.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
           </Badge>
-          <span className="text-xs text-gray-500">{draft.goal}</span>
+          <span className="text-xs text-gray-500 truncate">{draft.goal}</span>
         </div>
-        <CopyButton text={draft.body} id={`saved-draft-${index}`} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <DraftSendButtons
+            channel={draft.channel}
+            body={draft.body}
+            subject={draft.subject}
+            leadPhone={leadPhone}
+            leadEmail={leadEmail}
+          />
+          <CopyButton text={draft.body} id={`saved-draft-${index}`} />
+        </div>
       </div>
       {draft.subject && (
         <div className="px-3 py-1.5 bg-blue-50 border-b text-xs font-medium text-blue-700">

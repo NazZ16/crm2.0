@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CheckSquare2, AlertTriangle, Calendar, Clock, Inbox } from 'lucide-react'
 import { TasksClient } from './TasksClient'
+import { NewTaskButton, type LeadOption } from './NewTaskButton'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,9 +46,7 @@ export default async function TasksPage() {
 
   const now = new Date()
   const startOfToday = startOfDay(now).toISOString()
-  const endOfToday = endOfDay(now).toISOString()
 
-  // Tarefas abertas + concluidas nas ultimas 24h (para feedback visual)
   const { data: rawTasks } = await supabase
     .from('tasks')
     .select(`
@@ -88,41 +87,37 @@ export default async function TasksPage() {
   const upcoming = open.filter((t) => t.due_at && new Date(t.due_at) > endOfDay(now))
   const noDue = open.filter((t) => !t.due_at)
 
+  const { data: leadsList } = await supabase
+    .from('leads')
+    .select('id, full_name')
+    .eq('team_id', member.team_id)
+    .not('status', 'in', '(won,lost)')
+    .order('updated_at', { ascending: false })
+    .limit(200)
+
+  const leadOptions: LeadOption[] = (leadsList ?? []).map((l) => ({
+    id: l.id as string,
+    full_name: (l.full_name as string) ?? 'Lead sem nome',
+  }))
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          {open.length} tarefa{open.length === 1 ? '' : 's'} abertas
-          {doneToday.length > 0 && ` - ${doneToday.length} concluida${doneToday.length === 1 ? '' : 's'} hoje`}
-        </p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Tarefas</h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {open.length} tarefa{open.length === 1 ? '' : 's'} abertas
+            {doneToday.length > 0 && ` - ${doneToday.length} concluida${doneToday.length === 1 ? '' : 's'} hoje`}
+          </p>
+        </div>
+        {member.role !== 'viewer' && <NewTaskButton leads={leadOptions} />}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard
-          icon={<AlertTriangle size={18} className="text-red-500" />}
-          label="Atrasadas"
-          value={overdue.length}
-          accent="text-red-600"
-        />
-        <StatCard
-          icon={<Calendar size={18} className="text-blue-500" />}
-          label="Hoje"
-          value={today.length}
-          accent="text-blue-600"
-        />
-        <StatCard
-          icon={<Clock size={18} className="text-gray-400" />}
-          label="Proximas"
-          value={upcoming.length}
-          accent="text-gray-700"
-        />
-        <StatCard
-          icon={<CheckSquare2 size={18} className="text-green-500" />}
-          label="Feitas hoje"
-          value={doneToday.length}
-          accent="text-green-600"
-        />
+        <StatCard icon={<AlertTriangle size={18} className="text-red-500" />} label="Atrasadas" value={overdue.length} accent="text-red-600" />
+        <StatCard icon={<Calendar size={18} className="text-blue-500" />} label="Hoje" value={today.length} accent="text-blue-600" />
+        <StatCard icon={<Clock size={18} className="text-gray-400" />} label="Proximas" value={upcoming.length} accent="text-gray-700" />
+        <StatCard icon={<CheckSquare2 size={18} className="text-green-500" />} label="Feitas hoje" value={doneToday.length} accent="text-green-600" />
       </div>
 
       {open.length === 0 && doneToday.length === 0 && (
@@ -131,7 +126,7 @@ export default async function TasksPage() {
             <Inbox size={40} className="mx-auto text-gray-200 mb-2" />
             <p className="text-sm text-gray-500">Sem tarefas no momento</p>
             <p className="text-xs text-gray-400 mt-1">
-              Corre o "Plano de Follow-up" em Agentes IA para gerar tarefas automaticas
+              Cria uma tarefa nova ou corre o &quot;Plano de Follow-up&quot; em Agentes IA
             </p>
           </CardContent>
         </Card>

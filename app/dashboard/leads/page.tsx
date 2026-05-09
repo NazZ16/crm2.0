@@ -5,8 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
-import { Plus, Search, ArrowRight, Phone, Mail, Bot, Mic } from 'lucide-react'
+import { Plus, Phone, Mail, Mic, Search } from 'lucide-react'
 import { ImportLeadsButton } from './ImportLeadsButton'
+import { LeadsSearchBar } from './LeadsSearchBar'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,8 +15,22 @@ interface Props {
   searchParams: Promise<{ status?: string; q?: string }>
 }
 
+/**
+ * Sanitiza o termo de pesquisa para usar dentro de um filtro PostgREST .or().
+ * Remove caracteres que podem partir o parser do Supabase (virgulas, parentesis,
+ * percentages literais) e o operador "*". Tambem aplica limite de comprimento
+ * para evitar abusos.
+ */
+function sanitizeQ(input: string): string {
+  return input
+    .replace(/[%,()*]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+}
+
 export default async function LeadsPage({ searchParams }: Props) {
-  const { status, q } = await searchParams
+  const { status, q: rawQ } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -27,6 +42,8 @@ export default async function LeadsPage({ searchParams }: Props) {
     .single()
 
   if (!memberData) return null
+
+  const q = rawQ ? sanitizeQ(rawQ) : ''
 
   let query = supabase
     .from('leads')
@@ -41,8 +58,12 @@ export default async function LeadsPage({ searchParams }: Props) {
   if (status && LEAD_PIPELINE_ORDER.includes(status as LeadStatus)) {
     query = query.eq('status', status)
   }
-  if (q) {
-    query = query.ilike('full_name', `%${q}%`)
+  if (q.length > 0) {
+    // Procura em full_name, phone e email (case-insensitive).
+    const pattern = `%${q}%`
+    query = query.or(
+      `full_name.ilike.${pattern},phone.ilike.${pattern},email.ilike.${pattern}`
+    )
   }
 
   const { data: leads } = await query
@@ -51,13 +72,16 @@ export default async function LeadsPage({ searchParams }: Props) {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{leads?.length ?? 0} leads encontradas</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {leads?.length ?? 0} lead{leads?.length === 1 ? '' : 's'}
+            {q ? <> para <strong>&quot;{q}&quot;</strong></> : null}
+            {activeStatus ? <> em <strong>{LEAD_STATUS_LABELS[activeStatus]}</strong></> : null}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Link href="/dashboard/leads/upload-call">
             <Button variant="outline" className="gap-2">
               <Mic size={16} />
@@ -74,9 +98,10 @@ export default async function LeadsPage({ searchParams }: Props) {
         </div>
       </div>
 
-      {/* Status filters */}
+      <LeadsSearchBar />
+
       <div className="flex gap-2 flex-wrap">
-        <Link href="/dashboard/leads">
+        <Link href={q ? `/dashboard/leads?q=${encodeURIComponent(q)}` : '/dashboard/leads'}>
           <Badge
             variant={!activeStatus ? 'default' : 'outline'}
             className="cursor-pointer text-sm px-3 py-1"
@@ -84,28 +109,47 @@ export default async function LeadsPage({ searchParams }: Props) {
             Todas
           </Badge>
         </Link>
-        {LEAD_PIPELINE_ORDER.map((s) => (
-          <Link key={s} href={`/dashboard/leads?status=${s}`}>
-            <Badge
-              variant={activeStatus === s ? 'default' : 'outline'}
-              className="cursor-pointer text-sm px-3 py-1"
-            >
-              {LEAD_STATUS_LABELS[s]}
-            </Badge>
-          </Link>
-        ))}
+        {LEAD_PIPELINE_ORDER.map((s) => {
+          const params = new URLSearchParams()
+          params.set('status', s)
+          if (q) params.set('q', q)
+          return (
+            <Link key={s} href={`/dashboard/leads?${params.toString()}`}>
+              <Badge
+                variant={activeStatus === s ? 'default' : 'outline'}
+                className="cursor-pointer text-sm px-3 py-1"
+              >
+                {LEAD_STATUS_LABELS[s]}
+              </Badge>
+            </Link>
+          )
+        })}
       </div>
 
-      {/* Leads Grid */}
       {!leads || leads.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-dashed border-gray-200">
-          <p className="text-gray-400 mb-4">Nenhuma lead encontrada</p>
-          <Link href="/dashboard/leads/new">
-            <Button variant="outline" className="gap-2">
-              <Plus size={16} />
-              Adicionar primeira lead
-            </Button>
-          </Link>
+          <Search size={32} className="mx-auto text-gray-300 mb-3" />
+          {q ? (
+            <>
+              <p className="text-gray-500">Nenhuma lead encontrada para <strong>&quot;{q}&quot;</strong></p>
+              <p className="text-xs text-gray-400 mt-1">Tenta outro termo, ou um numero parcial</p>
+              <div className="mt-4">
+                <Link href={activeStatus ? `/dashboard/leads?status=${activeStatus}` : '/dashboard/leads'}>
+                  <Button variant="outline" size="sm">Limpar pesquisa</Button>
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-400 mb-4">Nenhuma lead encontrada</p>
+              <Link href="/dashboard/leads/new">
+                <Button variant="outline" className="gap-2">
+                  <Plus size={16} />
+                  Adicionar primeira lead
+                </Button>
+              </Link>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -163,7 +207,7 @@ export default async function LeadsPage({ searchParams }: Props) {
 
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
                       <div className="flex items-center gap-3 text-xs text-gray-400">
-                        <span>Urgência: {lead.urgency}/5</span>
+                        <span>Urgencia: {lead.urgency}/5</span>
                         {lead.source && (
                           <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">
                             {lead.source}

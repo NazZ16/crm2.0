@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { ApiKeysSection } from './ApiKeysSection'
 import { ScraperConfigSection } from './ScraperConfigSection'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
+import { GoogleCalendarSection } from './GoogleCalendarSection'
 
 function TelegramSetupCard({ siteUrl }: { siteUrl: string }) {
   const isConfigured = Boolean(process.env.TELEGRAM_BOT_TOKEN)
@@ -72,7 +73,12 @@ function TelegramSetupCard({ siteUrl }: { siteUrl: string }) {
   )
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ google_connected?: string; google_error?: string }>
+}) {
+  const params = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   let isAdmin = false
@@ -92,6 +98,24 @@ export default async function SettingsPage() {
     .select('zones, max_price, typologies, enabled')
     .eq('team_id', teamId ?? '')
     .maybeSingle()
+
+  // Estado da conexao Google
+  let googleEmail: string | null = null
+  if (teamId) {
+    const { data: conn } = await supabase
+      .from('team_calendar_connections')
+      .select('google_account_email')
+      .eq('team_id', teamId)
+      .eq('provider', 'google')
+      .maybeSingle()
+    googleEmail = conn?.google_account_email ?? null
+  }
+
+  const googleFlash = params.google_connected
+    ? { type: 'success' as const, text: 'Google Calendar ligado com sucesso!' }
+    : params.google_error
+    ? { type: 'error' as const, text: `Erro: ${params.google_error}` }
+    : null
 
   const defaultScraperConfig = {
     zones: [] as string[],
@@ -121,6 +145,8 @@ export default async function SettingsPage() {
           <PwaInstallButton />
         </CardContent>
       </Card>
+
+      <GoogleCalendarSection connectedEmail={googleEmail} flashMessage={googleFlash} />
 
       <TelegramSetupCard siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? ''} />
 

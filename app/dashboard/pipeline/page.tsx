@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import { LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, LEAD_PIPELINE_ORDER, type LeadStatus } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { formatRelativeTime } from '@/lib/utils'
-import Link from 'next/link'
+import { LEAD_PIPELINE_ORDER, type LeadStatus } from '@/lib/types'
+import { PipelineBoard, type PipelineLead } from './PipelineBoard'
 
 export const dynamic = 'force-dynamic'
+
+const COMMISSION_DEFAULT_RATE = 0.04 // fallback quando lead nao tem commission_value
 
 export default async function PipelinePage() {
   const supabase = await createClient()
@@ -13,7 +13,7 @@ export default async function PipelinePage() {
 
   const { data: member } = await supabase
     .from('team_members')
-    .select('team_id')
+    .select('team_id, role')
     .eq('user_id', user.id)
     .single()
 
@@ -21,72 +21,72 @@ export default async function PipelinePage() {
 
   const { data: leads } = await supabase
     .from('leads')
-    .select('id, full_name, status, score, urgency, last_contact_at, created_at, source, lead_profiles(summary)')
+    .select(`
+      id, full_name, phone, email, status, score, urgency,
+      deal_value, commission_value, closed_at,
+      last_contact_at, next_action_at, created_at,
+      lead_profiles(summary)
+    `)
     .eq('team_id', member.team_id)
-    .not('status', 'in', '("won","lost")')
-    .order('score', { ascending: false })
+    .order('updated_at', { ascending: false })
+    .limit(500)
 
-  const allLeads = leads ?? []
+  const allLeads: PipelineLead[] = (leads ?? []).map((l) => {
+    const profile = Array.isArray(l.lead_profiles) ? l.lead_profiles[0] : l.lead_profiles
+    return {
+      id: l.id as string,
+      full_name: (l.full_name as string) ?? 'Sem nome',
+      phone: (l.phone as string | null) ?? null,
+      email: (l.email as string | null) ?? null,
+      status: l.status as LeadStatus,
+      score: (l.score as number) ?? 0,
+      urgency: (l.urgency as number) ?? 1,
+      deal_value: (l.deal_value as number | null) ?? null,
+      commission_value: (l.commission_value as number | null) ?? null,
+      closed_at: (l.closed_at as string | null) ?? null,
+      last_contact_at: (l.last_contact_at as string | null) ?? null,
+      next_action_at: (l.next_action_at as string | null) ?? null,
+      created_at: l.created_at as string,
+      summary: (profile?.summary as string | null) ?? null,
+    }
+  })
 
-  const byStatus = LEAD_PIPELINE_ORDER.filter((s) => !['won', 'lost'].includes(s)).reduce((acc, status) => {
-    acc[status] = allLeads.filter((l) => l.status === status)
-    return acc
-  }, {} as Record<string, typeof allLeads>)
+  // Agrupa por status seguindo LEAD_PIPELINE_ORDER
+  const grouped: Record<LeadStatus, PipelineLead[]> = {
+    new: [], qualified: [], meeting: [], active: [], won: [], lost: [],
+  }
+  for (const lead of allLeads) {
+    if (grouped[lead.status]) grouped[lead.status].push(lead)
+  }
+
+  // Totais por coluna: comissao real ou estimada (deal_value * 4%)
+  const totals: Record<LeadStatus, number> = {
+    new: 0, qualified: 0, meeting: 0, active: 0, won: 0, lost: 0,
+  }
+  for (const status of LEAD_PIPELINE_ORDER) {
+    totals[status] = grouped[status].reduce((sum, l) => {
+      if (l.commission_value != null) return sum + l.commission_value
+      if (l.deal_value != null) return sum + l.deal_value * COMMISSION_DEFAULT_RATE
+      return sum
+    }, 0)
+  }
+
+  const totalCount = allLeads.length
 
   return (
-    <div className="p-6 max-w-full overflow-x-auto">
-      <div className="mb-5">
-        <h1 className="text-2xl font-bold text-gray-900">Pipeline Kanban</h1>
-        <p className="text-sm text-gray-500 mt-0.5">{allLeads.length} leads ativas</p>
+    <div className="p-4 md:p-6">
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold text-gray-900">Pipeline</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          {totalCount} leads no total. Arrasta entre colunas para mudar de estado. Totais sao a comissao real ou estimada a {(COMMISSION_DEFAULT_RATE * 100).toFixed(0)}% do valor do imovel.
+        </p>
       </div>
 
-      <div className="flex gap-4 min-w-max">
-        {(['new', 'qualified', 'meeting', 'active'] as LeadStatus[]).map((status) => {
-          const statusLeads = byStatus[status] ?? []
-          return (
-            <div key={status} className="w-72 flex-shrink-0">
-              <div className="flex items-center gap-2 mb-3">
-                <span className="font-semibold text-sm text-gray-700">{LEAD_STATUS_LABELS[status]}</span>
-                <Badge variant="outline" className="text-xs">{statusLeads.length}</Badge>
-              </div>
-              <div className="space-y-3">
-                {statusLeads.map((lead) => {
-                  const profile = Array.isArray(lead.lead_profiles) ? lead.lead_profiles[0] : lead.lead_profiles
-                  return (
-                    <Link key={lead.id} href={`/dashboard/leads/${lead.id}`}>
-                      <div className="bg-white border border-gray-200 rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 flex-shrink-0">
-                            {lead.full_name[0]}
-                          </div>
-                          <span className="font-medium text-sm text-gray-800 truncate">{lead.full_name}</span>
-                        </div>
-                        {profile?.summary && (
-                          <p className="text-xs text-gray-500 line-clamp-2 mb-2">{profile.summary}</p>
-                        )}
-                        <div className="flex items-center justify-between text-xs text-gray-400">
-                          <span>Score: <strong className="text-gray-600">{lead.score}</strong></span>
-                          <span>{formatRelativeTime(lead.last_contact_at ?? lead.created_at)}</span>
-                        </div>
-                        {lead.urgency >= 4 && (
-                          <div className="mt-2">
-                            <Badge className="text-xs bg-red-100 text-red-600">🔥 Urgente</Badge>
-                          </div>
-                        )}
-                      </div>
-                    </Link>
-                  )
-                })}
-                {statusLeads.length === 0 && (
-                  <div className="text-center py-6 border-2 border-dashed border-gray-200 rounded-lg">
-                    <p className="text-xs text-gray-400">Sem leads</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <PipelineBoard
+        grouped={grouped}
+        totals={totals}
+        canEdit={member.role !== 'viewer'}
+      />
     </div>
   )
 }
