@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { LEAD_TYPE_LABELS, type LeadType } from '@/lib/types'
 import { toast } from 'sonner'
 import { Pencil, Loader2 } from 'lucide-react'
 
@@ -21,6 +23,7 @@ interface Props {
   initialFullName: string
   initialPhone: string | null
   initialEmail: string | null
+  initialLeadType?: LeadType
   initialDealValue?: number | null
   initialCommissionValue?: number | null
   initialClosedAt?: string | null
@@ -40,6 +43,7 @@ export function EditLeadDetailsButton({
   initialFullName,
   initialPhone,
   initialEmail,
+  initialLeadType = 'unknown',
   initialDealValue = null,
   initialCommissionValue = null,
   initialClosedAt = null,
@@ -50,6 +54,7 @@ export function EditLeadDetailsButton({
   const [fullName, setFullName] = useState(initialFullName)
   const [phone, setPhone] = useState(initialPhone ?? '')
   const [email, setEmail] = useState(initialEmail ?? '')
+  const [leadType, setLeadType] = useState<LeadType>(initialLeadType)
   const [dealValue, setDealValue] = useState(
     initialDealValue != null ? String(initialDealValue) : ''
   )
@@ -62,6 +67,7 @@ export function EditLeadDetailsButton({
     setFullName(initialFullName)
     setPhone(initialPhone ?? '')
     setEmail(initialEmail ?? '')
+    setLeadType(initialLeadType)
     setDealValue(initialDealValue != null ? String(initialDealValue) : '')
     setCommissionValue(initialCommissionValue != null ? String(initialCommissionValue) : '')
     setClosedAtDate(toDateInput(initialClosedAt))
@@ -117,6 +123,7 @@ export function EditLeadDetailsButton({
       full_name: trimmedName,
       phone: phone.trim().length > 0 ? phone.trim() : null,
       email: trimmedEmail.length > 0 ? trimmedEmail : null,
+      lead_type: leadType,
       deal_value: dealParsed,
       commission_value: commissionParsed,
       closed_at: closedIso,
@@ -200,6 +207,24 @@ export function EditLeadDetailsButton({
                   type="email"
                 />
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-lead-type">Tipo de lead</Label>
+              <Select value={leadType} onValueChange={(v) => setLeadType(v as LeadType)}>
+                <SelectTrigger id="edit-lead-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="buyer">{LEAD_TYPE_LABELS.buyer}</SelectItem>
+                  <SelectItem value="seller">{LEAD_TYPE_LABELS.seller}</SelectItem>
+                  <SelectItem value="both">{LEAD_TYPE_LABELS.both}</SelectItem>
+                  <SelectItem value="unknown">{LEAD_TYPE_LABELS.unknown}</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-400">
+                Comprador procura imovel; Vendedor e proprietario a vender (angariacao). O agente classifica automaticamente — corrige aqui se errar.
+              </p>
             </div>
 
             <div className="border-t border-gray-100 pt-4 space-y-3">

@@ -175,6 +175,7 @@ export default async function LeadDetailPage({ params }: Props) {
               initialFullName={lead.full_name}
               initialPhone={lead.phone ?? null}
               initialEmail={lead.email ?? null}
+              initialLeadType={leadType}
               initialDealValue={dealValue}
               initialCommissionValue={commissionValue}
               initialClosedAt={closedAt}
