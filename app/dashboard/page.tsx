@@ -18,7 +18,7 @@ import {
   CalendarDays,
 } from 'lucide-react'
 import { orientatorAgent } from '@/lib/agents/orientator-agent'
-import { listTodaysEvents, type GoogleCalendarEvent } from '@/lib/google-calendar'
+import { listTodaysEvents, isCrmCreatedEvent, type GoogleCalendarEvent } from '@/lib/google-calendar'
 
 export const dynamic = 'force-dynamic'
 
@@ -204,6 +204,10 @@ async function TodayCalendarCard({ teamId }: { teamId: string }) {
   } catch {
     return null
   }
+
+  // Filtra eventos criados pelo proprio CRM (a partir de tasks) — esses ja
+  // aparecem no card "Tarefas para Hoje", evita duplicacao.
+  events = events.filter((ev) => !isCrmCreatedEvent(ev))
 
   // Sem conexao Google ou sem eventos hoje — nao mostra o card.
   if (events.length === 0) return null

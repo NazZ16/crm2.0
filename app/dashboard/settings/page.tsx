@@ -101,15 +101,18 @@ export default async function SettingsPage({
 
   // Estado da conexao Google
   let googleEmail: string | null = null
+  let googleScope: string | null = null
   if (teamId) {
     const { data: conn } = await supabase
       .from('team_calendar_connections')
-      .select('google_account_email')
+      .select('google_account_email, scope')
       .eq('team_id', teamId)
       .eq('provider', 'google')
       .maybeSingle()
     googleEmail = conn?.google_account_email ?? null
+    googleScope = conn?.scope ?? null
   }
+  const googleHasWriteScope = googleScope?.includes('calendar.events') ?? false
 
   const googleFlash = params.google_connected
     ? { type: 'success' as const, text: 'Google Calendar ligado com sucesso!' }
@@ -146,7 +149,11 @@ export default async function SettingsPage({
         </CardContent>
       </Card>
 
-      <GoogleCalendarSection connectedEmail={googleEmail} flashMessage={googleFlash} />
+      <GoogleCalendarSection
+        connectedEmail={googleEmail}
+        hasWriteScope={googleHasWriteScope}
+        flashMessage={googleFlash}
+      />
 
       <TelegramSetupCard siteUrl={process.env.NEXT_PUBLIC_SITE_URL ?? ''} />
 

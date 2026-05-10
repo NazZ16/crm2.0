@@ -11,10 +11,16 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 
+// Scope completo: read + write events. O user precisa re-autorizar uma vez para mudar de readonly.
 export const GOOGLE_OAUTH_SCOPES = [
-  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ')
+
+// Marker em extendedProperties.private para identificar eventos criados pelo CRM
+// e poder filtra-los no card "Agenda de hoje" (evitar duplicacao com tasks).
+export const CRM_EVENT_MARKER_KEY = 'source'
+export const CRM_EVENT_MARKER_VALUE = 'crm-task'
 
 export const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
@@ -41,6 +47,16 @@ export interface GoogleCalendarEvent {
   attendees?: { email: string; responseStatus?: string; displayName?: string }[]
   hangoutLink?: string
   conferenceData?: { entryPoints?: { uri: string; entryPointType: string }[] }
+  extendedProperties?: { private?: Record<string, string>; shared?: Record<string, string> }
+}
+
+/**
+ * True se o evento foi criado pelo CRM (a partir de uma task).
+ * Usado para filtra-los do card "Agenda de hoje" — caso contrario veriamos
+ * a mesma coisa duas vezes (uma como task, outra como evento Google).
+ */
+export function isCrmCreatedEvent(ev: GoogleCalendarEvent): boolean {
+  return ev.extendedProperties?.private?.[CRM_EVENT_MARKER_KEY] === CRM_EVENT_MARKER_VALUE
 }
 
 export function getOAuthRedirectUri(origin: string): string {
@@ -194,6 +210,78 @@ export async function listEvents(
 
   const json = await res.json() as { items?: GoogleCalendarEvent[] }
   return json.items ?? []
+}
+
+/**
+ * Cria um evento no Google Calendar com marker CRM.
+ *
+ * @param teamId  team da conexao Google
+ * @param event   dados do evento (summary obrigatorio, start/end ISO datetime)
+ * @param crmTaskId  id da task no CRM (vai para extendedProperties.private.crm_task_id)
+ * @returns       evento criado (com id Google) ou null se nao ha conexao
+ */
+export async function createEvent(
+  teamId: string,
+  event: {
+    summary: string
+    description?: string
+    location?: string
+    start: { dateTime: string; timeZone?: string }
+    end: { dateTime: string; timeZone?: string }
+  },
+  crmTaskId: string
+): Promise<GoogleCalendarEvent | null> {
+  const tok = await getValidAccessToken(teamId)
+  if (!tok) return null
+
+  const body = {
+    ...event,
+    extendedProperties: {
+      private: {
+        [CRM_EVENT_MARKER_KEY]: CRM_EVENT_MARKER_VALUE,
+        crm_task_id: crmTaskId,
+      },
+    },
+  }
+
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(tok.calendarId)}/events`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tok.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    }
+  )
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Google createEvent falhou (${res.status}): ${errText}`)
+  }
+  return res.json() as Promise<GoogleCalendarEvent>
+}
+
+/**
+ * Apaga um evento no Google Calendar.
+ * Tolerante a 404 (ja foi apagado manualmente).
+ */
+export async function deleteEvent(teamId: string, eventId: string): Promise<void> {
+  const tok = await getValidAccessToken(teamId)
+  if (!tok) return
+
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(tok.calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${tok.accessToken}` },
+    }
+  )
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    const errText = await res.text()
+    throw new Error(`Google deleteEvent falhou (${res.status}): ${errText}`)
+  }
 }
 
 export async function listTodaysEvents(teamId: string, timezone: string = 'Europe/Lisbon'): Promise<GoogleCalendarEvent[]> {

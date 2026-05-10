@@ -8,6 +8,7 @@ import { CheckCircle2, Loader2 } from 'lucide-react'
 import { TASK_PRIORITY_COLORS, TASK_PRIORITY_LABELS } from '@/lib/types'
 import { formatDateTime } from '@/lib/utils'
 import type { TaskPriority } from '@/lib/types'
+import { TaskCalendarButton } from '@/components/TaskCalendarButton'
 
 interface TaskItem {
   id: string
@@ -17,6 +18,7 @@ interface TaskItem {
   due_at?: string | null
   created_by: string
   status: string
+  google_event_id?: string | null
 }
 
 interface Props {
@@ -97,6 +99,13 @@ export function TaskList({ initialOpenTasks, initialDoneTasks }: Props) {
                   {isOverdue ? '⚠️ ' : ''}{formatDateTime(task.due_at)}
                 </p>
               )}
+              <div className="mt-1.5">
+                <TaskCalendarButton
+                  taskId={task.id}
+                  hasDueAt={Boolean(task.due_at)}
+                  googleEventId={task.google_event_id ?? null}
+                />
+              </div>
             </div>
           </div>
         )

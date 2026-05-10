@@ -52,7 +52,7 @@ export default async function LeadDetailPage({ params }: Props) {
       *,
       lead_profiles(*),
       interactions(id, type, summary, raw_text, occurred_at, created_at),
-      tasks(id, title, description, status, priority, due_at, created_by, assigned_to)
+      tasks(id, title, description, status, priority, due_at, created_by, assigned_to, google_event_id)
     `)
     .eq('id', id)
     .eq('team_id', member.team_id)
