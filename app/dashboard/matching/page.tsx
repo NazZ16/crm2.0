@@ -78,14 +78,14 @@ export default function MatchingPage() {
   if (loading) return <div className="p-6 text-gray-400">A carregar...</div>
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-5 overflow-x-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard de Matches</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Gestão do pipeline de investidores</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Matches</h1>
+          <p className="text-xs md:text-sm text-gray-500 mt-0.5">Pipeline de investidores</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Link href="/dashboard/investors/new">
             <Button variant="outline" size="sm">+ Investidor</Button>
           </Link>
@@ -95,28 +95,28 @@ export default function MatchingPage() {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* KPIs — 2 col em mobile, 4 em desktop */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
         {[
-          { label: 'Total Matches', value: stats.total, color: 'text-gray-900' },
+          { label: 'Total', value: stats.total, color: 'text-gray-900' },
           { label: 'Em Progresso', value: stats.active, color: 'text-blue-700' },
           { label: 'Interessados', value: stats.interested, color: 'text-green-700' },
           { label: 'Investiram', value: stats.invested, color: 'text-emerald-700' },
         ].map(({ label, value, color }) => (
           <Card key={label}>
-            <CardContent className="p-4 text-center">
-              <p className={`text-3xl font-bold ${color}`}>{value}</p>
+            <CardContent className="p-3 md:p-4 text-center">
+              <p className={`text-2xl md:text-3xl font-bold ${color}`}>{value}</p>
               <p className="text-xs text-gray-500 mt-1">{label}</p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Filtros */}
-      <div className="flex gap-2">
+      {/* Filtros — scroll horizontal em mobile */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
         <Badge
           variant={filter === 'all' ? 'default' : 'outline'}
-          className="cursor-pointer px-3 py-1 text-sm"
+          className="cursor-pointer px-2.5 py-1 text-xs md:text-sm flex-shrink-0 whitespace-nowrap"
           onClick={() => setFilter('all')}
         >
           Todos ({activeMatches.length})
@@ -125,7 +125,7 @@ export default function MatchingPage() {
           <Badge
             key={status}
             variant={filter === status ? 'default' : 'outline'}
-            className="cursor-pointer px-3 py-1 text-sm"
+            className="cursor-pointer px-2.5 py-1 text-xs md:text-sm flex-shrink-0 whitespace-nowrap"
             onClick={() => setFilter(status)}
           >
             {label} ({matches.filter((m) => m.status === status).length})
@@ -168,59 +168,66 @@ export default function MatchingPage() {
 
             return (
               <Card key={m.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* Score */}
-                    <div className="flex-shrink-0 text-center w-14">
-                      <span className="text-3xl font-bold text-gray-900">{m.match_score}</span>
-                      <p className="text-xs text-gray-400">match</p>
+                <CardContent className="p-3 md:p-4">
+                  {/* Em mobile: layout vertical (score+badge no topo, info abaixo, acoes no fim).
+                      Em desktop: tudo numa linha */}
+                  <div className="flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
+                    {/* Linha 1 mobile: Score + Badge */}
+                    <div className="flex items-center justify-between md:block md:flex-shrink-0 md:text-center md:w-14">
+                      <div className="flex items-baseline gap-2 md:block">
+                        <span className="text-2xl md:text-3xl font-bold text-gray-900">{m.match_score}</span>
+                        <p className="text-xs text-gray-400">match</p>
+                      </div>
+                      <Badge className={`${MATCH_BADGE[m.status as MatchStatus]} text-xs md:hidden`}>
+                        {MATCH_STATUS_LABELS[m.status as MatchStatus]}
+                      </Badge>
                     </div>
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2 mb-1">
-                        <div>
-                          <Link href={`/dashboard/investors/${inv?.id}`} className="font-semibold text-gray-900 hover:text-blue-600">
+                        <div className="min-w-0 flex-1">
+                          <Link href={`/dashboard/investors/${inv?.id}`} className="font-semibold text-gray-900 hover:text-blue-600 break-words">
                             {inv?.name ?? '—'}
                           </Link>
                           <span className="text-gray-400 mx-1.5">→</span>
-                          <Link href={`/dashboard/opportunities/${opp?.id}`} className="font-medium text-gray-700 hover:text-blue-600">
+                          <Link href={`/dashboard/opportunities/${opp?.id}`} className="font-medium text-gray-700 hover:text-blue-600 break-words">
                             {opp?.title ?? '—'}
                           </Link>
                         </div>
-                        <Badge className={MATCH_BADGE[m.status as MatchStatus]}>
+                        <Badge className={`${MATCH_BADGE[m.status as MatchStatus]} hidden md:inline-flex`}>
                           {MATCH_STATUS_LABELS[m.status as MatchStatus]}
                         </Badge>
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
+                      <div className="flex items-center gap-2 md:gap-3 text-xs text-gray-500 mb-2 flex-wrap">
                         {opp?.zone && <span>{opp.zone}</span>}
                         {preco > 0 && <span className="flex items-center gap-1"><TrendingUp size={10} />{formatEur(preco)}</span>}
-                        {inv?.phone && <span>{inv.phone}</span>}
+                        {inv?.phone && <span className="truncate">{inv.phone}</span>}
                       </div>
 
                       {/* Razões */}
                       {m.match_reasons.length > 0 && (
-                        <div className="flex gap-3 flex-wrap">
+                        <div className="flex gap-2 md:gap-3 flex-wrap">
                           {m.match_reasons.slice(0, 3).map((r, i) => (
                             <div key={i} className="flex items-center gap-1 text-xs text-gray-600">
                               {r.positive
-                                ? <CheckCircle2 size={10} className="text-green-500" />
-                                : <AlertCircle size={10} className="text-orange-400" />}
-                              {r.reason}
+                                ? <CheckCircle2 size={10} className="text-green-500 flex-shrink-0" />
+                                : <AlertCircle size={10} className="text-orange-400 flex-shrink-0" />}
+                              <span className="break-words">{r.reason}</span>
                             </div>
                           ))}
                         </div>
                       )}
                     </div>
 
-                    {/* Acções */}
+                    {/* Acções — em mobile ficam em row no fim, em desktop ficam em col na lateral */}
                     {m.status !== 'invested' && (
-                      <div className="flex-shrink-0 flex flex-col gap-1.5">
+                      <div className="flex-shrink-0 flex flex-row md:flex-col gap-1.5 pt-2 md:pt-0 border-t md:border-t-0 border-gray-100">
                         {nextMap[m.status] && (
                           <Button
                             size="sm"
-                            className="text-xs h-7"
+                            className="text-xs h-7 flex-1 md:flex-none"
                             disabled={updating === m.id}
                             onClick={() => updateStatus(m.id, nextMap[m.status])}
                           >
@@ -230,7 +237,7 @@ export default function MatchingPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="text-xs h-7 text-red-400 hover:text-red-600"
+                          className="text-xs h-7 text-red-400 hover:text-red-600 flex-1 md:flex-none"
                           disabled={updating === m.id}
                           onClick={() => updateStatus(m.id, 'rejected')}
                         >

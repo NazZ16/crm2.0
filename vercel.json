@@ -5,6 +5,10 @@
       "schedule": "0 9 * * 0"
     },
     {
+      "path": "/api/cron/stale-leads",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/cron/anniversaries",
       "schedule": "30 6 * * *"
     },
