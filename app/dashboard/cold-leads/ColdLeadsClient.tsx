@@ -125,22 +125,13 @@ export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
     }
   }
 
-  if (leads.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center text-gray-400">
-          <p className="text-base font-medium">Sem leads frias com este filtro</p>
-          <p className="text-xs mt-1">Bom trabalho! Tenta um intervalo maior se queres revisar leads dormentes.</p>
-        </CardContent>
-      </Card>
-    )
-  }
+  const hasActiveFilter = minDays !== 14 || (statusFilter && statusFilter !== 'all')
 
   return (
     <>
-      {/* Filtros */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
-        <span className="text-xs text-gray-400 self-center flex-shrink-0">Frias:</span>
+      {/* Filtros — sempre visiveis, mesmo quando lista vazia, para o user poder mudar */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap items-center">
+        <span className="text-xs text-gray-400 flex-shrink-0">Frias:</span>
         {DAYS_FILTERS.map((f) => (
           <Badge
             key={f.value}
@@ -151,8 +142,8 @@ export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
             {f.label}
           </Badge>
         ))}
-        <span className="text-xs text-gray-400 self-center flex-shrink-0 ml-2">|</span>
-        <span className="text-xs text-gray-400 self-center flex-shrink-0">Status:</span>
+        <span className="text-xs text-gray-400 flex-shrink-0 mx-1">|</span>
+        <span className="text-xs text-gray-400 flex-shrink-0">Status:</span>
         {STATUS_FILTERS.map((f) => (
           <Badge
             key={f.value}
@@ -163,8 +154,35 @@ export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
             {f.label}
           </Badge>
         ))}
+        {hasActiveFilter && (
+          <Badge
+            variant="outline"
+            onClick={() => router.push('/dashboard/cold-leads')}
+            className="cursor-pointer text-xs px-2.5 py-1 flex-shrink-0 whitespace-nowrap text-gray-500 border-gray-300 ml-1"
+            title="Limpar filtros"
+          >
+            ✕ Limpar
+          </Badge>
+        )}
       </div>
 
+      {leads.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-gray-400">
+            <p className="text-base font-medium">Sem leads frias com este filtro</p>
+            <p className="text-xs mt-1">
+              Bom trabalho! Tenta um intervalo maior ou{' '}
+              <button
+                onClick={() => router.push('/dashboard/cold-leads')}
+                className="text-blue-600 hover:underline"
+              >
+                limpar filtros
+              </button>{' '}
+              se queres ver leads dormentes.
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
       <div className="space-y-3">
         {leads.map((lead) => {
           const draft = drafts[lead.id]
@@ -276,6 +294,7 @@ export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
           )
         })}
       </div>
+      )}
     </>
   )
 }
