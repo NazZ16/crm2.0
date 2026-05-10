@@ -21,6 +21,7 @@ import {
   UsersRound,
   Phone,
   CheckSquare,
+  Snowflake,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/tasks', label: 'Tarefas', icon: CheckSquare },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
+  { href: '/dashboard/cold-leads', label: 'Leads frias', icon: Snowflake },
   { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
   { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },
   { href: '/dashboard/matching', label: 'Matches', icon: GitMerge },

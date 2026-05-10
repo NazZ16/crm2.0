@@ -7,7 +7,8 @@ import { toast } from 'sonner'
 import { LEAD_PIPELINE_ORDER, LEAD_STATUS_LABELS, LEAD_STATUS_COLORS, type LeadStatus } from '@/lib/types'
 import { formatRelativeTime } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
-import { Flame, Trophy, X } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Flame, Trophy, X, MoveHorizontal } from 'lucide-react'
 
 export interface PipelineLead {
   id: string
@@ -65,6 +66,7 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [hoverCol, setHoverCol] = useState<LeadStatus | null>(null)
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [moveTarget, setMoveTarget] = useState<{ id: string; name: string; status: LeadStatus } | null>(null)
   const inflightRef = useRef(0)
 
   // Sincroniza estado local quando o servidor entrega novos dados (apos router.refresh()),
@@ -270,6 +272,20 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
                         </Link>
                         {status === 'won' && <Trophy size={14} className="text-emerald-500 flex-shrink-0" />}
                         {status === 'lost' && <X size={14} className="text-red-400 flex-shrink-0" />}
+                        {canEdit && (
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              setMoveTarget({ id: lead.id, name: lead.full_name, status })
+                            }}
+                            aria-label="Mover lead"
+                            title="Mover para outra coluna"
+                            className="flex-shrink-0 -my-1 -mr-1 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 active:scale-95 transition"
+                          >
+                            <MoveHorizontal size={14} />
+                          </button>
+                        )}
                       </div>
 
                       {lead.summary && (
@@ -323,6 +339,44 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
           Tens permissao apenas de leitura. Nao podes mover leads entre colunas.
         </p>
       )}
+
+      {/* Dialog mobile-friendly: tap "Mover" abre lista de status para escolher */}
+      <Dialog open={moveTarget !== null} onOpenChange={(v) => (!v ? setMoveTarget(null) : null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Mover lead</DialogTitle>
+            <DialogDescription>
+              {moveTarget && (
+                <>
+                  <strong>{moveTarget.name}</strong> esta em{' '}
+                  <strong>{LEAD_STATUS_LABELS[moveTarget.status]}</strong>. Escolhe novo estado:
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 py-2">
+            {LEAD_PIPELINE_ORDER.filter((s) => s !== moveTarget?.status).map((s) => (
+              <button
+                key={s}
+                onClick={async () => {
+                  if (!moveTarget) return
+                  const target = moveTarget
+                  setMoveTarget(null)
+                  await moveLead(target.id, target.status, s)
+                }}
+                className={`flex items-center justify-between p-3 rounded-lg border-2 transition active:scale-[0.98] hover:shadow-sm ${STATUS_BORDER[s].replace('border-t-', 'border-')} bg-white text-left`}
+              >
+                <span className="flex items-center gap-2">
+                  <Badge className={`text-xs ${LEAD_STATUS_COLORS[s]}`}>
+                    {LEAD_STATUS_LABELS[s]}
+                  </Badge>
+                </span>
+                <span className="text-xs text-gray-400">→</span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
