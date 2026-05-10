@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { toast } from 'sonner'
 import { Loader2, Phone, Bot, User, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { TaskCalendarButton } from '@/components/TaskCalendarButton'
 import type { TaskRow } from './page'
 
 const PRIORITY_COLOR: Record<TaskRow['priority'], string> = {
@@ -163,6 +164,14 @@ export function TasksClient({ tasks }: { tasks: TaskRow[] }) {
                           <Phone size={11} />
                           {t.lead_phone}
                         </a>
+                      )}
+                      {!isDone && (
+                        <TaskCalendarButton
+                          taskId={t.id}
+                          hasDueAt={Boolean(t.due_at)}
+                          googleEventId={t.google_event_id ?? null}
+                          compact
+                        />
                       )}
                     </div>
                   </div>

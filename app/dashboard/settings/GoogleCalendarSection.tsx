@@ -9,10 +9,11 @@ import { toast } from 'sonner'
 
 interface Props {
   connectedEmail: string | null
+  hasWriteScope?: boolean
   flashMessage: { type: 'success' | 'error'; text: string } | null
 }
 
-export function GoogleCalendarSection({ connectedEmail, flashMessage }: Props) {
+export function GoogleCalendarSection({ connectedEmail, hasWriteScope = false, flashMessage }: Props) {
   const router = useRouter()
   const [disconnecting, setDisconnecting] = useState(false)
 
@@ -66,15 +67,29 @@ export function GoogleCalendarSection({ connectedEmail, flashMessage }: Props) {
         )}
 
         {connectedEmail ? (
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="text-sm text-gray-700">
-              Ligado a <strong>{connectedEmail}</strong>
+          <>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm text-gray-700">
+                Ligado a <strong>{connectedEmail}</strong>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={disconnecting} className="gap-1.5">
+                {disconnecting ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                Desligar
+              </Button>
             </div>
-            <Button variant="outline" size="sm" onClick={handleDisconnect} disabled={disconnecting} className="gap-1.5">
-              {disconnecting ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-              Desligar
-            </Button>
-          </div>
+            {!hasWriteScope && (
+              <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-100 flex items-start gap-2">
+                <span className="flex-1">
+                  <strong>Permissoes incompletas:</strong> a tua conta foi ligada com permissao apenas de leitura. Para poderes adicionar tasks ao calendar, re-liga (vai pedir-te uma nova autorizacao).
+                </span>
+                <a href="/api/auth/google/start">
+                  <Button size="sm" className="h-7 gap-1 bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap">
+                    Re-ligar
+                  </Button>
+                </a>
+              </div>
+            )}
+          </>
         ) : (
           <div className="space-y-2">
             <a href="/api/auth/google/start">

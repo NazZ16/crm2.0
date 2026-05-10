@@ -18,6 +18,7 @@ export interface TaskRow {
   lead_id: string
   lead_name: string
   lead_phone: string | null
+  google_event_id: string | null
 }
 
 function startOfDay(date: Date): Date {
@@ -50,7 +51,7 @@ export default async function TasksPage() {
   const { data: rawTasks } = await supabase
     .from('tasks')
     .select(`
-      id, title, description, status, priority, due_at, created_at, created_by,
+      id, title, description, status, priority, due_at, created_at, created_by, google_event_id,
       lead_id,
       leads ( id, full_name, phone )
     `)
@@ -74,6 +75,7 @@ export default async function TasksPage() {
       lead_id: t.lead_id,
       lead_name: leadObj?.full_name ?? 'Lead sem nome',
       lead_phone: leadObj?.phone ?? null,
+      google_event_id: (t.google_event_id as string | null) ?? null,
     }
   })
 
