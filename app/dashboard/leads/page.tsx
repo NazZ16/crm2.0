@@ -71,11 +71,11 @@ export default async function LeadsPage({ searchParams }: Props) {
   const activeStatus = status as LeadStatus | undefined
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-5">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Leads</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-5 overflow-x-hidden">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Leads</h1>
+          <p className="text-xs md:text-sm text-gray-500 mt-0.5">
             {leads?.length ?? 0} lead{leads?.length === 1 ? '' : 's'}
             {q ? <> para <strong>&quot;{q}&quot;</strong></> : null}
             {activeStatus ? <> em <strong>{LEAD_STATUS_LABELS[activeStatus]}</strong></> : null}
@@ -83,16 +83,16 @@ export default async function LeadsPage({ searchParams }: Props) {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Link href="/dashboard/leads/upload-call">
-            <Button variant="outline" className="gap-2">
-              <Mic size={16} />
-              Upload Chamada
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Mic size={14} />
+              <span className="hidden sm:inline">Upload </span>Chamada
             </Button>
           </Link>
           {memberData.role !== 'viewer' && <ImportLeadsButton />}
           <Link href="/dashboard/leads/new">
-            <Button className="gap-2">
-              <Plus size={16} />
-              Nova Lead
+            <Button size="sm" className="gap-1.5">
+              <Plus size={14} />
+              <span className="hidden sm:inline">Nova </span>Lead
             </Button>
           </Link>
         </div>
@@ -100,11 +100,12 @@ export default async function LeadsPage({ searchParams }: Props) {
 
       <LeadsSearchBar />
 
-      <div className="flex gap-2 flex-wrap">
+      {/* Filtros — scroll horizontal em mobile para nao quebrar o layout */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
         <Link href={q ? `/dashboard/leads?q=${encodeURIComponent(q)}` : '/dashboard/leads'}>
           <Badge
             variant={!activeStatus ? 'default' : 'outline'}
-            className="cursor-pointer text-sm px-3 py-1"
+            className="cursor-pointer text-xs md:text-sm px-2.5 py-1 flex-shrink-0"
           >
             Todas
           </Badge>
@@ -117,7 +118,7 @@ export default async function LeadsPage({ searchParams }: Props) {
             <Link key={s} href={`/dashboard/leads?${params.toString()}`}>
               <Badge
                 variant={activeStatus === s ? 'default' : 'outline'}
-                className="cursor-pointer text-sm px-3 py-1"
+                className="cursor-pointer text-xs md:text-sm px-2.5 py-1 flex-shrink-0 whitespace-nowrap"
               >
                 {LEAD_STATUS_LABELS[s]}
               </Badge>
@@ -190,17 +191,17 @@ export default async function LeadsPage({ searchParams }: Props) {
                       <p className="text-xs text-gray-500 mb-3 line-clamp-2">{profile.summary}</p>
                     )}
 
-                    <div className="flex items-center gap-3 text-xs text-gray-400">
+                    <div className="flex items-center gap-3 text-xs text-gray-400 min-w-0">
                       {lead.phone && (
-                        <div className="flex items-center gap-1">
-                          <Phone size={11} />
-                          <span className="truncate max-w-[100px]">{lead.phone}</span>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <Phone size={11} className="flex-shrink-0" />
+                          <span className="truncate">{lead.phone}</span>
                         </div>
                       )}
                       {lead.email && (
-                        <div className="flex items-center gap-1">
-                          <Mail size={11} />
-                          <span className="truncate max-w-[100px]">{lead.email}</span>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <Mail size={11} className="flex-shrink-0" />
+                          <span className="truncate">{lead.email}</span>
                         </div>
                       )}
                     </div>

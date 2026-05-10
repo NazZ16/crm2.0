@@ -40,8 +40,8 @@ export default async function DashboardLayout({
       </div>
 
       {/* Coluna direita: conteúdo + barra mobile em fluxo */}
-      <div className="flex flex-col flex-1 min-h-0">
-        <main className="flex-1 overflow-y-auto">
+      <div className="flex flex-col flex-1 min-w-0 min-h-0">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden">
           <div className="flex justify-end px-4 pt-3 pb-0">
             <NotificationBell />
           </div>
