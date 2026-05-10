@@ -15,7 +15,8 @@ import { callCoachAgent } from '@/lib/agents/call-coach-agent'
 import { diarizationAgent } from '@/lib/agents/diarization-agent'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhone } from '@/lib/phone'
-import type { LeadProfile, AgentFullOutput } from '@/lib/types'
+import { applyAutoTaskOnStatusChange } from '@/lib/auto-tasks'
+import type { LeadProfile, AgentFullOutput, LeadType } from '@/lib/types'
 
 export async function runCallPipeline(
   uploadId: string,
@@ -324,10 +325,11 @@ export async function runCallPipeline(
     })
 
     // Auto-bump status: chamada e contacto real, lead em 'new' passa a 'qualified'.
+    // Se houver bump, dispara tambem auto-task de follow-up.
     {
       const { data: leadRow } = await supabase
         .from('leads')
-        .select('status')
+        .select('status, lead_type, assigned_to')
         .eq('id', leadId)
         .single()
       if (leadRow?.status === 'new') {
@@ -336,6 +338,19 @@ export async function runCallPipeline(
           .update({ status: 'qualified', last_contact_at: now })
           .eq('id', leadId)
         console.log(`[call-pipeline] auto-bump lead ${leadId} new -> qualified`)
+        // Dispara auto-task(s) da transicao
+        try {
+          await applyAutoTaskOnStatusChange(supabase, {
+            leadId,
+            teamId,
+            oldStatus: 'new',
+            newStatus: 'qualified',
+            leadType: ((leadRow.lead_type as LeadType | null | undefined) ?? 'unknown') as LeadType,
+            assignedTo: (leadRow.assigned_to as string | null) ?? null,
+          })
+        } catch (err) {
+          console.warn('[call-pipeline] auto-task on bump failed:', err)
+        }
       } else {
         // Mesmo que ja nao seja 'new', atualiza last_contact_at
         await supabase

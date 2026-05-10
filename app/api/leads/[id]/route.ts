@@ -1,6 +1,8 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { applyAutoTaskOnStatusChange } from '@/lib/auto-tasks'
+import type { LeadStatus, LeadType } from '@/lib/types'
 
 const updateLeadSchema = z.object({
   full_name: z.string().min(1).max(200).optional(),
@@ -33,9 +35,10 @@ async function getLeadAndVerify(leadId: string, userId: string) {
 
   if (!member) return { supabase, member: null, lead: null }
 
+  // Captura status e lead_type actuais para detectar transicao no PATCH
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, team_id')
+    .select('id, team_id, status, lead_type, assigned_to')
     .eq('id', leadId)
     .eq('team_id', member.team_id)
     .single()
@@ -111,7 +114,36 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'Update nao afectou nenhuma linha' }, { status: 500 })
 
-  return NextResponse.json(data)
+  // Auto-tasks on status change (best-effort, nao bloqueia a resposta).
+  let autoTasksCreated: string[] = []
+  if (
+    typeof updates.status === 'string' &&
+    lead.status &&
+    lead.status !== updates.status
+  ) {
+    const oldStatus = lead.status as LeadStatus
+    const newStatus = updates.status as LeadStatus
+    const leadType = ((lead.lead_type as LeadType | null | undefined) ?? 'unknown') as LeadType
+    // closed_at: prioriza o que vier no payload (acabou de ser preenchido), depois o ja gravado
+    const effectiveClosedAt =
+      (typeof updates.closed_at === 'string' ? (updates.closed_at as string) : null) ??
+      ((data as { closed_at?: string | null }).closed_at ?? null)
+    try {
+      autoTasksCreated = await applyAutoTaskOnStatusChange(svc, {
+        leadId: id,
+        teamId: member.team_id,
+        oldStatus,
+        newStatus,
+        leadType,
+        assignedTo: (lead.assigned_to as string | null) ?? null,
+        closedAt: effectiveClosedAt,
+      })
+    } catch (err) {
+      console.warn('[lead PATCH] auto-task failed:', err)
+    }
+  }
+
+  return NextResponse.json({ ...data, _auto_tasks: autoTasksCreated })
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {

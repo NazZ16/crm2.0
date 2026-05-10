@@ -12,6 +12,7 @@ import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { ScraperTriggerButton } from './ScraperTriggerButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
 import { DraftSendButtons } from './DraftSendButtons'
+import { QuickActionFab } from './QuickActionFab'
 import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
@@ -128,32 +129,43 @@ export default async function LeadDetailPage({ params }: Props) {
   const isWon = lead.status === 'won'
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto space-y-6">
+      {member.role !== 'viewer' && (
+        <QuickActionFab leadId={lead.id} leadName={lead.full_name} />
+      )}
+
       <Link href="/dashboard/leads" className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
         <ArrowLeft size={14} />
         Voltar as leads
       </Link>
 
-      <div className="flex items-start justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-14 w-14">
-            <AvatarFallback className="bg-blue-100 text-blue-700 text-lg font-bold">
+      <div className="flex items-start justify-between flex-wrap gap-3 md:gap-4">
+        <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
+          <Avatar className="h-12 w-12 md:h-14 md:w-14 flex-shrink-0">
+            <AvatarFallback className="bg-blue-100 text-blue-700 text-base md:text-lg font-bold">
               {getInitials(lead.full_name)}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{lead.full_name}</h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <Badge className={LEAD_STATUS_COLORS[lead.status as LeadStatus]}>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">{lead.full_name}</h1>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <Badge className={`${LEAD_STATUS_COLORS[lead.status as LeadStatus]} text-xs`}>
                 {LEAD_STATUS_LABELS[lead.status as LeadStatus]}
               </Badge>
-              <Badge className={LEAD_TYPE_COLORS[leadType]}>
+              <Badge className={`${LEAD_TYPE_COLORS[leadType]} text-xs`}>
                 {LEAD_TYPE_LABELS[leadType]}
               </Badge>
-              <span className="text-sm text-gray-500">Score: <strong>{lead.score}/100</strong></span>
-              <span className="text-sm text-gray-500">Urgencia: <strong>{lead.urgency}/5</strong></span>
+              <span className="text-xs md:text-sm text-gray-500">
+                <span className="hidden md:inline">Score: </span>
+                <strong>{lead.score}</strong>
+                <span className="text-gray-400 hidden md:inline">/100</span>
+              </span>
+              <span className="text-xs md:text-sm text-gray-500">
+                <span className="hidden md:inline">Urg: </span>
+                <strong>{lead.urgency}/5</strong>
+              </span>
               {lead.source && (
-                <span className="text-xs bg-gray-100 px-2 py-0.5 rounded">{lead.source}</span>
+                <span className="text-xs bg-gray-100 px-1.5 py-0.5 rounded hidden md:inline">{lead.source}</span>
               )}
             </div>
           </div>
@@ -181,29 +193,33 @@ export default async function LeadDetailPage({ params }: Props) {
               initialClosedAt={closedAt}
             />
           )}
-          {member.role !== 'viewer' && !existingInvestor && (
-            <PromoteToInvestorButton
-              leadId={lead.id}
-              leadName={lead.full_name}
-              suggestedZones={(leadProfile?.home_preferences as { zonas?: string[] } | null)?.zonas}
-              suggestedBudgetMax={(leadProfile?.financial_profile as { orcamento_max?: number } | null)?.orcamento_max ?? undefined}
-            />
-          )}
-          {existingInvestor && (
-            <Link href={`/dashboard/investors/${existingInvestor.id}`}>
-              <Badge variant="outline" className="text-emerald-700 border-emerald-300 cursor-pointer">
-                <TrendingUp className="mr-1 h-3 w-3" /> Ver Perfil de Investidor
-              </Badge>
-            </Link>
-          )}
-          {member.role !== 'viewer' && isBuyerLead && (
-            <ScraperTriggerButton
-              leadId={lead.id}
-              zones={leadZones}
-              maxPrice={leadBudget}
-              typologies={leadTypologies}
-            />
-          )}
+          {/* Botoes secundarios — escondidos em mobile (uso de campo) para nao poluir.
+              Acessiveis em md+ ou via /dashboard/leads/[id] em ecra maior. */}
+          <div className="hidden md:flex items-center gap-2 flex-wrap">
+            {member.role !== 'viewer' && !existingInvestor && (
+              <PromoteToInvestorButton
+                leadId={lead.id}
+                leadName={lead.full_name}
+                suggestedZones={(leadProfile?.home_preferences as { zonas?: string[] } | null)?.zonas}
+                suggestedBudgetMax={(leadProfile?.financial_profile as { orcamento_max?: number } | null)?.orcamento_max ?? undefined}
+              />
+            )}
+            {existingInvestor && (
+              <Link href={`/dashboard/investors/${existingInvestor.id}`}>
+                <Badge variant="outline" className="text-emerald-700 border-emerald-300 cursor-pointer">
+                  <TrendingUp className="mr-1 h-3 w-3" /> Ver Perfil de Investidor
+                </Badge>
+              </Link>
+            )}
+            {member.role !== 'viewer' && isBuyerLead && (
+              <ScraperTriggerButton
+                leadId={lead.id}
+                zones={leadZones}
+                maxPrice={leadBudget}
+                typologies={leadTypologies}
+              />
+            )}
+          </div>
         </div>
       </div>
 
