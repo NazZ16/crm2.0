@@ -11,9 +11,9 @@ const PARTNER_CATEGORIES = [
 const createPartnerSchema = z.object({
   name: z.string().min(1).max(200),
   category: z.enum(PARTNER_CATEGORIES),
-  phone: z.string().max(30).optional(),
-  email: z.string().email().optional(),
-  notes: z.string().max(2000).optional(),
+  phone: z.string().max(30).optional().nullable(),
+  email: z.string().email().optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
 })
 
 export async function GET(request: Request) {

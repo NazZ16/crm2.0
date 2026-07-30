@@ -31,6 +31,14 @@ interface FormState {
 
 const EMPTY_FORM: FormState = { id: null, name: '', category: 'credito', phone: '', email: '', notes: '' }
 
+// A API pode devolver `error` como string (mensagem normal) ou como objeto
+// (details do zod, ex. parsed.error.flatten()) — nunca passar o objeto
+// directamente para toast.error(), ou o React rebenta a tentar renderiza-lo.
+function errorMessage(err: unknown, fallback: string): string {
+  const e = (err as { error?: unknown } | null)?.error
+  return typeof e === 'string' ? e : fallback
+}
+
 export function PartnersClient({ initialPartners, canEdit }: Props) {
   const [partners, setPartners] = useState(initialPartners)
   const [categoryFilter, setCategoryFilter] = useState<PartnerCategory | 'all'>('all')
@@ -88,7 +96,7 @@ export function PartnersClient({ initialPartners, canEdit }: Props) {
 
       if (!res.ok) {
         const err = await res.json().catch(() => null)
-        toast.error(err?.error ?? 'Erro ao guardar')
+        toast.error(errorMessage(err, 'Erro ao guardar — verifica os campos'))
         return
       }
       const saved: Partner = await res.json()
