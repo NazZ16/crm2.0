@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Key, Webhook, Bell, Search, Smartphone, Send } from 'lucide-react'
+import { Key, Clock, Bell, Search, Smartphone, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { ApiKeysSection } from './ApiKeysSection'
 import { ScraperConfigSection } from './ScraperConfigSection'
@@ -204,20 +204,18 @@ export default async function SettingsPage({
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Webhook size={16} />
-            N8N — Orquestração de Workflows
+            <Clock size={16} />
+            Automação — Cron Jobs
           </CardTitle>
           <CardDescription>
-            O N8N é configurado via variáveis de ambiente. As workflows estão disponíveis no repositório GitHub.
+            Corre via Vercel Cron (config em vercel.json) e GitHub Actions (scraper) — sem orquestrador externo.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-gray-600">
           <p>✅ <strong>Morning Briefing</strong> — Cron 7:00 AM dias úteis → POST /api/agents/followup</p>
-          <p>✅ <strong>Novo Lead</strong> — Webhook Supabase INSERT leads → POST /api/agents/leads</p>
-          <p>✅ <strong>Nova Conversa</strong> — Webhook Supabase INSERT uploads → POST /api/agents/leads</p>
           <p>✅ <strong>Alerta Leads Frias</strong> — Cron Domingo 18:00 → POST /api/agents/followup</p>
-          <p>✅ <strong>Sync Marketing</strong> — Cron meia-noite → Meta + Google + TikTok APIs</p>
           <p>✅ <strong>Coach Semanal</strong> — Cron Domingo 9:00 → GET /api/agents/coach?type=weekly</p>
+          <p>✅ <strong>Scraper Remax</strong> — GitHub Actions diário → POST /api/opportunities</p>
         </CardContent>
       </Card>
 
@@ -236,8 +234,6 @@ export default async function SettingsPage({
             <p><span className="text-green-600">SUPABASE_SERVICE_ROLE_KEY</span>=eyJ... <span className="text-gray-400 font-sans">(apenas server)</span></p>
             <p><span className="text-blue-600">ANTHROPIC_API_KEY</span>=sk-ant-... <span className="text-gray-400 font-sans">(Claude Sonnet 4-6)</span></p>
             <p><span className="text-blue-600">OPENAI_API_KEY</span>=sk-... <span className="text-gray-400 font-sans">(Whisper)</span></p>
-            <p><span className="text-purple-600">N8N_WEBHOOK_SECRET</span>=segredo-partilhado</p>
-            <p><span className="text-purple-600">N8N_BASE_URL</span>=https://n8n.app.n8n.cloud</p>
             <p><span className="text-orange-600">META_ACCESS_TOKEN</span>=... <span className="text-gray-400 font-sans">(Meta Ads API)</span></p>
             <p><span className="text-orange-600">GOOGLE_ADS_DEVELOPER_TOKEN</span>=...</p>
             <p><span className="text-orange-600">TIKTOK_ACCESS_TOKEN</span>=...</p>

@@ -14,12 +14,16 @@ import { EditLeadDetailsButton } from './EditLeadDetailsButton'
 import { DraftSendButtons } from './DraftSendButtons'
 import { QuickActionFab } from './QuickActionFab'
 import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
+import { PendingExtractionBanner } from './PendingExtractionBanner'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
   MessageCircle, AlertTriangle, TrendingUp, Bot, Trophy,
 } from 'lucide-react'
 import Link from 'next/link'
-import type { LeadStatus, InteractionType, AgentDraft, AgentRecommendations, LeadType, SellerProfile } from '@/lib/types'
+import type {
+  LeadStatus, InteractionType, AgentDraft, AgentRecommendations, LeadType, SellerProfile,
+  AgentExtractionResult, AgentDrafts,
+} from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -64,12 +68,20 @@ export default async function LeadDetailPage({ params }: Props) {
 
   const { data: latestExtraction } = await supabase
     .from('agent_extractions')
-    .select('id, extracted_json, drafts_json, recommendations_json, run_id, upload_id, created_at')
+    .select('id, extracted_json, drafts_json, recommendations_json, run_id, upload_id, status, created_at')
     .eq('lead_id', id)
     .eq('team_id', member.team_id)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
+
+  const pendingExtraction =
+    latestExtraction?.status === 'pending' &&
+    latestExtraction.extracted_json != null &&
+    latestExtraction.recommendations_json != null &&
+    latestExtraction.drafts_json != null
+      ? latestExtraction
+      : null
 
   const { data: latestRun } = await supabase
     .from('agent_runs')
@@ -222,6 +234,17 @@ export default async function LeadDetailPage({ params }: Props) {
           </div>
         </div>
       </div>
+
+      {pendingExtraction && (
+        <PendingExtractionBanner
+          extractionId={pendingExtraction.id}
+          leadPhone={lead.phone ?? null}
+          leadEmail={lead.email ?? null}
+          leadUpdates={pendingExtraction.extracted_json as AgentExtractionResult}
+          recommendations={pendingExtraction.recommendations_json as AgentRecommendations}
+          drafts={pendingExtraction.drafts_json as AgentDrafts}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="space-y-4">
@@ -430,7 +453,7 @@ export default async function LeadDetailPage({ params }: Props) {
             </CardContent>
           </Card>
 
-          {latestExtraction && (drafts.length > 0 || (recommendations?.next_questions && recommendations.next_questions.length > 0)) && (
+          {latestExtraction && !pendingExtraction && (drafts.length > 0 || (recommendations?.next_questions && recommendations.next_questions.length > 0)) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">

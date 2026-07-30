@@ -53,7 +53,7 @@ export default async function PipelinePage() {
 
   // Agrupa por status seguindo LEAD_PIPELINE_ORDER
   const grouped: Record<LeadStatus, PipelineLead[]> = {
-    new: [], qualified: [], meeting: [], active: [], won: [], lost: [],
+    new: [], qualified: [], meeting: [], active: [], cpcv: [], escriturado: [], won: [], lost: [],
   }
   for (const lead of allLeads) {
     if (grouped[lead.status]) grouped[lead.status].push(lead)
@@ -61,7 +61,7 @@ export default async function PipelinePage() {
 
   // Totais por coluna: comissao real ou estimada (deal_value * 4%)
   const totals: Record<LeadStatus, number> = {
-    new: 0, qualified: 0, meeting: 0, active: 0, won: 0, lost: 0,
+    new: 0, qualified: 0, meeting: 0, active: 0, cpcv: 0, escriturado: 0, won: 0, lost: 0,
   }
   for (const status of LEAD_PIPELINE_ORDER) {
     totals[status] = grouped[status].reduce((sum, l) => {

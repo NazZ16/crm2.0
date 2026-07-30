@@ -40,7 +40,7 @@ export default async function ColdLeadsPage({ searchParams }: Props) {
     .order('last_contact_at', { ascending: true, nullsFirst: true })
     .limit(100)
 
-  if (statusParam && ['qualified', 'meeting', 'active'].includes(statusParam)) {
+  if (statusParam && ['qualified', 'meeting', 'active', 'cpcv', 'escriturado'].includes(statusParam)) {
     query = query.eq('status', statusParam)
   }
 

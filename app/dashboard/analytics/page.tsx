@@ -12,6 +12,8 @@ const PIPELINE_COLORS: Record<LeadStatus, string> = {
   qualified: '#8b5cf6',
   meeting: '#f59e0b',
   active: '#22c55e',
+  cpcv: '#4f46e5',
+  escriturado: '#0d9488',
   won: '#10b981',
   lost: '#ef4444',
 }

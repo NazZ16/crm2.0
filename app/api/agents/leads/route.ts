@@ -103,7 +103,10 @@ export async function POST(request: Request) {
   const meta = (output as AgentFullOutput & { _meta?: { tokens?: number } })._meta
   delete (output as AgentFullOutput & { _meta?: unknown })._meta
 
-  // Save agent_extraction
+  // Save agent_extraction — fica 'pending' (default da coluna). O merge no
+  // perfil, a actualizacao de score/urgencia e a criacao de tarefas so
+  // acontecem quando o utilizador confirmar via /api/agent-extractions/[id]/apply
+  // (ver lib/apply-extraction.ts) — antes disto escreviam-se logo aqui.
   const { data: extraction } = await supabase
     .from('agent_extractions')
     .insert({
@@ -131,50 +134,8 @@ export async function POST(request: Request) {
       .eq('id', run.id)
   }
 
-  // Update lead score, urgency, last_contact_at
+  // Create interaction record — log da conversa, nao e uma decisao
   const now = new Date().toISOString()
-  await supabase
-    .from('leads')
-    .update({
-      score: output.lead_updates.score,
-      urgency: output.lead_updates.urgency,
-      last_contact_at: now,
-    })
-    .eq('id', lead_id)
-
-  // Merge extracted profile into lead_profiles (deep merge — only overwrite non-null new values)
-  function mergeField<T>(existing: T | null | undefined, updated: Partial<T> | null | undefined): T | null {
-    if (!updated) return existing ?? null
-    if (!existing) return updated as T
-    const result = { ...existing } as Record<string, unknown>
-    for (const [k, v] of Object.entries(updated as Record<string, unknown>)) {
-      if (v !== null && v !== undefined) {
-        if (Array.isArray(v) && v.length > 0) result[k] = v
-        else if (!Array.isArray(v)) result[k] = v
-      }
-    }
-    return result as T
-  }
-
-  const ex = output.lead_updates
-  const profileUpsert = {
-    lead_id,
-    home_preferences: mergeField(existingProfile?.home_preferences, ex.home_preferences),
-    financial_profile: mergeField(existingProfile?.financial_profile, ex.financial_profile),
-    personality_traits: mergeField(existingProfile?.personality_traits, ex.personality_traits),
-    family_context: mergeField(existingProfile?.family_context, ex.family_context),
-    fears_objections: mergeField(existingProfile?.fears_objections, ex.fears_objections),
-    process_preferences: mergeField(existingProfile?.process_preferences, ex.process_preferences),
-    summary: ex.summary || existingProfile?.summary || null,
-    confidence_score: ex.confidence_score,
-    updated_at: now,
-  }
-
-  await supabase
-    .from('lead_profiles')
-    .upsert(profileUpsert, { onConflict: 'lead_id' })
-
-  // Create interaction record
   await supabase.from('interactions').insert({
     lead_id,
     team_id: member.team_id,
@@ -183,30 +144,6 @@ export async function POST(request: Request) {
     summary: output.lead_updates.summary,
     occurred_at: now,
   })
-
-  // Create tasks from next_best_actions
-  const actions = output.recommendations.next_best_actions ?? []
-  if (actions.length > 0) {
-    const priorityMap: Record<string, 'low' | 'medium' | 'high' | 'urgent'> = {
-      high: 'high',
-      medium: 'medium',
-      low: 'low',
-    }
-
-    const tasksToCreate = actions.slice(0, 3).map((action) => ({
-      lead_id,
-      team_id: member.team_id,
-      title: action.title,
-      description: action.description,
-      priority: priorityMap[action.priority] ?? 'medium',
-      created_by: 'agent' as const,
-      due_at: action.due_in_hours
-        ? new Date(Date.now() + action.due_in_hours * 60 * 60 * 1000).toISOString()
-        : null,
-    }))
-
-    await supabase.from('tasks').insert(tasksToCreate)
-  }
 
   return NextResponse.json({
     ...output,

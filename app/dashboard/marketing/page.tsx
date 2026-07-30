@@ -165,7 +165,7 @@ export default async function MarketingPage() {
                 <Megaphone size={40} className="mx-auto text-gray-200 mb-2" />
                 <p className="text-sm text-gray-400">Sem campanhas registadas</p>
                 <p className="text-xs text-gray-300 mt-1">
-                  As campanhas serão sincronizadas automaticamente pelo N8N
+                  Adiciona campanhas manualmente por agora (sync automático ainda não está ligado)
                 </p>
               </div>
             ) : (

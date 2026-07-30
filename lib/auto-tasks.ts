@@ -53,25 +53,67 @@ const BUYER_RULES: Partial<Record<TransitionKey, AutoTaskRule[]>> = {
       dueInDays: 5,
     },
   ],
-  // Won: 3 tasks — referencias (curto prazo) + check-in 6m + aniversario 1 ano.
-  // Anos 2+ sao criados pelo cron /api/cron/anniversaries.
-  'active->won': [
+  'active->cpcv': [
     {
-      triggerKey: 'active->won-referrals',
+      triggerKey: 'active->cpcv',
+      title: 'Preparar documentacao para CPCV',
+      description: 'Proposta aceite — reune documentacao necessaria (identificacao, comprovativo de morada, financiamento) e agenda assinatura do CPCV.',
+      priority: 'high',
+      dueInDays: 3,
+    },
+  ],
+  'cpcv->escriturado': [
+    {
+      triggerKey: 'cpcv->escriturado',
+      title: 'Confirmar data e local da escritura',
+      description: 'CPCV assinado — confirma data/local da escritura com notario/banco, e que toda a documentacao esta pronta.',
+      priority: 'high',
+      dueInDays: 2,
+    },
+  ],
+  // Won (via escriturado): 3 tasks — referencias (curto prazo) + check-in 6m + aniversario 1 ano.
+  // Anos 2+ sao criados pelo cron /api/cron/anniversaries.
+  'escriturado->won': [
+    {
+      triggerKey: 'won-referrals',
       title: 'Pedir referencias e testemunho',
       description: 'Deal fechada — celebra, pede referencias de amigos/familia e um testemunho curto para uso em redes sociais.',
       priority: 'low',
       dueInDays: 7,
     },
     {
-      triggerKey: 'active->won-6m',
+      triggerKey: 'won-6m',
       title: 'Check-in 6 meses na nova casa',
       description: 'Ja la moram ha 6 meses — liga para saber como esta a correr, se ha pontos a resolver, e se conhecem alguem a comprar/vender. Cliente satisfeito = referencia.',
       priority: 'medium',
       dueInDays: 180,
     },
     {
-      triggerKey: 'active->won-1y',
+      triggerKey: 'won-1y',
+      title: 'Parabens 1.o aniversario da nova casa',
+      description: 'Faz 1 ano hoje desde a escritura. Mensagem curta de parabens, pergunta como tem corrido, recorda que estas la para qualquer questao.',
+      priority: 'low',
+      dueInDays: 365,
+    },
+  ],
+  // Fallback: se a lead saltar directamente de active para won (sem passar por cpcv/escriturado).
+  'active->won': [
+    {
+      triggerKey: 'won-referrals',
+      title: 'Pedir referencias e testemunho',
+      description: 'Deal fechada — celebra, pede referencias de amigos/familia e um testemunho curto para uso em redes sociais.',
+      priority: 'low',
+      dueInDays: 7,
+    },
+    {
+      triggerKey: 'won-6m',
+      title: 'Check-in 6 meses na nova casa',
+      description: 'Ja la moram ha 6 meses — liga para saber como esta a correr, se ha pontos a resolver, e se conhecem alguem a comprar/vender. Cliente satisfeito = referencia.',
+      priority: 'medium',
+      dueInDays: 180,
+    },
+    {
+      triggerKey: 'won-1y',
       title: 'Parabens 1.o aniversario da nova casa',
       description: 'Faz 1 ano hoje desde a escritura. Mensagem curta de parabens, pergunta como tem corrido, recorda que estas la para qualquer questao.',
       priority: 'low',
@@ -109,24 +151,66 @@ const SELLER_RULES: Partial<Record<TransitionKey, AutoTaskRule[]>> = {
       dueInDays: 3,
     },
   ],
-  // Won (venda concluida): manter o cliente quente para futura compra ou referencias
-  'active->won': [
+  'active->cpcv': [
     {
-      triggerKey: 'active->won-referrals',
+      triggerKey: 'active->cpcv',
+      title: 'Preparar documentacao para CPCV',
+      description: 'Comprador encontrado — reune caderneta predial, registo, CE e restante documentacao para a assinatura do CPCV.',
+      priority: 'high',
+      dueInDays: 3,
+    },
+  ],
+  'cpcv->escriturado': [
+    {
+      triggerKey: 'cpcv->escriturado',
+      title: 'Confirmar data e local da escritura',
+      description: 'CPCV assinado — confirma data/local da escritura e que a documentacao do imovel esta pronta.',
+      priority: 'high',
+      dueInDays: 2,
+    },
+  ],
+  // Won (venda concluida, via escriturado): manter o cliente quente para futura compra ou referencias
+  'escriturado->won': [
+    {
+      triggerKey: 'won-referrals',
       title: 'Pedir referencias e testemunho ao vendedor',
       description: 'Venda concluida — pede contactos de outros proprietarios na zona que possam querer vender e um testemunho.',
       priority: 'low',
       dueInDays: 7,
     },
     {
-      triggerKey: 'active->won-6m',
+      triggerKey: 'won-6m',
       title: 'Check-in 6 meses pos-venda',
       description: 'Passaram 6 meses desde a venda — liga para perguntar como tem corrido a vida nova, e se ha alguem no circulo que esteja a vender ou comprar.',
       priority: 'medium',
       dueInDays: 180,
     },
     {
-      triggerKey: 'active->won-1y',
+      triggerKey: 'won-1y',
+      title: 'Aniversario 1 ano da venda',
+      description: 'Faz 1 ano desde a venda. Mensagem curta a recordar o trabalho conjunto e a renovar disponibilidade para nova operacao.',
+      priority: 'low',
+      dueInDays: 365,
+    },
+  ],
+  // Fallback: se a lead saltar directamente de active para won (sem passar por cpcv/escriturado).
+  'active->won': [
+    {
+      triggerKey: 'won-referrals',
+      title: 'Pedir referencias e testemunho ao vendedor',
+      description: 'Venda concluida — pede contactos de outros proprietarios na zona que possam querer vender e um testemunho.',
+      priority: 'low',
+      dueInDays: 7,
+    },
+    {
+      triggerKey: 'won-6m',
+      title: 'Check-in 6 meses pos-venda',
+      description: 'Passaram 6 meses desde a venda — liga para perguntar como tem corrido a vida nova, e se ha alguem no circulo que esteja a vender ou comprar.',
+      priority: 'medium',
+      dueInDays: 180,
+    },
+    {
+      triggerKey: 'won-1y',
       title: 'Aniversario 1 ano da venda',
       description: 'Faz 1 ano desde a venda. Mensagem curta a recordar o trabalho conjunto e a renovar disponibilidade para nova operacao.',
       priority: 'low',

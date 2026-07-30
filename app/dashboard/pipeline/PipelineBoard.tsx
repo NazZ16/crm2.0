@@ -54,6 +54,8 @@ const STATUS_BORDER: Record<LeadStatus, string> = {
   qualified: 'border-t-purple-400',
   meeting: 'border-t-yellow-400',
   active: 'border-t-green-400',
+  cpcv: 'border-t-indigo-400',
+  escriturado: 'border-t-teal-400',
   won: 'border-t-emerald-500',
   lost: 'border-t-red-400',
 }
@@ -79,7 +81,7 @@ export function PipelineBoard({ grouped, totals, canEdit }: Props) {
 
   function recomputeTotals(state: Record<LeadStatus, PipelineLead[]>) {
     const next: Record<LeadStatus, number> = {
-      new: 0, qualified: 0, meeting: 0, active: 0, won: 0, lost: 0,
+      new: 0, qualified: 0, meeting: 0, active: 0, cpcv: 0, escriturado: 0, won: 0, lost: 0,
     }
     for (const status of LEAD_PIPELINE_ORDER) {
       next[status] = state[status].reduce((s, l) => {

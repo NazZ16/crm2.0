@@ -18,6 +18,7 @@ import {
   UsersRound,
   X,
   PenSquare,
+  Contact,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -28,6 +29,7 @@ const ALL_NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
+  { href: '/dashboard/partners', label: 'Parceiros', icon: Contact },
   { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
   { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },
   { href: '/dashboard/matching', label: 'Matches', icon: GitMerge },
