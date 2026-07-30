@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const byStatus: Record<LeadStatus, number> = {
-    new: 0, qualified: 0, meeting: 0, active: 0, won: 0, lost: 0,
+    new: 0, qualified: 0, meeting: 0, active: 0, cpcv: 0, escriturado: 0, won: 0, lost: 0,
   }
   const byType: Record<LeadType, number> = {
     buyer: 0, seller: 0, both: 0, unknown: 0,

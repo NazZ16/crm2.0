@@ -1,12 +1,12 @@
 // ─── Enums ────────────────────────────────────────────────────────────────────
 
-export type LeadStatus = 'new' | 'qualified' | 'meeting' | 'active' | 'won' | 'lost'
+export type LeadStatus = 'new' | 'qualified' | 'meeting' | 'active' | 'cpcv' | 'escriturado' | 'won' | 'lost'
 export type InteractionType = 'call' | 'whatsapp' | 'email' | 'meeting' | 'note' | 'audio'
 export type TaskStatus = 'open' | 'done'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TeamRole = 'admin' | 'agent' | 'viewer'
 export type AdPlatform = 'meta' | 'google' | 'tiktok' | 'organic' | 'other'
-export type AgentType = 'lead' | 'followup' | 'coach' | 'marketing' | 'investor'
+export type AgentType = 'lead' | 'followup' | 'coach' | 'marketing' | 'investor' | 'orientator'
 export type AgentRunStatus = 'running' | 'done' | 'failed'
 export type NotificationType = 'agent_complete' | 'cold_lead' | 'task_due' | 'tip' | 'info'
 export type ContentStatus = 'idea' | 'draft' | 'scheduled' | 'published' | 'archived'
@@ -56,6 +56,9 @@ export interface Lead {
   closed_at: string | null          // data efectiva de fecho
   // Tipo de lead (migration 015) — comprador vs vendedor (angariacao)
   lead_type: LeadType
+  // Sub-estados do fecho (migration 020)
+  cpcv_date: string | null          // data de assinatura do CPCV
+  escritura_date: string | null     // data da escritura
   created_at: string
   updated_at: string
 }
@@ -281,6 +284,8 @@ export interface ConversationUpload {
   created_at: string
 }
 
+export type AgentExtractionStatus = 'pending' | 'applied' | 'dismissed'
+
 export interface AgentExtraction {
   id: string
   team_id: string
@@ -290,6 +295,8 @@ export interface AgentExtraction {
   extracted_json: AgentExtractionResult | null
   recommendations_json: AgentRecommendations | null
   drafts_json: AgentDrafts | null
+  status: AgentExtractionStatus
+  applied_at: string | null
   created_at: string
 }
 
@@ -421,6 +428,46 @@ export interface ContentPiece {
   created_at: string
   updated_at: string
 }
+
+// ─── Partners (directorio de parceiros de confianca) ──────────────────────────
+
+export type PartnerCategory =
+  | 'credito' | 'advogado' | 'seguradora' | 'fiscalizador' | 'empreiteiro'
+  | 'eletricista' | 'canalizador' | 'pintor' | 'eletrodomesticos' | 'limpeza'
+  | 'transportadora' | 'outro'
+
+export interface Partner {
+  id: string
+  team_id: string
+  name: string
+  category: PartnerCategory
+  phone: string | null
+  email: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const PARTNER_CATEGORY_LABELS: Record<PartnerCategory, string> = {
+  credito: 'Intermediário de Crédito',
+  advogado: 'Advogado',
+  seguradora: 'Seguradora',
+  fiscalizador: 'Fiscalizador',
+  empreiteiro: 'Empreiteiro',
+  eletricista: 'Eletricista',
+  canalizador: 'Canalizador',
+  pintor: 'Pintor',
+  eletrodomesticos: 'Reparação de Eletrodomésticos',
+  limpeza: 'Limpeza',
+  transportadora: 'Transportadora',
+  outro: 'Outro',
+}
+
+export const PARTNER_CATEGORY_ORDER: PartnerCategory[] = [
+  'credito', 'advogado', 'seguradora', 'fiscalizador', 'empreiteiro',
+  'eletricista', 'canalizador', 'pintor', 'eletrodomesticos', 'limpeza',
+  'transportadora', 'outro',
+]
 
 // ─── Notifications ────────────────────────────────────────────────────────────
 
@@ -722,6 +769,8 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   qualified: 'Qualificado',
   meeting: 'Reuniao',
   active: 'Ativo',
+  cpcv: 'CPCV',
+  escriturado: 'Escriturado',
   won: 'Ganho',
   lost: 'Perdido',
 }
@@ -731,6 +780,8 @@ export const LEAD_STATUS_COLORS: Record<LeadStatus, string> = {
   qualified: 'bg-purple-100 text-purple-800',
   meeting: 'bg-yellow-100 text-yellow-800',
   active: 'bg-green-100 text-green-800',
+  cpcv: 'bg-indigo-100 text-indigo-800',
+  escriturado: 'bg-teal-100 text-teal-800',
   won: 'bg-emerald-100 text-emerald-800',
   lost: 'bg-red-100 text-red-800',
 }
@@ -785,7 +836,7 @@ export const CONTENT_PLATFORM_LABELS: Record<ContentPlatform, string> = {
 }
 
 export const LEAD_PIPELINE_ORDER: LeadStatus[] = [
-  'new', 'qualified', 'meeting', 'active', 'won', 'lost',
+  'new', 'qualified', 'meeting', 'active', 'cpcv', 'escriturado', 'won', 'lost',
 ]
 
 export const LEAD_SOURCE_OPTIONS = [

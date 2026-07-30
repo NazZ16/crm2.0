@@ -112,7 +112,7 @@ export function ApiKeysSection({ isAdmin }: { isAdmin: boolean }) {
         {loading ? (
           <p className="text-sm text-gray-400">A carregar...</p>
         ) : activeKeys.length === 0 ? (
-          <p className="text-sm text-gray-400">Sem keys activas. Cria uma para o scraper ou N8N.</p>
+          <p className="text-sm text-gray-400">Sem keys activas. Cria uma para o scraper.</p>
         ) : (
           <div className="space-y-2">
             {activeKeys.map((k) => (

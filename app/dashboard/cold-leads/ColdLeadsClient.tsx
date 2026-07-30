@@ -51,6 +51,8 @@ const STATUS_FILTERS: Array<{ value: 'all' | LeadStatus; label: string }> = [
   { value: 'qualified', label: 'Qualificada' },
   { value: 'meeting', label: 'Reuniao' },
   { value: 'active', label: 'Activa' },
+  { value: 'cpcv', label: 'CPCV' },
+  { value: 'escriturado', label: 'Escriturado' },
 ]
 
 export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {

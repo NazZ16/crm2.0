@@ -9,8 +9,10 @@ import type { LeadStatus, TaskPriority } from '@/lib/types'
 // new = nao aplica (auto-bump trata). won/lost = terminal, nao aplica.
 const STALE_THRESHOLD_DAYS: Partial<Record<LeadStatus, number>> = {
   qualified: 5,
-  meeting: 2,    // reuniao agendada/feita arrefece muito rapido
-  active: 7,     // em negociacao
+  meeting: 2,      // reuniao agendada/feita arrefece muito rapido
+  active: 7,       // em negociacao
+  cpcv: 5,         // a espera de agendamento de escritura/financiamento
+  escriturado: 10, // burocracia de fecho — vale a pena confirmar se esta tudo a andar
 }
 
 // Tag invisivel na description, garante que so existe 1 task stale por lead.
@@ -88,7 +90,9 @@ export async function processStaleLeads(svc: SupabaseClient): Promise<
 
       // Prioridade base depende do status
       const basePriority: TaskPriority =
-        lead.status === 'meeting' ? 'high' : lead.status === 'qualified' ? 'medium' : 'medium'
+        lead.status === 'meeting' || lead.status === 'cpcv' || lead.status === 'escriturado'
+          ? 'high'
+          : 'medium'
       const priority = priorityFromScore(basePriority, lead.score)
 
       const dueAt = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0).toISOString()

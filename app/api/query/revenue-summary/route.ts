@@ -5,8 +5,7 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isHubAuthorized, resolveTeamId } from '@/lib/hub-auth'
-
-const YEARLY_REVENUE_TARGET_EUR = 50_000
+import { YEARLY_REVENUE_TARGET_EUR } from '@/lib/business-constants'
 
 export async function GET(request: Request) {
   if (!isHubAuthorized(request)) {

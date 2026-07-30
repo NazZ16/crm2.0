@@ -19,12 +19,9 @@ import {
 } from 'lucide-react'
 import { orientatorAgent } from '@/lib/agents/orientator-agent'
 import { listTodaysEvents, isCrmCreatedEvent, type GoogleCalendarEvent } from '@/lib/google-calendar'
+import { YEARLY_REVENUE_TARGET_EUR, PIPELINE_PROBABILITIES } from '@/lib/business-constants'
 
 export const dynamic = 'force-dynamic'
-
-// Objectivo de faturacao anual (KPI principal). Hardcoded por agora;
-// idealmente viria de team settings (proxima iteracao).
-const YEARLY_REVENUE_TARGET_EUR = 50_000
 
 function fmtEur(v: number): string {
   return new Intl.NumberFormat('pt-PT', {
@@ -34,13 +31,6 @@ function fmtEur(v: number): string {
   }).format(v)
 }
 
-// Probabilidades de fecho ponderadas por estado da pipeline.
-// Conservador: ajusta-se com dados reais com o tempo.
-const PIPELINE_PROBABILITIES: Record<string, number> = {
-  qualified: 0.10,
-  meeting: 0.30,
-  active: 0.60,
-}
 const COMMISSION_DEFAULT_RATE = 0.04 // fallback quando lead so tem deal_value
 
 async function RevenueCard({ teamId }: { teamId: string }) {
@@ -606,7 +596,7 @@ export default async function DashboardPage() {
             <CardTitle className="text-base">Pipeline de Leads</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+            <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
               {LEAD_PIPELINE_ORDER.map((status) => {
                 const count = pipelineCounts[status]
                 const colors: Record<LeadStatus, string> = {
@@ -614,6 +604,8 @@ export default async function DashboardPage() {
                   qualified: 'bg-purple-500',
                   meeting: 'bg-yellow-500',
                   active: 'bg-green-500',
+                  cpcv: 'bg-indigo-600',
+                  escriturado: 'bg-teal-600',
                   won: 'bg-emerald-500',
                   lost: 'bg-red-400',
                 }

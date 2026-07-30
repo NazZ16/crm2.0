@@ -9,7 +9,7 @@ const updateLeadSchema = z.object({
   phone: z.string().max(30).nullable().optional(),
   email: z.string().email().nullable().optional(),
   source: z.string().max(100).nullable().optional(),
-  status: z.enum(['new', 'qualified', 'meeting', 'active', 'won', 'lost']).optional(),
+  status: z.enum(['new', 'qualified', 'meeting', 'active', 'cpcv', 'escriturado', 'won', 'lost']).optional(),
   lead_type: z.enum(['buyer', 'seller', 'both', 'unknown']).optional(),
   score: z.number().int().min(0).max(100).optional(),
   urgency: z.number().int().min(1).max(5).optional(),
@@ -23,6 +23,9 @@ const updateLeadSchema = z.object({
   deal_value: z.number().nonnegative().nullable().optional(),
   commission_value: z.number().nonnegative().nullable().optional(),
   closed_at: z.string().datetime().nullable().optional(),
+  // Sub-estados do fecho (migration 020)
+  cpcv_date: z.string().datetime().nullable().optional(),
+  escritura_date: z.string().datetime().nullable().optional(),
 })
 
 async function getLeadAndVerify(leadId: string, userId: string) {
@@ -94,10 +97,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: 'Dados invalidos', details: parsed.error.flatten() }, { status: 400 })
   }
 
-  // Auto-preencher closed_at quando se marca como 'won' sem data explicita
+  // Auto-preencher datas quando se muda para os estados correspondentes, sem data explicita
   const updates: Record<string, unknown> = { ...parsed.data }
   if (updates.status === 'won' && !('closed_at' in updates)) {
     updates.closed_at = new Date().toISOString()
+  }
+  if (updates.status === 'cpcv' && !('cpcv_date' in updates)) {
+    updates.cpcv_date = new Date().toISOString()
+  }
+  if (updates.status === 'escriturado' && !('escritura_date' in updates)) {
+    updates.escritura_date = new Date().toISOString()
   }
 
   // Usa service client porque a posse ja foi verificada acima (member.team_id === lead.team_id).

@@ -7,16 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 import {
-  MessageSquarePlus, Bot, ChevronDown, Copy, Check,
-  AlertTriangle, Lightbulb, MessageCircle, User, Loader2, Trash2,
+  MessageSquarePlus, Bot, Loader2, Trash2,
 } from 'lucide-react'
-import { LEAD_STATUS_LABELS, LEAD_PIPELINE_ORDER, CONVERSATION_OBJECTIVES, TASK_PRIORITY_LABELS } from '@/lib/types'
+import { LEAD_STATUS_LABELS, LEAD_PIPELINE_ORDER, CONVERSATION_OBJECTIVES } from '@/lib/types'
 import type { LeadStatus, AgentFullOutput } from '@/lib/types'
 import { MergeLeadsButton } from '../MergeLeadsButton'
-import { DraftSendButtons } from './DraftSendButtons'
+import { ExtractionReview } from '@/components/agent/ExtractionReview'
 
 interface Props {
   leadId: string
@@ -41,7 +39,7 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
   const [objective, setObjective] = useState('')
   const [analyzing, setAnalyzing] = useState(false)
   const [agentOutput, setAgentOutput] = useState<AgentFullOutput | null>(null)
-  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [extractionId, setExtractionId] = useState<string | null>(null)
 
   async function handleStatusChange(newStatus: LeadStatus) {
     setUpdatingStatus(true)
@@ -93,21 +91,13 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
       }
 
       setAgentOutput(data as AgentFullOutput)
-      toast.success('Análise concluída!')
-      router.refresh()
+      setExtractionId((data as { extraction_id?: string }).extraction_id ?? null)
+      toast.success('Análise concluída — revê e aplica ao perfil')
     } catch {
       toast.error('Erro de conexão')
     } finally {
       setAnalyzing(false)
     }
-  }
-
-  function copyText(text: string, id: string) {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopiedId(id)
-      setTimeout(() => setCopiedId(null), 2000)
-      toast.success('Copiado!')
-    })
   }
 
   async function handleDelete() {
@@ -136,6 +126,12 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
     setConversationText('')
     setObjective('')
     setAgentOutput(null)
+    setExtractionId(null)
+  }
+
+  function handleExtractionResolved() {
+    handleCloseModal()
+    router.refresh()
   }
 
   return (
@@ -263,162 +259,29 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
               </div>
             </div>
           ) : (
-            <div className="space-y-5">
-              {/* Score & Urgency */}
-              <div className="flex gap-4 p-4 bg-blue-50 rounded-lg">
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-700">{agentOutput.lead_updates.score}</div>
-                  <div className="text-xs text-blue-600">Score</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-orange-600">{agentOutput.lead_updates.urgency}/5</div>
-                  <div className="text-xs text-orange-500">Urgência</div>
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm text-gray-700 leading-relaxed">{agentOutput.lead_updates.summary}</p>
-                </div>
-              </div>
-
-              {/* Red Flags */}
-              {agentOutput.recommendations.red_flags.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-red-600 flex items-center gap-1.5 mb-2">
-                    <AlertTriangle size={14} />
-                    Alertas
-                  </h4>
-                  <ul className="space-y-1">
-                    {agentOutput.recommendations.red_flags.map((flag, i) => (
-                      <li key={i} className="text-sm text-red-700 bg-red-50 px-3 py-1.5 rounded">
-                        {flag}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Next Actions */}
-              {agentOutput.recommendations.next_best_actions.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5 mb-2">
-                    <Check size={14} />
-                    Próximas Ações (tarefas criadas automaticamente)
-                  </h4>
-                  <div className="space-y-2">
-                    {agentOutput.recommendations.next_best_actions.map((action, i) => (
-                      <div key={i} className="p-3 bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-sm font-medium">{action.title}</span>
-                          <Badge className={`text-xs ${
-                            action.priority === 'high' ? 'bg-orange-100 text-orange-700' :
-                            action.priority === 'medium' ? 'bg-blue-100 text-blue-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
-                            {action.priority === 'high' ? 'Alta' : action.priority === 'medium' ? 'Média' : 'Baixa'}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-gray-500">{action.description}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Coaching Notes */}
-              {agentOutput.recommendations.coaching_notes.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-purple-700 flex items-center gap-1.5 mb-2">
-                    <Lightbulb size={14} />
-                    Dicas do Coach
-                  </h4>
-                  <ul className="space-y-1">
-                    {agentOutput.recommendations.coaching_notes.map((note, i) => (
-                      <li key={i} className="text-sm text-purple-700 bg-purple-50 px-3 py-1.5 rounded">
-                        {note}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Next Questions */}
-              {agentOutput.recommendations.next_questions.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5 mb-2">
-                    <MessageCircle size={14} />
-                    Perguntas por Fazer
-                  </h4>
-                  <ul className="space-y-1">
-                    {agentOutput.recommendations.next_questions.map((q, i) => (
-                      <li key={i} className="text-sm text-gray-600 bg-gray-50 px-3 py-1.5 rounded">
-                        {q}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Message Drafts */}
-              {agentOutput.drafts.drafts.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-semibold text-green-700 flex items-center gap-1.5 mb-2">
-                    <MessageSquarePlus size={14} />
-                    Rascunhos de Mensagem
-                  </h4>
-                  <div className="space-y-3">
-                    {agentOutput.drafts.drafts.map((draft, i) => (
-                      <div key={i} className="border border-gray-200 rounded-lg overflow-hidden">
-                        <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b gap-2 flex-wrap">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Badge variant="outline" className="text-xs flex-shrink-0">
-                              {draft.channel === 'whatsapp' ? 'WhatsApp' : 'Email'}
-                            </Badge>
-                            <span className="text-xs text-gray-500 truncate">{draft.goal}</span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <DraftSendButtons
-                              channel={draft.channel}
-                              body={draft.body}
-                              subject={draft.subject}
-                              leadPhone={leadPhone}
-                              leadEmail={leadEmail}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => copyText(draft.body, `draft-${i}`)}
-                            >
-                              {copiedId === `draft-${i}` ? (
-                                <Check size={12} className="text-green-500" />
-                              ) : (
-                                <Copy size={12} />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                        {draft.subject && (
-                          <div className="px-3 py-1.5 bg-blue-50 border-b text-xs font-medium text-blue-700">
-                            Assunto: {draft.subject}
-                          </div>
-                        )}
-                        <div className="p-3">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">{draft.body}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2 border-t">
+            <div className="space-y-3">
+              <ExtractionReview
+                leadPhone={leadPhone}
+                leadEmail={leadEmail}
+                leadUpdates={agentOutput.lead_updates}
+                recommendations={agentOutput.recommendations}
+                drafts={agentOutput.drafts}
+                extractionId={extractionId}
+                onApplied={handleExtractionResolved}
+                onDismissed={handleExtractionResolved}
+              />
+              <div className="flex gap-3 pt-2">
                 <Button
-                  variant="outline"
-                  onClick={() => { setAgentOutput(null); setConversationText(''); }}
-                  className="flex-1"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setAgentOutput(null); setExtractionId(null); setConversationText('') }}
+                  className="flex-1 text-gray-500"
                 >
                   Analisar outra conversa
                 </Button>
-                <Button onClick={handleCloseModal}>Fechar</Button>
+                <Button variant="ghost" size="sm" onClick={handleCloseModal} className="text-gray-400">
+                  Fechar sem decidir agora
+                </Button>
               </div>
             </div>
           )}

@@ -114,7 +114,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const supabase = await createClient()
 
-  // Support API key auth for scraper/N8N (no session cookie available)
+  // Support API key auth for scraper (no session cookie available)
   const apiKey = request.headers.get('X-API-Key')
   let teamId: string | null = null
 

@@ -1,13 +1,16 @@
 // lib/call-pipeline.ts
-// Logica de pipeline partilhada entre /api/calls/upload e /api/share-target.
+// Logica de pipeline partilhada entre /api/calls/upload, /api/telegram/webhook,
+// /api/ingest e /api/share-target.
 //
-// Persistencia completa (replica /api/agents/leads/route.ts):
-//   - leads (full_name, phone, email, score, urgency, last_contact_at)
-//   - lead_profiles (deep merge dos 6 blocos + summary + confidence_score)
-//   - agent_extractions (extracted_json, recommendations_json, drafts_json)
+// Persistencia:
+//   - leads (identidade: full_name, phone, email — resolvida de imediato, precisa
+//     de existir para a extraccao ficar associada a alguem)
+//   - agent_extractions (fica 'pending' — perfil/score/urgencia/tasks so sao
+//     aplicados quando o utilizador confirma em /dashboard/leads/[id], via
+//     lib/apply-extraction.ts)
 //   - agent_runs (status, tokens, duration)
-//   - interactions (transcript completo + summary)
-//   - tasks (a partir de next_best_actions; fallback follow-up se urgencia alta)
+//   - interactions (transcript completo + summary — historico, nao e uma decisao)
+//   - notifications (avisa que ha uma extraccao pendente por rever)
 
 import { transcribeAudio } from '@/lib/whisper'
 import { leadAgent } from '@/lib/agents/lead-agent'
@@ -15,8 +18,7 @@ import { callCoachAgent } from '@/lib/agents/call-coach-agent'
 import { diarizationAgent } from '@/lib/agents/diarization-agent'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhone } from '@/lib/phone'
-import { applyAutoTaskOnStatusChange } from '@/lib/auto-tasks'
-import type { LeadProfile, AgentFullOutput, LeadType } from '@/lib/types'
+import type { AgentFullOutput } from '@/lib/types'
 
 export async function runCallPipeline(
   uploadId: string,
@@ -205,61 +207,10 @@ export async function runCallPipeline(
 
     if (!leadId) throw new Error('Falhou a criar ou encontrar lead')
 
-    // Passo f: Carregar profile existente
-    const { data: existingProfile } = (await supabase
-      .from('lead_profiles')
-      .select('*')
-      .eq('lead_id', leadId)
-      .maybeSingle()) as { data: LeadProfile | null }
-
-    function mergeField<T>(
-      existing: T | null | undefined,
-      updated: Partial<T> | null | undefined
-    ): T | null {
-      if (!updated) return existing ?? null
-      if (!existing) return updated as T
-      const result = { ...existing } as Record<string, unknown>
-      for (const [k, v] of Object.entries(updated as Record<string, unknown>)) {
-        if (v !== null && v !== undefined) {
-          if (Array.isArray(v) && v.length > 0) result[k] = v
-          else if (!Array.isArray(v)) result[k] = v
-        }
-      }
-      return result as T
-    }
-
     const now = new Date().toISOString()
 
-    // Passo g: Upsert lead_profiles
-    const sellerProfileFromAgent = (ex as { seller_profile?: unknown }).seller_profile
-    await supabase.from('lead_profiles').upsert(
-      {
-        lead_id: leadId,
-        home_preferences: mergeField(existingProfile?.home_preferences, ex.home_preferences),
-        financial_profile: mergeField(existingProfile?.financial_profile, ex.financial_profile),
-        personality_traits: mergeField(
-          existingProfile?.personality_traits,
-          ex.personality_traits
-        ),
-        family_context: mergeField(existingProfile?.family_context, ex.family_context),
-        fears_objections: mergeField(existingProfile?.fears_objections, ex.fears_objections),
-        process_preferences: mergeField(
-          existingProfile?.process_preferences,
-          ex.process_preferences
-        ),
-        // Seller profile (migration 015) — angariacao. Deep merge dos 4 sub-blocos.
-        seller_profile: mergeField(
-          (existingProfile as { seller_profile?: Record<string, unknown> | null })?.seller_profile,
-          sellerProfileFromAgent as Partial<Record<string, unknown>> | null | undefined
-        ),
-        summary: ex.summary || existingProfile?.summary || null,
-        confidence_score: ex.confidence_score,
-        updated_at: now,
-      },
-      { onConflict: 'lead_id' }
-    )
-
-    // Passo h: agent_extractions
+    // Passo f: agent_extractions — fica 'pending' (default da coluna). Perfil,
+    // score/urgencia e tasks so sao aplicados quando o utilizador confirmar.
     const { error: extractionErr } = await supabase.from('agent_extractions').insert({
       team_id: teamId,
       lead_id: leadId,
@@ -273,7 +224,7 @@ export async function runCallPipeline(
       console.warn('[call-pipeline] insert agent_extractions failed:', extractionErr.message)
     }
 
-    // Passo i: Atualizar agent_run
+    // Passo g: Atualizar agent_run
     if (run) {
       await supabase
         .from('agent_runs')
@@ -287,7 +238,7 @@ export async function runCallPipeline(
         .eq('id', run.id)
     }
 
-    // Passo j: Coach feedback
+    // Passo h: Coach feedback (nao altera a lead, pode ficar imediato)
     const { data: recentInteractions } = await supabase
       .from('interactions')
       .select('summary')
@@ -307,7 +258,7 @@ export async function runCallPipeline(
       summaries
     )
 
-    // Passo k: Registar interacao
+    // Passo i: Registar interacao (log historico da chamada — nao e uma decisao)
     const interactionSummary = [
       ex.summary,
       `Sentimento: ${coachFeedback.sentimento_lead}`,
@@ -324,116 +275,17 @@ export async function runCallPipeline(
       occurred_at: now,
     })
 
-    // Auto-bump status: chamada e contacto real, lead em 'new' passa a 'qualified'.
-    // Se houver bump, dispara tambem auto-task de follow-up.
-    {
-      const { data: leadRow } = await supabase
-        .from('leads')
-        .select('status, lead_type, assigned_to')
-        .eq('id', leadId)
-        .single()
-      if (leadRow?.status === 'new') {
-        await supabase
-          .from('leads')
-          .update({ status: 'qualified', last_contact_at: now })
-          .eq('id', leadId)
-        console.log(`[call-pipeline] auto-bump lead ${leadId} new -> qualified`)
-        // Dispara auto-task(s) da transicao
-        try {
-          await applyAutoTaskOnStatusChange(supabase, {
-            leadId,
-            teamId,
-            oldStatus: 'new',
-            newStatus: 'qualified',
-            leadType: ((leadRow.lead_type as LeadType | null | undefined) ?? 'unknown') as LeadType,
-            assignedTo: (leadRow.assigned_to as string | null) ?? null,
-          })
-        } catch (err) {
-          console.warn('[call-pipeline] auto-task on bump failed:', err)
-        }
-      } else {
-        // Mesmo que ja nao seja 'new', atualiza last_contact_at
-        await supabase
-          .from('leads')
-          .update({ last_contact_at: now })
-          .eq('id', leadId)
-      }
-    }
+    // Passo j: Notificar que ha uma extraccao pendente de revisao (mesmo padrao
+    // usado por agents/matching, agents/followup e agents/coach-macro).
+    await supabase.from('notifications').insert({
+      team_id: teamId,
+      type: 'agent_complete',
+      title: '🤖 Nova análise por rever',
+      body: `Chamada analisada — ${extractedFullName ?? existingLeadName ?? 'lead'}. Confirma para aplicar ao perfil.`,
+      link: `/dashboard/leads/${leadId}`,
+    })
 
-    // Passo l: Tasks a partir de next_best_actions.
-    // Defensivo: aceita chaves PT (titulo/descricao/prioridade) ou EN (title/description/priority).
-    const rawActions = (agentOutput.recommendations.next_best_actions ?? []) as unknown as Array<
-      Record<string, unknown>
-    >
-    let tasksCreated = 0
-
-    const priorityMap: Record<string, 'low' | 'medium' | 'high' | 'urgent'> = {
-      high: 'high',
-      medium: 'medium',
-      low: 'low',
-      urgent: 'urgent',
-      alta: 'high',
-      media: 'medium',
-      'média': 'medium',
-      baixa: 'low',
-      urgente: 'urgent',
-    }
-
-    type NormalizedAction = {
-      title: string
-      description: string
-      priority: 'low' | 'medium' | 'high' | 'urgent'
-      due_in_hours: number | null
-    }
-
-    const normalizedActions: NormalizedAction[] = rawActions
-      .map((a) => {
-        const title = (a.title ?? a.titulo ?? '') as string
-        const description = (a.description ?? a.descricao ?? a['descrição'] ?? '') as string
-        const rawPrio = String(a.priority ?? a.prioridade ?? 'medium').toLowerCase()
-        const priority = priorityMap[rawPrio] ?? 'medium'
-        const dueRaw = a.due_in_hours ?? a.prazo_horas ?? a.due_hours ?? null
-        const due = typeof dueRaw === 'number' && Number.isFinite(dueRaw) ? dueRaw : null
-        return {
-          title: String(title).trim(),
-          description: String(description).trim(),
-          priority,
-          due_in_hours: due,
-        }
-      })
-      .filter((a) => a.title.length > 0)
-
-    if (normalizedActions.length > 0) {
-      const tasksToCreate = normalizedActions.slice(0, 3).map((action) => ({
-        lead_id: leadId,
-        team_id: teamId,
-        assigned_to: userId,
-        title: action.title,
-        description: action.description || null,
-        priority: action.priority,
-        created_by: 'agent' as const,
-        due_at: action.due_in_hours
-          ? new Date(Date.now() + action.due_in_hours * 60 * 60 * 1000).toISOString()
-          : null,
-        status: 'open' as const,
-      }))
-
-      const { data: insertedTasks, error: tasksErr } = await supabase
-        .from('tasks')
-        .insert(tasksToCreate)
-        .select('id')
-      if (tasksErr) {
-        console.warn('[call-pipeline] insert tasks failed:', tasksErr.message, tasksToCreate)
-      }
-      tasksCreated = insertedTasks?.length ?? 0
-    }
-
-    // Fallback: se nao houver actions e urgencia >= 3
-    if (tasksCreated === 0 && extractedUrgency != null && extractedUrgency >= 3) {
-      await createFollowUpSequence(supabase, teamId, leadId, userId)
-    }
-
-    // Passo m: Marcar upload como done
+    // Passo k: Marcar upload como done
     await supabase
       .from('call_uploads')
       .update({
@@ -455,57 +307,4 @@ export async function runCallPipeline(
       })
       .eq('id', uploadId)
   }
-}
-
-async function createFollowUpSequence(
-  supabase: ReturnType<typeof createServiceClient>,
-  teamId: string,
-  leadId: string,
-  userId: string
-): Promise<void> {
-  const { data: existingTasks } = await supabase
-    .from('tasks')
-    .select('id')
-    .eq('team_id', teamId)
-    .eq('lead_id', leadId)
-    .eq('status', 'open')
-    .limit(1)
-
-  if (existingTasks && existingTasks.length > 0) return
-
-  const now = new Date()
-  await supabase.from('tasks').insert([
-    {
-      team_id: teamId,
-      lead_id: leadId,
-      assigned_to: userId,
-      title: 'Follow-up inicial - chamada recente',
-      description: 'Contactar lead apos chamada recebida. Urgencia elevada.',
-      due_at: new Date(now.getTime()).toISOString(),
-      status: 'open',
-      priority: 'urgent',
-      created_by: 'agent',
-    },
-    {
-      team_id: teamId,
-      lead_id: leadId,
-      assigned_to: userId,
-      title: 'Follow-up 3 dias - verificar interesse',
-      description: 'Verificar interesse da lead apos contacto inicial.',
-      due_at: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      status: 'open',
-      priority: 'high',
-      created_by: 'agent',
-    },
-    {
-      team_id: teamId,
-      lead_id: leadId,
-      assigned_to: userId,
-      title: 'Follow-up 7 dias - decisao final',
-      description: 'Obter decisao final da lead ou reagendar.',
-      due_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      status: 'open',
-      priority: 'medium',
-      created_by: 'agent',    },
-  ])
 }
