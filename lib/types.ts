@@ -9,6 +9,8 @@ export type AdPlatform = 'meta' | 'google' | 'tiktok' | 'organic' | 'other'
 export type AgentType = 'lead' | 'followup' | 'coach' | 'marketing' | 'investor'
 export type AgentRunStatus = 'running' | 'done' | 'failed'
 export type NotificationType = 'agent_complete' | 'cold_lead' | 'task_due' | 'tip' | 'info'
+export type ContentStatus = 'idea' | 'draft' | 'scheduled' | 'published' | 'archived'
+export type ContentPlatform = 'linkedin' | 'instagram' | 'tiktok' | 'youtube' | 'blog' | 'other'
 
 // ─── Database Models ───────────────────────────────────────────────────────────
 
@@ -402,6 +404,24 @@ export interface CampaignWithMetrics extends Campaign {
   conversion_rate: number | null
 }
 
+// ─── Content pipeline (marca pessoal) ──────────────────────────────────────────
+
+export interface ContentPiece {
+  id: string
+  team_id: string
+  title: string
+  platform: ContentPlatform
+  status: ContentStatus
+  idea_text: string | null
+  draft_content: string | null
+  scheduled_at: string | null
+  published_at: string | null
+  published_url: string | null
+  source: 'manual' | 'hub_telegram'
+  created_at: string
+  updated_at: string
+}
+
 // ─── Notifications ────────────────────────────────────────────────────────────
 
 export interface Notification {
@@ -734,6 +754,33 @@ export const AD_PLATFORM_LABELS: Record<AdPlatform, string> = {
   google: 'Google Ads',
   tiktok: 'TikTok Ads',
   organic: 'Organico',
+  other: 'Outro',
+}
+
+export const CONTENT_STATUS_LABELS: Record<ContentStatus, string> = {
+  idea: 'Ideia',
+  draft: 'Rascunho',
+  scheduled: 'Agendado',
+  published: 'Publicado',
+  archived: 'Arquivado',
+}
+
+export const CONTENT_STATUS_COLORS: Record<ContentStatus, string> = {
+  idea: 'bg-gray-100 text-gray-700',
+  draft: 'bg-blue-100 text-blue-700',
+  scheduled: 'bg-yellow-100 text-yellow-800',
+  published: 'bg-green-100 text-green-800',
+  archived: 'bg-gray-100 text-gray-400',
+}
+
+export const CONTENT_STATUS_ORDER: ContentStatus[] = ['idea', 'draft', 'scheduled', 'published']
+
+export const CONTENT_PLATFORM_LABELS: Record<ContentPlatform, string> = {
+  linkedin: 'LinkedIn',
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  blog: 'Blog',
   other: 'Outro',
 }
 
