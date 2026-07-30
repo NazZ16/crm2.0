@@ -17,6 +17,7 @@ import {
   GitMerge,
   UsersRound,
   X,
+  PenSquare,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -31,6 +32,7 @@ const ALL_NAV = [
   { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },
   { href: '/dashboard/matching', label: 'Matches', icon: GitMerge },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
+  { href: '/dashboard/content', label: 'Conteúdo', icon: PenSquare },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
   { href: '/dashboard/team', label: 'Equipa', icon: UsersRound },

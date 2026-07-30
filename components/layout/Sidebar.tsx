@@ -22,6 +22,7 @@ import {
   Phone,
   CheckSquare,
   Snowflake,
+  PenSquare,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },
   { href: '/dashboard/matching', label: 'Matches', icon: GitMerge },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
+  { href: '/dashboard/content', label: 'Conteúdo', icon: PenSquare },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
   { href: '/dashboard/calls/history', label: 'Chamadas', icon: Phone },
