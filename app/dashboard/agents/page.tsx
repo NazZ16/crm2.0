@@ -12,6 +12,8 @@ const agentLabels: Record<string, { label: string; icon: string; color: string }
   followup: { label: 'Agente Follow-up', icon: '📅', color: 'bg-green-100 text-green-700' },
   coach: { label: 'Coach IA', icon: '🎓', color: 'bg-purple-100 text-purple-700' },
   marketing: { label: 'Agente Marketing', icon: '📈', color: 'bg-orange-100 text-orange-700' },
+  investor: { label: 'Agente Investidor', icon: '🏗️', color: 'bg-pink-100 text-pink-700' },
+  orientator: { label: 'Orientador', icon: '🧭', color: 'bg-teal-100 text-teal-700' },
 }
 
 export default async function AgentsPage() {
