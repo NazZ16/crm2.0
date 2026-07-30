@@ -3,32 +3,18 @@
 -- ============================================================
 -- O negocio real passa por CPCV (Contrato de Promessa de Compra e Venda)
 -- e Escritura antes de "Ganho". Ate agora tudo isso caia num unico
--- estado 'active'. As migrations 001-017 nao estao neste checkout
--- (gitignored), por isso o nome do CHECK constraint existente em
--- leads.status e desconhecido — localizamo-lo dinamicamente via
--- pg_constraint em vez de assumir um nome.
+-- estado 'active'.
+--
+-- leads.status usa o tipo ENUM nativo `lead_status` (nao um CHECK
+-- constraint em TEXT) — confirmado no schema real (`status USER-DEFINED
+-- NOT NULL DEFAULT 'new'::lead_status`). Novos valores tem de ser
+-- adicionados ao tipo com ALTER TYPE ... ADD VALUE. Nao usamos os novos
+-- valores em nenhum INSERT/UPDATE neste ficheiro — ALTER TYPE ADD VALUE
+-- nao pode ser usado no mesmo bloco de transacao onde o novo valor e
+-- lido/escrito.
 
-DO $$
-DECLARE
-  cname text;
-BEGIN
-  SELECT con.conname INTO cname
-  FROM pg_constraint con
-  JOIN pg_class rel ON rel.oid = con.conrelid
-  JOIN pg_attribute att ON att.attrelid = rel.oid
-  WHERE rel.relname = 'leads'
-    AND con.contype = 'c'
-    AND con.conname != 'leads_pkey'
-    AND pg_get_constraintdef(con.oid) ILIKE '%status%'
-  LIMIT 1;
-
-  IF cname IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE leads DROP CONSTRAINT %I', cname);
-  END IF;
-
-  ALTER TABLE leads ADD CONSTRAINT leads_status_check
-    CHECK (status IN ('new','qualified','meeting','active','cpcv','escriturado','won','lost'));
-END $$;
+ALTER TYPE lead_status ADD VALUE IF NOT EXISTS 'cpcv';
+ALTER TYPE lead_status ADD VALUE IF NOT EXISTS 'escriturado';
 
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS cpcv_date TIMESTAMPTZ;
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS escritura_date TIMESTAMPTZ;
