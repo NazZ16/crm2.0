@@ -121,16 +121,6 @@ export async function POST(request: Request) {
   if (apiKey) {
     const { hashApiKey } = await import('@/lib/api-keys')
     const keyHash = hashApiKey(apiKey)
-    const { data: apiKeyRow } = await supabase
-      .from('team_api_keys')
-      .select('team_id, id')
-      .eq('key_hash', keyHash)
-      .is('revoked_at', null)
-      .single()
-
-    if (apiKey) {
-    const { hashApiKey } = await import('@/lib/api-keys')
-    const keyHash = hashApiKey(apiKey)
     const service = createServiceClient()
     const { data: apiKeyRow } = await service
       .from('team_api_keys')
@@ -141,6 +131,7 @@ export async function POST(request: Request) {
 
     if (apiKeyRow) {
       teamId = apiKeyRow.team_id
+      // Actualizar last_used_at de forma assíncrona (não bloqueia a resposta)
       void Promise.resolve(
         service
           .from('team_api_keys')
