@@ -35,6 +35,7 @@ const updateListingSchema = z.object({
   features: z.array(z.string().max(100)).max(100).optional(),
   description: z.string().max(10000).nullable().optional(),
   cover_image_url: z.string().url().max(2000).nullable().optional(),
+  photos: z.array(z.string().url().max(2000)).max(50).optional(),
 
   source: z.string().max(100).optional(),
   source_url: z.string().url().max(2000).nullable().optional(),

@@ -130,7 +130,16 @@ export default function ListingDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          {listing.cover_image_url && (
+          {listing.photos.length > 0 ? (
+            <div className="flex gap-2 overflow-x-auto rounded-xl border p-2 snap-x snap-mandatory">
+              {listing.photos.map((url, i) => (
+                <a key={url} href={url} target="_blank" rel="noreferrer" className="flex-shrink-0 snap-start">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt={`${listing.title} — foto ${i + 1}`} className="h-72 w-auto max-w-sm object-cover rounded-lg" />
+                </a>
+              ))}
+            </div>
+          ) : listing.cover_image_url && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={listing.cover_image_url} alt={listing.title} className="w-full max-h-96 object-cover rounded-xl border" />
           )}

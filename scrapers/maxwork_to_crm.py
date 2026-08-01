@@ -177,6 +177,7 @@ def build_payload(row):
         "features": [f for f in (row.get("caracteristicas") or "").split(";") if f],
         "description": description,
         "cover_image_url": photos[0] if photos else None,
+        "photos": photos[:50],
 
         "source": "maxwork",
         "source_url": row.get("url") or None,

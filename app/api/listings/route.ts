@@ -35,6 +35,7 @@ const listingSchema = z.object({
   features: z.array(z.string().max(100)).max(100).default([]),
   description: z.string().max(10000).optional().nullable(),
   cover_image_url: z.string().url().max(2000).optional().nullable(),
+  photos: z.array(z.string().url().max(2000)).max(50).default([]),
 
   source: z.string().max(100).optional(),
   source_url: z.string().url().max(2000).optional().nullable(),
@@ -133,19 +134,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  // Dedup por source_url (scrapers reenviam o mesmo imóvel em cada corrida)
+  // Dedup por source_url (scrapers reenviam o mesmo imóvel em cada corrida).
+  // Refresca todos os dados vindos do scraper, mas preserva o que é gerido
+  // à mão no CRM (status, lead associado, notas privadas).
   if (parsed.data.source_url) {
     const { data: existing } = await service
       .from('listings')
-      .select('id, price')
+      .select('id')
       .eq('team_id', teamId)
       .eq('source_url', parsed.data.source_url)
       .maybeSingle()
 
     if (existing) {
+      const updatePayload: Record<string, unknown> = { ...parsed.data, updated_at: new Date().toISOString() }
+      delete updatePayload.status
+      delete updatePayload.lead_id
+      delete updatePayload.notes
+
       const { data: updated, error: updateError } = await service
         .from('listings')
-        .update({ price: parsed.data.price, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', existing.id)
         .select()
         .single()

@@ -768,6 +768,7 @@ export interface Listing {
   features: string[]
   description: string | null
   cover_image_url: string | null
+  photos: string[]
 
   source: string | null
   source_url: string | null
