@@ -724,6 +724,128 @@ export const MAX_RENOVATION_LABELS: Record<MaxRenovation, string> = {
   full: 'Remodelacao total',
 }
 
+// ─── Listings (imóveis para venda/arrendamento — diferente de Opportunity) ────
+// Opportunity = módulo de investidores (fix&flip/buy-to-let, com ROI).
+// Listing = imóvel normal (próprio ou angariação) para dar match com leads
+// compradores usando lead_profiles.home_preferences / financial_profile.
+
+export type ListingBusinessType = 'venda' | 'arrendamento'
+export type ListingPropertyType = 'apartamento' | 'moradia' | 'terreno' | 'comercial' | 'garagem' | 'outro'
+export type ListingStatus = 'active' | 'reserved' | 'sold' | 'withdrawn'
+
+export interface Listing {
+  id: string
+  team_id: string
+  reference: string | null
+  title: string
+  business_type: ListingBusinessType
+  property_type: ListingPropertyType
+  typology: string | null
+  price: number | null
+  condo_fee: number | null
+  imi_annual: number | null
+
+  district: string | null
+  municipality: string | null
+  parish: string | null
+  zone: string | null
+  address: string | null
+  zip_code: string | null
+  latitude: number | null
+  longitude: number | null
+
+  area_useful_m2: number | null
+  area_gross_m2: number | null
+  area_plot_m2: number | null
+  bedrooms: number | null
+  bathrooms: number | null
+  total_rooms: number | null
+  parking_spaces: number | null
+  has_elevator: boolean | null
+  construction_year: number | null
+  energy_rating: string | null
+
+  features: string[]
+  description: string | null
+  cover_image_url: string | null
+
+  source: string | null
+  source_url: string | null
+  status: ListingStatus
+  lead_id: string | null
+  notes: string | null
+
+  created_at: string
+  updated_at: string
+}
+
+export interface ListingExtractionResult {
+  reference: string | null
+  title: string | null
+  business_type: ListingBusinessType | null
+  property_type: ListingPropertyType | null
+  typology: string | null
+  price: number | null
+  condo_fee: number | null
+  imi_annual: number | null
+  district: string | null
+  municipality: string | null
+  parish: string | null
+  address: string | null
+  zip_code: string | null
+  latitude: number | null
+  longitude: number | null
+  area_useful_m2: number | null
+  area_gross_m2: number | null
+  area_plot_m2: number | null
+  bedrooms: number | null
+  bathrooms: number | null
+  total_rooms: number | null
+  parking_spaces: number | null
+  has_elevator: boolean | null
+  construction_year: number | null
+  energy_rating: string | null
+  features: string[]
+  description: string | null
+  cover_image_url: string | null
+  source_url: string | null
+}
+
+export interface ListingMatchResult {
+  lead_id: string
+  lead_name: string
+  score: number
+  reasons: Array<{ reason: string; positive: boolean }>
+}
+
+export const LISTING_BUSINESS_TYPE_LABELS: Record<ListingBusinessType, string> = {
+  venda: 'Venda',
+  arrendamento: 'Arrendamento',
+}
+
+export const LISTING_PROPERTY_TYPE_LABELS: Record<ListingPropertyType, string> = {
+  apartamento: 'Apartamento',
+  moradia: 'Moradia',
+  terreno: 'Terreno',
+  comercial: 'Comercial',
+  garagem: 'Garagem',
+  outro: 'Outro',
+}
+
+export const LISTING_STATUS_LABELS: Record<ListingStatus, string> = {
+  active: 'Ativo',
+  reserved: 'Reservado',
+  sold: 'Vendido',
+  withdrawn: 'Retirado',
+}
+
+export const LISTING_STATUS_COLORS: Record<ListingStatus, string> = {
+  active: 'bg-green-100 text-green-800',
+  reserved: 'bg-yellow-100 text-yellow-800',
+  sold: 'bg-gray-100 text-gray-600',
+  withdrawn: 'bg-red-100 text-red-700',
+}
+
 // ─── View Models ──────────────────────────────────────────────────────────────
 
 export interface LeadWithProfile extends Lead {
