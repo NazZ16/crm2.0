@@ -68,11 +68,11 @@ function PhotoCarousel({ photos, title }: { photos: string[]; title: string }) {
       </div>
 
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="w-[60vw] h-[60vh] max-w-none sm:max-w-none p-0 border-0 bg-transparent shadow-none [&_button[data-slot=dialog-close]]:text-white [&_button[data-slot=dialog-close]]:bg-black/50 [&_button[data-slot=dialog-close]]:rounded-full [&_button[data-slot=dialog-close]]:p-1">
+        <DialogContent className="w-[50vw] h-[50vh] max-w-none sm:max-w-none p-0 border-0 bg-transparent shadow-none place-items-center [&_button[data-slot=dialog-close]]:text-white [&_button[data-slot=dialog-close]]:bg-black/50 [&_button[data-slot=dialog-close]]:rounded-full [&_button[data-slot=dialog-close]]:p-1">
           <DialogTitle className="sr-only">{title} — foto {index + 1}</DialogTitle>
-          <div className="relative w-full h-full">
+          <div className="relative w-full h-full flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={photos[index]} alt={`${title} — foto ${index + 1}`} className="w-full h-full object-contain rounded-lg" />
+            <img src={photos[index]} alt={`${title} — foto ${index + 1}`} className="w-full h-full object-contain object-center rounded-lg" />
             {photos.length > 1 && (
               <>
                 <button type="button" onClick={prev} aria-label="Foto anterior"
