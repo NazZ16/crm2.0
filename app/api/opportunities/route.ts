@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 
@@ -128,11 +128,21 @@ export async function POST(request: Request) {
       .is('revoked_at', null)
       .single()
 
+    if (apiKey) {
+    const { hashApiKey } = await import('@/lib/api-keys')
+    const keyHash = hashApiKey(apiKey)
+    const service = createServiceClient()
+    const { data: apiKeyRow } = await service
+      .from('team_api_keys')
+      .select('team_id, id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
+      .single()
+
     if (apiKeyRow) {
       teamId = apiKeyRow.team_id
-      // Actualizar last_used_at de forma assíncrona (não bloqueia a resposta)
       void Promise.resolve(
-        supabase
+        service
           .from('team_api_keys')
           .update({ last_used_at: new Date().toISOString() })
           .eq('id', apiKeyRow.id)
