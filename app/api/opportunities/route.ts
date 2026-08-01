@@ -113,6 +113,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
+  const service = createServiceClient()
 
   // Support API key auth for scraper (no session cookie available)
   const apiKey = request.headers.get('X-API-Key')
@@ -121,7 +122,6 @@ export async function POST(request: Request) {
   if (apiKey) {
     const { hashApiKey } = await import('@/lib/api-keys')
     const keyHash = hashApiKey(apiKey)
-    const service = createServiceClient()
     const { data: apiKeyRow } = await service
       .from('team_api_keys')
       .select('team_id, id')
@@ -166,7 +166,7 @@ export async function POST(request: Request) {
   let isNew = true
 
   if (parsed.data.source_url) {
-    const { data: existing } = await supabase
+    const { data: existing } = await service
       .from('opportunities')
       .select('id, asking_price')
       .eq('team_id', teamId)
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
 
     if (existing) {
       isNew = false
-      const { data: updated, error: updateError } = await supabase
+      const { data: updated, error: updateError } = await service
         .from('opportunities')
         .update({ asking_price: parsed.data.asking_price, updated_at: new Date().toISOString() })
         .eq('id', existing.id)
@@ -187,7 +187,7 @@ export async function POST(request: Request) {
   }
 
   if (isNew) {
-    const { data: inserted, error: insertError } = await supabase
+    const { data: inserted, error: insertError } = await service
       .from('opportunities')
       .insert({ ...parsed.data, team_id: teamId })
       .select()
