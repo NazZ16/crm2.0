@@ -12,10 +12,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import {
   ArrowLeft, MapPin, BedDouble, Bath, Ruler, Car, Zap, RefreshCw,
   Trash2, ExternalLink, CheckCircle2, AlertCircle, Users, UserRound, Phone, Mail,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
 function formatPrice(price: number | null): string {
@@ -29,6 +31,67 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-gray-500">{label}</span>
       <span className="font-medium text-gray-900 text-right">{value}</span>
     </div>
+  )
+}
+
+function PhotoCarousel({ photos, title }: { photos: string[]; title: string }) {
+  const [index, setIndex] = useState(0)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+
+  if (photos.length === 0) return null
+
+  const prev = (e?: React.MouseEvent) => { e?.stopPropagation(); setIndex((i) => (i - 1 + photos.length) % photos.length) }
+  const next = (e?: React.MouseEvent) => { e?.stopPropagation(); setIndex((i) => (i + 1) % photos.length) }
+
+  return (
+    <>
+      <div className="relative rounded-xl border overflow-hidden bg-gray-50">
+        <button type="button" onClick={() => setLightboxOpen(true)} className="block w-full cursor-zoom-in">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photos[index]} alt={`${title} — foto ${index + 1}`} className="w-full max-h-96 object-cover" />
+        </button>
+        {photos.length > 1 && (
+          <>
+            <button type="button" onClick={prev} aria-label="Foto anterior"
+              className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5">
+              <ChevronLeft size={18} />
+            </button>
+            <button type="button" onClick={next} aria-label="Foto seguinte"
+              className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1.5">
+              <ChevronRight size={18} />
+            </button>
+            <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">
+              {index + 1}/{photos.length}
+            </span>
+          </>
+        )}
+      </div>
+
+      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+        <DialogContent className="max-w-4xl p-0 border-0 bg-transparent shadow-none [&_button[data-slot=dialog-close]]:text-white [&_button[data-slot=dialog-close]]:bg-black/50 [&_button[data-slot=dialog-close]]:rounded-full [&_button[data-slot=dialog-close]]:p-1">
+          <DialogTitle className="sr-only">{title} — foto {index + 1}</DialogTitle>
+          <div className="relative">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photos[index]} alt={`${title} — foto ${index + 1}`} className="w-full max-h-[85vh] object-contain rounded-lg" />
+            {photos.length > 1 && (
+              <>
+                <button type="button" onClick={prev} aria-label="Foto anterior"
+                  className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2">
+                  <ChevronLeft size={22} />
+                </button>
+                <button type="button" onClick={next} aria-label="Foto seguinte"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-2">
+                  <ChevronRight size={22} />
+                </button>
+                <span className="absolute bottom-2 right-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">
+                  {index + 1}/{photos.length}
+                </span>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -130,19 +193,10 @@ export default function ListingDetailPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          {listing.photos.length > 0 ? (
-            <div className="flex gap-2 overflow-x-auto rounded-xl border p-2 snap-x snap-mandatory">
-              {listing.photos.map((url, i) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" className="flex-shrink-0 snap-start">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt={`${listing.title} — foto ${i + 1}`} className="h-72 w-auto max-w-sm object-cover rounded-lg" />
-                </a>
-              ))}
-            </div>
-          ) : listing.cover_image_url && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={listing.cover_image_url} alt={listing.title} className="w-full max-h-96 object-cover rounded-xl border" />
-          )}
+          <PhotoCarousel
+            photos={listing.photos.length > 0 ? listing.photos : listing.cover_image_url ? [listing.cover_image_url] : []}
+            title={listing.title}
+          />
 
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Detalhes</CardTitle></CardHeader>
