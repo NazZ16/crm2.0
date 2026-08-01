@@ -80,17 +80,47 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  const service = createServiceClient()
 
-  const { data: member } = await supabase
-    .from('team_members')
-    .select('team_id, role')
-    .eq('user_id', user.id)
-    .single()
+  // Suporta autenticação por API key para os scrapers (sem cookie de sessão)
+  const apiKey = request.headers.get('X-API-Key')
+  let teamId: string | null = null
 
-  if (!member || member.role === 'viewer') {
-    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (apiKey) {
+    const { hashApiKey } = await import('@/lib/api-keys')
+    const keyHash = hashApiKey(apiKey)
+    const { data: apiKeyRow } = await service
+      .from('team_api_keys')
+      .select('team_id, id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
+      .single()
+
+    if (apiKeyRow) {
+      teamId = apiKeyRow.team_id
+      void Promise.resolve(
+        service
+          .from('team_api_keys')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('id', apiKeyRow.id)
+      ).catch(() => {})
+    }
+  }
+
+  if (!teamId) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+    const { data: member } = await supabase
+      .from('team_members')
+      .select('team_id, role')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member || member.role === 'viewer') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+    teamId = member.team_id
   }
 
   const body = await request.json()
@@ -99,10 +129,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const service = createServiceClient()
+  // Dedup por source_url (scrapers reenviam o mesmo imóvel em cada corrida)
+  if (parsed.data.source_url) {
+    const { data: existing } = await service
+      .from('listings')
+      .select('id, price')
+      .eq('team_id', teamId)
+      .eq('source_url', parsed.data.source_url)
+      .maybeSingle()
+
+    if (existing) {
+      const { data: updated, error: updateError } = await service
+        .from('listings')
+        .update({ price: parsed.data.price, updated_at: new Date().toISOString() })
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+      return NextResponse.json(updated, { status: 200 })
+    }
+  }
+
   const { data, error } = await service
     .from('listings')
-    .insert({ ...parsed.data, team_id: member.team_id })
+    .insert({ ...parsed.data, team_id: teamId })
     .select()
     .single()
 

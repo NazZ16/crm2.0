@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Scraper Remax PT → CRM 2.0
-Extrai listings e faz POST para /api/opportunities com dedup por source_url.
+Extrai listings e faz POST para /api/listings com dedup por source_url.
 Usa Playwright (headless) porque o Remax carrega via JavaScript.
 
 URL format descoberto:
@@ -25,7 +25,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 load_dotenv()
 
-CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/opportunities")
+CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/listings")
 SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
 REMAX_ZONES_RAW = os.getenv("REMAX_ZONES", "Lisboa")
 REMAX_MAX_PRICE = int(os.getenv("REMAX_MAX_PRICE", "800000"))
@@ -41,7 +41,7 @@ def fetch_config_from_api() -> dict | None:
     if not CRM_API_URL or not SCRAPER_API_KEY:
         return None
     try:
-        base = CRM_API_URL.replace("/api/opportunities", "").rstrip("/")
+        base = CRM_API_URL.replace("/api/listings", "").rstrip("/")
         resp = requests.get(
             f"{base}/api/scraper/config",
             headers={"X-API-Key": SCRAPER_API_KEY},
@@ -183,14 +183,13 @@ def extract_listings(page, zone: str) -> list[dict]:
                 "title": title,
                 "zone": zone,
                 "typology": typology,
-                "asking_price": price,
-                "area_m2": area,
+                "price": price,
+                "area_gross_m2": area,
                 "source_url": source_url,
                 "source": "remax",
-                "auto_imported": True,
-                "property_type": "apartment",
-                "deal_type": "buy_to_let",
-                "status": "analyzing",
+                "property_type": "apartamento",
+                "business_type": "venda",
+                "status": "active",
             })
 
         except Exception as e:
