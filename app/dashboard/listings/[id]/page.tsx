@@ -68,7 +68,7 @@ function PhotoCarousel({ photos, title }: { photos: string[]; title: string }) {
       </div>
 
       <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent className="!max-w-[99vw] w-fit p-0 border-0 bg-transparent shadow-none [&_button[data-slot=dialog-close]]:text-white [&_button[data-slot=dialog-close]]:bg-black/50 [&_button[data-slot=dialog-close]]:rounded-full [&_button[data-slot=dialog-close]]:p-1">
+        <DialogContent className="max-w-[99vw] sm:max-w-[99vw] w-fit p-0 border-0 bg-transparent shadow-none [&_button[data-slot=dialog-close]]:text-white [&_button[data-slot=dialog-close]]:bg-black/50 [&_button[data-slot=dialog-close]]:rounded-full [&_button[data-slot=dialog-close]]:p-1">
           <DialogTitle className="sr-only">{title} — foto {index + 1}</DialogTitle>
           <div className="relative">
             {/* eslint-disable-next-line @next/next/no-img-element */}
