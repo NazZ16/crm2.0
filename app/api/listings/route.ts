@@ -41,6 +41,10 @@ const listingSchema = z.object({
   status: z.enum(['active', 'reserved', 'sold', 'withdrawn']).default('active'),
   lead_id: z.string().uuid().optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
+
+  agent_name: z.string().max(200).optional().nullable(),
+  agent_phone: z.string().max(50).optional().nullable(),
+  agent_email: z.string().email().max(200).optional().nullable(),
 })
 
 export async function GET(request: Request) {

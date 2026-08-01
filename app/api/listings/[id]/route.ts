@@ -41,6 +41,10 @@ const updateListingSchema = z.object({
   status: z.enum(['active', 'reserved', 'sold', 'withdrawn']).optional(),
   lead_id: z.string().uuid().nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),
+
+  agent_name: z.string().max(200).nullable().optional(),
+  agent_phone: z.string().max(50).nullable().optional(),
+  agent_email: z.string().email().max(200).nullable().optional(),
 })
 
 async function getMember(userId: string) {

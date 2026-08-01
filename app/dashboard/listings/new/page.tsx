@@ -25,6 +25,7 @@ const emptyForm = {
   has_elevator: '', construction_year: '', energy_rating: '',
   features: '', description: '', cover_image_url: '', source_url: '',
   notes: '',
+  agent_name: '', agent_phone: '', agent_email: '',
 }
 
 type FormState = typeof emptyForm
@@ -146,6 +147,9 @@ export default function NewListingPage() {
       source: extracted ? 'import' : 'manual',
       source_url: form.source_url.trim() || undefined,
       notes: form.notes.trim() || undefined,
+      agent_name: form.agent_name.trim() || undefined,
+      agent_phone: form.agent_phone.trim() || undefined,
+      agent_email: form.agent_email.trim() || undefined,
     }
 
     const res = await fetch('/api/listings', {
@@ -296,6 +300,15 @@ export default function NewListingPage() {
               <Label htmlFor="notes" className="text-xs text-gray-600">Notas privadas</Label>
               <Textarea id="notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} rows={2} className="text-sm" />
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm">Agente</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-3 gap-2">
+            <Field id="agent_name" label="Nome" value={form.agent_name} onChange={(v) => set('agent_name', v)} />
+            <Field id="agent_phone" label="Telefone" value={form.agent_phone} onChange={(v) => set('agent_phone', v)} />
+            <Field id="agent_email" label="Email" type="email" value={form.agent_email} onChange={(v) => set('agent_email', v)} />
           </CardContent>
         </Card>
 

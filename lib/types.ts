@@ -775,6 +775,10 @@ export interface Listing {
   lead_id: string | null
   notes: string | null
 
+  agent_name: string | null
+  agent_phone: string | null
+  agent_email: string | null
+
   created_at: string
   updated_at: string
 }

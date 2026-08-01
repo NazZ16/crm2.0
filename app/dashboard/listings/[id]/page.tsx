@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner'
 import {
   ArrowLeft, MapPin, BedDouble, Bath, Ruler, Car, Zap, RefreshCw,
-  Trash2, ExternalLink, CheckCircle2, AlertCircle, Users,
+  Trash2, ExternalLink, CheckCircle2, AlertCircle, Users, UserRound, Phone, Mail,
 } from 'lucide-react'
 
 function formatPrice(price: number | null): string {
@@ -251,6 +251,31 @@ export default function ListingDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {(listing.agent_name || listing.agent_phone || listing.agent_email) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-1.5"><UserRound size={14} /> Agente</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5 text-sm">
+                {listing.agent_name && (
+                  <div className="flex items-center gap-1.5 font-medium text-gray-900">
+                    <UserRound size={13} className="text-gray-400" /> {listing.agent_name}
+                  </div>
+                )}
+                {listing.agent_phone && (
+                  <a href={`tel:${listing.agent_phone}`} className="flex items-center gap-1.5 text-gray-700 hover:text-blue-600">
+                    <Phone size={13} className="text-gray-400" /> {listing.agent_phone}
+                  </a>
+                )}
+                {listing.agent_email && (
+                  <a href={`mailto:${listing.agent_email}`} className="flex items-center gap-1.5 text-gray-700 hover:text-blue-600">
+                    <Mail size={13} className="text-gray-400" /> {listing.agent_email}
+                  </a>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

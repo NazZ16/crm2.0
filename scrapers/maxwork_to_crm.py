@@ -118,6 +118,13 @@ def parse_int(text):
     return int(str(text).strip())
 
 
+def clean_email(text):
+    """O servidor valida o formato do email — só envia se parecer válido,
+    senão o pedido inteiro falha por causa de um campo secundário."""
+    value = (text or "").strip()
+    return value if "@" in value else None
+
+
 def parse_bool(text):
     if not text:
         return None
@@ -174,6 +181,10 @@ def build_payload(row):
         "source": "maxwork",
         "source_url": row.get("url") or None,
         "status": "active",
+
+        "agent_name": row.get("agente") or None,
+        "agent_phone": row.get("telefone_agente") or None,
+        "agent_email": clean_email(row.get("email_agente")),
     }
 
 
