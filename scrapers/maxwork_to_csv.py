@@ -219,12 +219,28 @@ def scrape_search_all(page) -> list[dict]:
 
 def scrape_agency(page, agency_name: str) -> list[dict]:
     print(f"\n[maxwork] === Agência: {agency_name} ===")
-    page.goto(SEARCH_URL, wait_until="domcontentloaded")
-    page.wait_for_load_state("networkidle")
+
+    # login() já deixa a página em SEARCH_URL — recarregar outra vez à toa
+    # só torna as coisas mais lentas/instáveis na primeira agência. Para as
+    # seguintes, o reload é preciso para limpar o filtro da pesquisa anterior.
+    if not page.url.startswith(SEARCH_URL):
+        page.goto(SEARCH_URL, wait_until="domcontentloaded")
+
+    # Espera por um elemento concreto em vez de "networkidle" — a página tem
+    # widgets de fundo (chat, analytics) que fazem pedidos periódicos e podem
+    # nunca deixar a rede "parada", o que faria o networkidle ficar preso.
     try:
-        page.wait_for_selector(SEARCH_AGENCY_INPUT_SELECTOR, timeout=15000)
+        page.wait_for_selector(APP_LOADED_SELECTOR, timeout=25000)
     except PlaywrightTimeout:
-        print("  [aviso] Página de pesquisa não carregou o campo Agência — a saltar")
+        print(f"  [aviso] Página de pesquisa não carregou (URL atual: {page.url}) — a saltar")
+        return []
+
+    try:
+        page.wait_for_selector(SEARCH_AGENCY_INPUT_SELECTOR, timeout=25000)
+    except PlaywrightTimeout:
+        print(f"  [aviso] Campo Agência não apareceu (URL atual: {page.url}) — a saltar")
+        html = page.content()
+        print(f"  [debug] HTML da página tem {len(html)} caracteres")
         return []
 
     if not select_agency_filter(page, agency_name):
