@@ -87,6 +87,7 @@ NEXT_PAGE_DISABLED_SELECTOR = "li.page-item.next-item.disabled"
 LISTING_API_FRAGMENT = "/api/Listing/ListWithOfficePagination"
 
 # Página /listing/search — filtros por JS (react-select), não por URL
+SEARCH_AGENCY_CONTROL_SELECTOR = '[data-id="officeId"] .select__control'
 SEARCH_AGENCY_INPUT_SELECTOR = '[data-id="officeId"] input.select__input'
 SEARCH_RESULTS_CARD_SELECTOR = ".ecommerce-card"
 SEARCH_PAGE_SIZE_SELECT_SELECTOR = "select.custom-select"
@@ -245,9 +246,13 @@ def scrape_all(page):
 def select_agency_filter(page, agency_name: str) -> bool:
     """Escreve o nome no campo react-select 'Agência' e escolhe a primeira
     opção correspondente. Devolve False se não aparecer nenhuma opção
-    (nome não bate certo com o que o Maxwork tem registado)."""
+    (nome não bate certo com o que o Maxwork tem registado).
+    Clica na caixa toda (.select__control) em vez do input isolado — o
+    texto do placeholder ("Agência") fica visualmente por cima do input
+    e intercepta o clique se se tentar clicar só no input."""
+    page.locator(SEARCH_AGENCY_CONTROL_SELECTOR).click()
+    page.wait_for_timeout(300)
     field = page.locator(SEARCH_AGENCY_INPUT_SELECTOR)
-    field.click()
     field.fill(agency_name)
     try:
         option = page.locator(".select__menu .select__option", has_text=agency_name).first
