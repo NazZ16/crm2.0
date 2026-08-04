@@ -48,3 +48,8 @@ next-env.d.ts
 *.swp
 *.swo
 __pycache__/
+
+# scrapers — sessão de login guardada e dados descarregados, nunca para o git
+scrapers/maxwork_session.json
+scrapers/maxwork_imoveis*.csv
+scrapers/fotos/

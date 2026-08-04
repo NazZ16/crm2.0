@@ -25,6 +25,13 @@ MAXWORK_AGENCIES aceita vários nomes (separados por vírgula ou por linha)
 — um por cada agência a pesquisar, incluindo a tua própria se quiseres
 os teus imóveis também. O mesmo imóvel é escrito uma única vez no CSV
 final, mesmo que apareça em mais do que uma pesquisa.
+
+A sessão de login fica guardada em maxwork_session.json (ao lado deste
+ficheiro) depois da primeira corrida — as seguintes reutilizam-na e só
+pedem login Microsoft outra vez se tiver expirado. Importante para
+corridas automáticas/noturnas (Task Scheduler): evita ficar preso à
+espera de um MFA que ninguém vai aprovar. Não apagues nem partilhes esse
+ficheiro — dá acesso à tua conta.
 """
 
 import csv
@@ -33,7 +40,7 @@ import re
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from maxwork_common import EMAIL, PASSWORD, HEADLESS, APP_LOADED_SELECTOR, login, parse_number
+from maxwork_common import EMAIL, PASSWORD, HEADLESS, APP_LOADED_SELECTOR, open_session, parse_number
 
 OUTPUT_CSV = "maxwork_imoveis.csv"
 
@@ -244,15 +251,13 @@ def main():
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=HEADLESS)
-        context = browser.new_context(locale="pt-PT")
-        page = context.new_page()
-
-        login(page)
+        context, page = open_session(browser)
 
         all_rows = []
         for agency_name in AGENCIES:
             all_rows.extend(scrape_agency(page, agency_name))
 
+        context.close()
         browser.close()
 
     # O mesmo imóvel pode aparecer em mais do que uma pesquisa — dedup por código

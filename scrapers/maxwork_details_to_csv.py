@@ -49,7 +49,7 @@ import re
 import requests
 from playwright.sync_api import sync_playwright
 
-from maxwork_common import EMAIL, PASSWORD, HEADLESS, CRM_API_URL, SCRAPER_API_KEY, login, parse_number
+from maxwork_common import EMAIL, PASSWORD, HEADLESS, CRM_API_URL, SCRAPER_API_KEY, open_session, parse_number
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
@@ -343,10 +343,7 @@ def main():
 
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=HEADLESS)
-        context = browser.new_context(locale="pt-PT")
-        page = context.new_page()
-
-        login(page)
+        context, page = open_session(browser)
 
         for i, row in enumerate(rows, start=1):
             url = row.get("url")
@@ -377,6 +374,7 @@ def main():
                 for k in DETAIL_FIELDNAMES:
                     row[k] = None
 
+        context.close()
         browser.close()
 
     fieldnames = list(rows[0].keys()) if rows else []
