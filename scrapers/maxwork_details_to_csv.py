@@ -17,6 +17,12 @@ para ler o essencial (estado/publicado) e salta fotos, descrição e
 características — é aí que está a maior parte do tempo de execução. Só faz
 a extração completa para imóveis novos, que o CRM ainda não conhece.
 
+Sobre as fotos: os URLs do Maxwork são públicos (confirmado — carregam sem
+sessão), por isso o CRM guarda e mostra as fotos diretamente a partir
+desses links, sem precisar dos ficheiros. Por omissão (DOWNLOAD_PHOTOS =
+False) este script só lê os URLs, não descarrega nada — muda para True só
+se quiseres mesmo uma cópia local em fotos/.
+
 COMO USAR:
     1. Corre primeiro o maxwork_to_csv.py (produz maxwork_imoveis.csv)
     2. Garante que tens o mesmo .env (MAXWORK_EMAIL, MAXWORK_PASSWORD,
@@ -59,9 +65,11 @@ PASSWORD_SUBMIT_SELECTOR = "input[type='submit']"
 STAY_SIGNED_IN_SELECTOR = "input#idSIButton9"
 APP_LOADED_SELECTOR = "#search-term"
 
-SCRAPE_PHOTOS = True  # muda para False se quiseres uma passagem mais rápida
+DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM usa
+                          # diretamente os URLs do Maxwork (confirmado públicos,
+                          # não exigem login), por isso não precisa dos ficheiros
 PHOTOS_TAB_TEXT = "Media e Documentos"
-PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel
+PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel (só se DOWNLOAD_PHOTOS=True)
 
 
 def login(page):
@@ -185,7 +193,8 @@ def download_photo(page, url, dest_path):
 
 
 def extract_photos(page, codigo):
-    """Lê os URLs das fotos e descarrega cada uma para fotos/<codigo>/NN.jpg.
+    """Lê os URLs das fotos (sempre — é o que o CRM guarda) e, só se
+    DOWNLOAD_PHOTOS=True, descarrega cada uma para fotos/<codigo>/NN.jpg.
     Devolve (urls, caminhos_locais)."""
     try:
         page.get_by_text(PHOTOS_TAB_TEXT, exact=True).click()
@@ -204,6 +213,9 @@ def extract_photos(page, codigo):
     except Exception as e:
         print(f"     [aviso] não consegui ler fotos: {e}")
         return [], []
+
+    if not DOWNLOAD_PHOTOS:
+        return urls, []
 
     folder = sanitize_folder_name(codigo)
     local_paths = []
@@ -298,15 +310,10 @@ def extract_detail(page, codigo):
         "caracteristicas": ";".join(extract_amenities(page)),
     }
 
-    if SCRAPE_PHOTOS:
-        urls, local_paths = extract_photos(page, codigo)
-        detail["fotos"] = ";".join(urls)
-        detail["fotos_local"] = ";".join(local_paths)
-        detail["num_fotos"] = len(urls)
-    else:
-        detail["fotos"] = None
-        detail["fotos_local"] = None
-        detail["num_fotos"] = None
+    urls, local_paths = extract_photos(page, codigo)
+    detail["fotos"] = ";".join(urls)
+    detail["fotos_local"] = ";".join(local_paths)
+    detail["num_fotos"] = len(urls)
 
     return detail
 
@@ -352,7 +359,7 @@ def main():
     known_urls = fetch_known_source_urls()
     print(f"[maxwork] {len(known_urls)} imóveis já no CRM — esses só levam atualização leve (sem fotos)")
 
-    if SCRAPE_PHOTOS:
+    if DOWNLOAD_PHOTOS:
         os.makedirs(PHOTOS_DIR, exist_ok=True)
 
     with sync_playwright() as pw:
