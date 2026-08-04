@@ -47,6 +47,10 @@ const listingSchema = z.object({
   agent_name: z.string().max(200).optional().nullable(),
   agent_phone: z.string().max(50).optional().nullable(),
   agent_email: z.string().email().max(200).optional().nullable(),
+
+  days_on_market: z.number().int().min(0).optional().nullable(),
+  visit_count: z.number().int().min(0).optional().nullable(),
+  proposal_count: z.number().int().min(0).optional().nullable(),
 })
 
 export async function GET(request: Request) {

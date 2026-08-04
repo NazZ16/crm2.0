@@ -17,7 +17,7 @@ import { toast } from 'sonner'
 import {
   ArrowLeft, MapPin, BedDouble, Bath, Ruler, Car, Zap, RefreshCw,
   Trash2, ExternalLink, CheckCircle2, AlertCircle, Users, UserRound, Phone, Mail,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Clock, Eye, FileText,
 } from 'lucide-react'
 
 function formatPrice(price: number | null): string {
@@ -209,6 +209,35 @@ export default function ListingDetailPage() {
               {listing.energy_rating && <Row label="Classe energética" value={listing.energy_rating} />}
             </CardContent>
           </Card>
+
+          {(listing.days_on_market != null || listing.visit_count != null || listing.proposal_count != null) && (
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Sinais de negócio</CardTitle></CardHeader>
+              <CardContent className="grid grid-cols-3 gap-3 text-sm">
+                {listing.days_on_market != null && (
+                  <div className="flex flex-col items-center gap-1 text-center">
+                    <Clock size={16} className="text-gray-400" />
+                    <span className="font-semibold text-gray-900">{listing.days_on_market}</span>
+                    <span className="text-xs text-gray-500">dias no mercado</span>
+                  </div>
+                )}
+                {listing.visit_count != null && (
+                  <div className="flex flex-col items-center gap-1 text-center">
+                    <Eye size={16} className="text-gray-400" />
+                    <span className="font-semibold text-gray-900">{listing.visit_count}</span>
+                    <span className="text-xs text-gray-500">visitas</span>
+                  </div>
+                )}
+                {listing.proposal_count != null && (
+                  <div className="flex flex-col items-center gap-1 text-center">
+                    <FileText size={16} className="text-gray-400" />
+                    <span className="font-semibold text-gray-900">{listing.proposal_count}</span>
+                    <span className="text-xs text-gray-500">propostas</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Áreas e Divisões</CardTitle></CardHeader>

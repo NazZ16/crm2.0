@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
-import { Plus, MapPin, BedDouble, Ruler, Home as HomeIcon, Chrome } from 'lucide-react'
+import { Plus, MapPin, BedDouble, Ruler, Home as HomeIcon, Chrome, Clock } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
@@ -127,6 +127,9 @@ export default async function ListingsPage({ searchParams }: Props) {
                     )}
                     {(listing.area_useful_m2 ?? listing.area_gross_m2) && (
                       <span className="flex items-center gap-1"><Ruler size={11} />{listing.area_useful_m2 ?? listing.area_gross_m2} m²</span>
+                    )}
+                    {listing.days_on_market != null && (
+                      <span className="flex items-center gap-1"><Clock size={11} />{listing.days_on_market}d mercado</span>
                     )}
                   </div>
 

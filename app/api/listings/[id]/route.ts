@@ -47,6 +47,10 @@ const updateListingSchema = z.object({
   agent_name: z.string().max(200).nullable().optional(),
   agent_phone: z.string().max(50).nullable().optional(),
   agent_email: z.string().email().max(200).nullable().optional(),
+
+  days_on_market: z.number().int().min(0).nullable().optional(),
+  visit_count: z.number().int().min(0).nullable().optional(),
+  proposal_count: z.number().int().min(0).nullable().optional(),
 })
 
 async function getMember(userId: string) {

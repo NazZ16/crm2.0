@@ -8,8 +8,9 @@ dedup por source_url (atualiza os dados se já existir, cria se for novo).
 
 Para imóveis já conhecidos do CRM (coluna "already_in_crm", marcada pelo
 maxwork_details_to_csv.py), envia só o essencial — preço, estado (ativo/
-inativo/etc.) e se está publicado — em vez do imóvel completo. O servidor
-só mexe nos campos que vierem no pedido, por isso isto não apaga fotos,
+inativo/etc.), se está publicado, e os sinais de negócio (dias no
+mercado/visitas/propostas) — em vez do imóvel completo. O servidor só
+mexe nos campos que vierem no pedido, por isso isto não apaga fotos,
 descrição nem características já guardadas.
 
 "listings" é o módulo de imóveis próprios/angariados para venda ou
@@ -189,6 +190,9 @@ def build_payload(row):
             "title": title[:300],
             "source_url": row.get("url") or None,
             "price": int(float(price)),
+            "days_on_market": parse_int(row.get("dias_mercado")),
+            "visit_count": parse_int(row.get("visitas")),
+            "proposal_count": parse_int(row.get("propostas")),
         }
         if status:
             payload["status"] = status
@@ -237,6 +241,10 @@ def build_payload(row):
         "agent_name": row.get("agente") or None,
         "agent_phone": row.get("telefone_agente") or None,
         "agent_email": clean_email(row.get("email_agente")),
+
+        "days_on_market": parse_int(row.get("dias_mercado")),
+        "visit_count": parse_int(row.get("visitas")),
+        "proposal_count": parse_int(row.get("propostas")),
     }
     if is_published is not None:
         payload["is_published"] = is_published

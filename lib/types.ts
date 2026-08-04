@@ -781,6 +781,10 @@ export interface Listing {
   agent_phone: string | null
   agent_email: string | null
 
+  days_on_market: number | null
+  visit_count: number | null
+  proposal_count: number | null
+
   created_at: string
   updated_at: string
 }
