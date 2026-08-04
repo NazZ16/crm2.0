@@ -31,27 +31,16 @@ import csv
 import os
 import re
 
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-load_dotenv()
+from maxwork_common import EMAIL, PASSWORD, HEADLESS, APP_LOADED_SELECTOR, login, parse_number
 
-EMAIL = os.getenv("MAXWORK_EMAIL", "")
-PASSWORD = os.getenv("MAXWORK_PASSWORD", "")
-HEADLESS = os.getenv("HEADLESS", "true").lower() != "false"
 OUTPUT_CSV = "maxwork_imoveis.csv"
 
 SEARCH_URL = "https://app.maxwork.pt/listing/search"
 
 MAXWORK_AGENCIES_RAW = os.getenv("MAXWORK_AGENCIES", "")
 AGENCIES = [a.strip() for a in re.split(r"[,\n]+", MAXWORK_AGENCIES_RAW) if a.strip()]
-
-EMAIL_SELECTOR = "input[name='loginfmt']"
-EMAIL_NEXT_SELECTOR = "input[type='submit']"
-PASSWORD_SELECTOR = "input[name='passwd']"
-PASSWORD_SUBMIT_SELECTOR = "input[type='submit']"
-STAY_SIGNED_IN_SELECTOR = "input#idSIButton9"
-APP_LOADED_SELECTOR = "#search-term"
 
 NEXT_PAGE_SELECTOR = "li.page-item.next-item a.page-link"
 NEXT_PAGE_DISABLED_SELECTOR = "li.page-item.next-item.disabled"
@@ -61,34 +50,6 @@ SEARCH_AGENCY_CONTROL_SELECTOR = '[data-id="officeId"] .select__control'
 SEARCH_AGENCY_INPUT_SELECTOR = '[data-id="officeId"] input.select__input'
 SEARCH_RESULTS_CARD_SELECTOR = ".ecommerce-card"
 SEARCH_PAGE_SIZE_SELECT_SELECTOR = "select.custom-select"
-
-
-def login(page):
-    print("A abrir o Maxwork...")
-    page.goto(SEARCH_URL)
-    page.wait_for_load_state("networkidle")
-
-    if page.query_selector(EMAIL_SELECTOR):
-        print("A fazer login...")
-        page.fill(EMAIL_SELECTOR, EMAIL)
-        page.click(EMAIL_NEXT_SELECTOR)
-        page.wait_for_selector(PASSWORD_SELECTOR, timeout=15000)
-        page.fill(PASSWORD_SELECTOR, PASSWORD)
-        page.click(PASSWORD_SUBMIT_SELECTOR)
-        try:
-            page.wait_for_selector(STAY_SIGNED_IN_SELECTOR, timeout=8000)
-            page.click(STAY_SIGNED_IN_SELECTOR)
-        except Exception:
-            pass
-        page.wait_for_load_state("networkidle")
-
-    page.wait_for_selector(APP_LOADED_SELECTOR, timeout=20000)
-    print("Login OK.")
-
-
-def parse_number(text):
-    digits = re.sub(r"[^\d]", "", text or "")
-    return int(digits) if digits else None
 
 
 def has_next_page(page):

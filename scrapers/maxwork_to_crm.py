@@ -28,15 +28,10 @@ COMO USAR:
 
 import csv
 import os
-import re
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
-
-CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/listings")
-SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
+from maxwork_common import CRM_API_URL, SCRAPER_API_KEY
 
 INPUT_CSV = "maxwork_imoveis_detalhado.csv"
 

@@ -30,10 +30,16 @@ COMO USAR:
     3. python maxwork_details_to_csv.py
     4. Resultado: maxwork_imoveis_detalhado.csv nesta pasta
 
+Também recolhe 3 sinais úteis para triar possíveis negócios (imóvel há
+muito tempo no mercado sem visitas/propostas costuma ser oportunidade
+de negociação): dias no mercado, nº de visitas, nº de propostas. São
+baratos de ler (só texto, sem fotos), por isso são lidos mesmo na
+passagem "leve" de imóveis já conhecidos do CRM.
+
 NOTA: isto continua a visitar 1 página por imóvel (233 páginas) — mas para
-os que já existem no CRM a visita é rápida (só 2 badges, sem fotos). Se
-quiseres testar rápido primeiro, edita LIMIT abaixo (ex: 5) para só
-processar os primeiros N.
+os que já existem no CRM a visita é rápida (só os badges/sinais, sem
+fotos). Se quiseres testar rápido primeiro, edita LIMIT abaixo (ex: 5)
+para só processar os primeiros N.
 """
 
 import csv
@@ -41,58 +47,19 @@ import os
 import re
 
 import requests
-from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
-load_dotenv()
-
-EMAIL = os.getenv("MAXWORK_EMAIL", "")
-PASSWORD = os.getenv("MAXWORK_PASSWORD", "")
-HEADLESS = os.getenv("HEADLESS", "true").lower() != "false"
-
-CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/listings")
-SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
+from maxwork_common import EMAIL, PASSWORD, HEADLESS, CRM_API_URL, SCRAPER_API_KEY, login, parse_number
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
 LIMIT = 5  # ex: 5 para testar só os primeiros 5; None = todos
-
-START_URL = "https://app.maxwork.pt/listing/officelistings"
-EMAIL_SELECTOR = "input[name='loginfmt']"
-EMAIL_NEXT_SELECTOR = "input[type='submit']"
-PASSWORD_SELECTOR = "input[name='passwd']"
-PASSWORD_SUBMIT_SELECTOR = "input[type='submit']"
-STAY_SIGNED_IN_SELECTOR = "input#idSIButton9"
-APP_LOADED_SELECTOR = "#search-term"
 
 DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM usa
                           # diretamente os URLs do Maxwork (confirmado públicos,
                           # não exigem login), por isso não precisa dos ficheiros
 PHOTOS_TAB_TEXT = "Media e Documentos"
 PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel (só se DOWNLOAD_PHOTOS=True)
-
-
-def login(page):
-    print("A abrir o Maxwork...")
-    page.goto(START_URL)
-    page.wait_for_load_state("networkidle")
-
-    if page.query_selector(EMAIL_SELECTOR):
-        print("A fazer login...")
-        page.fill(EMAIL_SELECTOR, EMAIL)
-        page.click(EMAIL_NEXT_SELECTOR)
-        page.wait_for_selector(PASSWORD_SELECTOR, timeout=15000)
-        page.fill(PASSWORD_SELECTOR, PASSWORD)
-        page.click(PASSWORD_SUBMIT_SELECTOR)
-        try:
-            page.wait_for_selector(STAY_SIGNED_IN_SELECTOR, timeout=8000)
-            page.click(STAY_SIGNED_IN_SELECTOR)
-        except Exception:
-            pass
-        page.wait_for_load_state("networkidle")
-
-    page.wait_for_selector(APP_LOADED_SELECTOR, timeout=20000)
-    print("Login OK.")
 
 
 def dd_text(page, data_id):
@@ -125,6 +92,27 @@ def dt_dd_text(page, label):
     )
 
 
+def li_span_text(page, label):
+    """Para os sinais de negócio (Dias no Mercado, Visitas, Propostas):
+    <li><span class="fw-bolder me-25">Label: </span><span>Valor</span></li>
+    — procura o <span> cujo texto seja este label e devolve o texto do
+    <span> irmão seguinte."""
+    return page.evaluate(
+        """(label) => {
+            const spans = Array.from(document.querySelectorAll('li span.fw-bolder.me-25'));
+            for (const span of spans) {
+                const text = span.textContent.trim().replace(/:$/, '').trim();
+                if (text === label) {
+                    const value = span.nextElementSibling;
+                    return value ? value.textContent.trim() : null;
+                }
+            }
+            return null;
+        }""",
+        label,
+    )
+
+
 def extract_amenities(page):
     """Lista de 'chips' na secção Características (ex: Praia, Varanda, Piscina)."""
     els = page.query_selector_all("#listing-attribute label.custom-button-chips")
@@ -149,24 +137,6 @@ def html_to_text(html):
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip() or None
-
-
-def parse_number(text):
-    """Extrai o número do INÍCIO do texto, parando antes da unidade
-    (ex: 'm2'). Antes filtrava dígitos do texto todo, o que apanhava o
-    '2' de 'm2' e colava-o ao número ('150 m2' -> '1502'). Mantém as
-    casas decimais tal como aparecem — não arredonda."""
-    if not text:
-        return None
-    match = re.match(r"\s*([\d.,]+)", text)
-    if not match:
-        return None
-    raw = match.group(1).replace(",", "")
-    try:
-        value = float(raw)
-    except ValueError:
-        return None
-    return int(value) if value.is_integer() else value
 
 
 def sanitize_folder_name(name):
@@ -251,13 +221,18 @@ def fetch_known_source_urls() -> set[str]:
 
 
 def extract_status_only(page):
-    """Versão leve de extract_detail — só os badges do topo (estado/publicado).
-    Usada para imóveis que já existem no CRM: só precisamos de confirmar se
-    mudaram de estado, não de reimportar fotos/descrição/características."""
+    """Versão leve de extract_detail — só os badges do topo (estado/publicado)
+    e os sinais de negócio (dias no mercado/visitas/propostas). Usada para
+    imóveis que já existem no CRM: só precisamos de confirmar se mudaram de
+    estado ou de nível de interesse, não de reimportar fotos/descrição/
+    características — tudo isto é barato de ler (só texto)."""
     badges = [b.inner_text().strip() for b in page.query_selector_all(".badge-detail")]
     return {
         "estado_badge": badges[0] if len(badges) > 0 else None,
         "publicado": badges[1] if len(badges) > 1 else None,
+        "dias_mercado": parse_number(li_span_text(page, "Dias no Mercado")),
+        "visitas": parse_number(li_span_text(page, "Visitas")),
+        "propostas": parse_number(li_span_text(page, "Propostas")),
     }
 
 
@@ -308,6 +283,9 @@ def extract_detail(page, codigo):
         "elevador": dt_dd_text(page, "Elevador"),
         "carregamento_carro_eletrico": dt_dd_text(page, "Carregamento carros elétricos"),
         "caracteristicas": ";".join(extract_amenities(page)),
+        "dias_mercado": parse_number(li_span_text(page, "Dias no Mercado")),
+        "visitas": parse_number(li_span_text(page, "Visitas")),
+        "propostas": parse_number(li_span_text(page, "Propostas")),
     }
 
     urls, local_paths = extract_photos(page, codigo)
@@ -326,6 +304,7 @@ DETAIL_FIELDNAMES = [
     "tipo_estacionamento", "num_lugares_garagem", "num_pisos", "tipo_vista",
     "elevador", "carregamento_carro_eletrico", "caracteristicas",
     "fotos", "fotos_local", "num_fotos",
+    "dias_mercado", "visitas", "propostas",
 ]
 
 # Campos numéricos que podem ter casas decimais — o Excel em português
