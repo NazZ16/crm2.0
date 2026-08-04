@@ -119,16 +119,20 @@ def select_agency_filter(page, agency_name: str) -> bool:
 
 
 def run_search(page):
+    # Sem wait_for_load_state("networkidle") de propósito — os widgets de
+    # fundo (chat, analytics) fazem pedidos periódicos que nunca deixam a
+    # rede "parada", por isso essa espera podia ficar presa até ao timeout
+    # (30s) antes sequer de tentar ler os resultados. Quem espera mesmo
+    # pelos resultados é o wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR)
+    # em scrape_agency(), que verifica o DOM diretamente.
     page.get_by_role("button", name="Ver Resultados").first.click()
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(1000)
+    page.wait_for_timeout(1500)
 
 
 def maximize_search_page_size(page):
     try:
         page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(1500)
     except Exception:
         print("  [aviso] não consegui aumentar o tamanho de página na pesquisa")
 
@@ -210,8 +214,7 @@ def scrape_search_all(page) -> list[dict]:
             break
 
         page.click(NEXT_PAGE_SELECTOR)
-        page.wait_for_load_state("networkidle")
-        page.wait_for_timeout(800)
+        page.wait_for_timeout(1500)
         page_num += 1
 
     return all_rows
