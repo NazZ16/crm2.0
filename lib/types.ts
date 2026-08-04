@@ -828,6 +828,16 @@ export interface ListingMatchResult {
   reasons: Array<{ reason: string; positive: boolean }>
 }
 
+export interface LeadListingMatchResult {
+  listing_id: string
+  listing_title: string
+  listing_price: number | null
+  listing_business_type: ListingBusinessType
+  listing_property_type: ListingPropertyType
+  score: number
+  reasons: Array<{ reason: string; positive: boolean }>
+}
+
 export const LISTING_BUSINESS_TYPE_LABELS: Record<ListingBusinessType, string> = {
   venda: 'Venda',
   arrendamento: 'Arrendamento',

@@ -1,0 +1,34 @@
+import { createClient } from '@/lib/supabase/server'
+import { NextResponse } from 'next/server'
+import { scoreListingsForLead, DEFAULT_LISTING_MATCH_THRESHOLD } from '@/lib/listing-matching-engine'
+import type { LeadWithProfile, Listing } from '@/lib/types'
+
+export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+  const { data: member } = await supabase
+    .from('team_members').select('team_id').eq('user_id', user.id).single()
+  if (!member) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+
+  const { data: lead, error: leadError } = await supabase
+    .from('leads').select('*, lead_profiles(*)').eq('id', id).eq('team_id', member.team_id).single()
+  if (leadError || !lead) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
+
+  const profiles = (lead as { lead_profiles?: unknown }).lead_profiles
+  const profile = Array.isArray(profiles) ? (profiles[0] ?? null) : (profiles ?? null)
+  const normalizedLead = { ...lead, lead_profiles: profile }
+
+  const { data: listings, error: listingsError } = await supabase
+    .from('listings').select('*').eq('team_id', member.team_id).eq('status', 'active')
+  if (listingsError) return NextResponse.json({ error: listingsError.message }, { status: 500 })
+
+  const matches = scoreListingsForLead(
+    normalizedLead as unknown as LeadWithProfile,
+    (listings ?? []) as unknown as Listing[],
+    DEFAULT_LISTING_MATCH_THRESHOLD,
+  )
+  return NextResponse.json(matches)
+}

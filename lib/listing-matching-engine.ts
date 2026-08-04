@@ -3,7 +3,7 @@
 // venda/arrendamento) e leads compradores, usando lead_profiles.home_preferences
 // e financial_profile. Espelha o estilo de lib/matching-engine.ts (investidores).
 
-import type { Listing, LeadWithProfile, ListingMatchResult } from './types'
+import type { Listing, LeadWithProfile, ListingMatchResult, LeadListingMatchResult } from './types'
 
 function norm(s: string): string {
   return s
@@ -23,7 +23,12 @@ function zoneMatches(zonas: string[], listing: Listing): boolean {
   })
 }
 
-export function scoreListingForLead(lead: LeadWithProfile, listing: Listing): ListingMatchResult {
+interface MatchComputation {
+  score: number
+  reasons: Array<{ reason: string; positive: boolean }>
+}
+
+function computeMatch(lead: LeadWithProfile, listing: Listing): MatchComputation {
   const reasons: Array<{ reason: string; positive: boolean }> = []
   let score = 0
 
@@ -35,8 +40,6 @@ export function scoreListingForLead(lead: LeadWithProfile, listing: Listing): Li
   if (financial?.orcamento_max && price) {
     if (price > financial.orcamento_max * 1.1) {
       return {
-        lead_id: lead.id,
-        lead_name: lead.full_name,
         score: 0,
         reasons: [{ reason: `Preço (${price}€) acima do orçamento máximo (${financial.orcamento_max}€)`, positive: false }],
       }
@@ -116,11 +119,14 @@ export function scoreListingForLead(lead: LeadWithProfile, listing: Listing): Li
   }
 
   return {
-    lead_id: lead.id,
-    lead_name: lead.full_name,
     score: Math.min(Math.round(score), 100),
     reasons,
   }
+}
+
+export function scoreListingForLead(lead: LeadWithProfile, listing: Listing): ListingMatchResult {
+  const { score, reasons } = computeMatch(lead, listing)
+  return { lead_id: lead.id, lead_name: lead.full_name, score, reasons }
 }
 
 export function scoreLeadsForListing(
@@ -130,6 +136,28 @@ export function scoreLeadsForListing(
 ): ListingMatchResult[] {
   return leads
     .map((lead) => scoreListingForLead(lead, listing))
+    .filter((r) => r.score >= threshold)
+    .sort((a, b) => b.score - a.score)
+}
+
+export function scoreListingsForLead(
+  lead: LeadWithProfile,
+  listings: Listing[],
+  threshold = 40,
+): LeadListingMatchResult[] {
+  return listings
+    .map((listing) => {
+      const { score, reasons } = computeMatch(lead, listing)
+      return {
+        listing_id: listing.id,
+        listing_title: listing.title,
+        listing_price: listing.price,
+        listing_business_type: listing.business_type,
+        listing_property_type: listing.property_type,
+        score,
+        reasons,
+      }
+    })
     .filter((r) => r.score >= threshold)
     .sort((a, b) => b.score - a.score)
 }

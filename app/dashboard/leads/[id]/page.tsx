@@ -14,6 +14,7 @@ import { DraftSendButtons } from './DraftSendButtons'
 import { QuickActionFab } from './QuickActionFab'
 import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
 import { PendingExtractionBanner } from './PendingExtractionBanner'
+import { ListingMatchesCard } from './ListingMatchesCard'
 import {
   Phone, Mail, Calendar, Clock, ArrowLeft,
   MessageCircle, AlertTriangle, TrendingUp, Bot, Trophy,
@@ -352,6 +353,8 @@ export default async function LeadDetailPage({ params }: Props) {
               </CardContent>
             </Card>
           )}
+
+          {isBuyerLead && <ListingMatchesCard leadId={lead.id} />}
 
           {lead.notes && (
             <Card>
