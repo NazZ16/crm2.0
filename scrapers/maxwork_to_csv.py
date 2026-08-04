@@ -18,8 +18,15 @@ COMO USAR:
            MAXWORK_EMAIL=elsiomota@remax.pt
            MAXWORK_PASSWORD=a-tua-password
            HEADLESS=false
+           MAXWORK_URLS=https://app.maxwork.pt/listing/officelistings,https://app.maxwork.pt/listing/officelistings?outro-filtro
     4. python maxwork_to_csv.py
     5. Resultado: maxwork_imoveis.csv nesta pasta
+
+MAXWORK_URLS aceita vários links (separados por vírgula ou por linha) —
+útil para percorrer várias vistas/filtros guardados no Maxwork numa só
+corrida. Se não definires nada, usa só o link por omissão (comportamento
+de sempre). O mesmo imóvel é escrito uma única vez no CSV final, mesmo
+que apareça em mais do que um link.
 
 NOTA: os cartões não têm um link direto para a ficha do imóvel (por
 isso não há coluna de URL). E a ordem dos 4 campos numéricos de cada
@@ -44,6 +51,9 @@ HEADLESS = os.getenv("HEADLESS", "true").lower() != "false"
 OUTPUT_CSV = "maxwork_imoveis.csv"
 
 START_URL = "https://app.maxwork.pt/listing/officelistings"
+
+MAXWORK_URLS_RAW = os.getenv("MAXWORK_URLS", "")
+LISTING_URLS = [u.strip() for u in re.split(r"[,\n]+", MAXWORK_URLS_RAW) if u.strip()] or [START_URL]
 
 EMAIL_SELECTOR = "input[name='loginfmt']"
 EMAIL_NEXT_SELECTOR = "input[type='submit']"
@@ -91,7 +101,7 @@ def attach_api_listener(page):
 
 def login(page):
     print("A abrir o Maxwork...")
-    page.goto(START_URL)
+    page.goto(LISTING_URLS[0])
     page.wait_for_load_state("networkidle")
 
     if page.query_selector(EMAIL_SELECTOR):
@@ -227,6 +237,8 @@ def main():
     if not EMAIL or not PASSWORD:
         raise SystemExit("Falta MAXWORK_EMAIL / MAXWORK_PASSWORD no ficheiro .env")
 
+    print(f"[maxwork] {len(LISTING_URLS)} link(s) a percorrer")
+
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=HEADLESS)
         context = browser.new_context(locale="pt-PT")
@@ -235,11 +247,29 @@ def main():
         items_by_codigo = attach_api_listener(page)
 
         login(page)
-        switch_to_grid_view(page)
-        maximize_page_size(page)
 
-        rows = scrape_all(page)
+        all_rows = []
+        for i, url in enumerate(LISTING_URLS, start=1):
+            print(f"\n[maxwork] === Link {i}/{len(LISTING_URLS)}: {url} ===")
+            if i > 1:
+                page.goto(url)
+                page.wait_for_load_state("networkidle")
+            switch_to_grid_view(page)
+            maximize_page_size(page)
+            all_rows.extend(scrape_all(page))
+
         browser.close()
+
+    # O mesmo imóvel pode aparecer em mais do que um link — dedup por código
+    seen = set()
+    rows = []
+    for row in all_rows:
+        codigo = row.get("codigo")
+        if codigo and codigo in seen:
+            continue
+        if codigo:
+            seen.add(codigo)
+        rows.append(row)
 
     faltantes = 0
     for row in rows:
