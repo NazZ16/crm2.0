@@ -40,6 +40,7 @@ const updateListingSchema = z.object({
   source: z.string().max(100).optional(),
   source_url: z.string().url().max(2000).nullable().optional(),
   status: z.enum(['active', 'reserved', 'sold', 'withdrawn']).optional(),
+  is_published: z.boolean().nullable().optional(),
   lead_id: z.string().uuid().nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),
 

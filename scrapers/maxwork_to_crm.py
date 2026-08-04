@@ -6,6 +6,12 @@ Lê "maxwork_imoveis_detalhado.csv" (gerado pelo maxwork_details_to_csv.py)
 e faz POST para /api/listings do CRM 2.0. O servidor trata sozinho do
 dedup por source_url (atualiza os dados se já existir, cria se for novo).
 
+Para imóveis já conhecidos do CRM (coluna "already_in_crm", marcada pelo
+maxwork_details_to_csv.py), envia só o essencial — preço, estado (ativo/
+inativo/etc.) e se está publicado — em vez do imóvel completo. O servidor
+só mexe nos campos que vierem no pedido, por isso isto não apaga fotos,
+descrição nem características já guardadas.
+
 "listings" é o módulo de imóveis próprios/angariados para venda ou
 arrendamento (diferente de "opportunities", que é só para o módulo de
 investidores fix&flip / buy-to-let).
@@ -135,6 +141,38 @@ def parse_bool(text):
     return None
 
 
+# Valores do badge "estado" do Maxwork -> enum "status" da tabela listings
+# ('active','reserved','sold','withdrawn')
+STATUS_MAP = {
+    "reserv": "reserved",
+    "vend": "sold",
+    "ativ": "active",
+}
+
+
+def map_status(estado_raw):
+    # "inativ"/"suspens"/"retirad" têm de ser checados primeiro, senão
+    # "inativo" batia em "ativ" do STATUS_MAP por conter esse substring.
+    key = strip_accents(estado_raw or "").lower()
+    if "inativ" in key or "suspens" in key or "retirad" in key:
+        return "withdrawn"
+    for needle, mapped in STATUS_MAP.items():
+        if needle in key:
+            return mapped
+    return None  # desconhecido — não enviar, para não sobrepor o que já está no CRM
+
+
+def parse_publicado(text):
+    if not text:
+        return None
+    key = strip_accents(text).strip().lower()
+    if "nao publicado" in key or "não publicado" in key:
+        return False
+    if "publicado" in key:
+        return True
+    return None
+
+
 def build_payload(row):
     price = row.get("preco")
     if not price or not str(price).strip():
@@ -144,11 +182,30 @@ def build_payload(row):
     if not business_type:
         return None
 
+    status = map_status(row.get("estado_badge") or row.get("estado"))
+    is_published = parse_publicado(row.get("publicado"))
+
+    # Imóvel já conhecido do CRM (marcado por maxwork_details_to_csv.py) —
+    # só atualiza o essencial. O servidor só toca nos campos que vierem no
+    # pedido, por isso omitir os restantes não apaga o que já lá está.
+    if row.get("already_in_crm") == "1":
+        title = row.get("titulo_curto") or row.get("titulo") or "Imóvel Maxwork"
+        payload = {
+            "title": title[:300],
+            "source_url": row.get("url") or None,
+            "price": int(float(price)),
+        }
+        if status:
+            payload["status"] = status
+        if is_published is not None:
+            payload["is_published"] = is_published
+        return payload
+
     title = row.get("titulo_curto") or row.get("titulo") or "Imóvel Maxwork"
     description = (row.get("descricao_completa") or "")[:5000] or None
     photos = [u for u in (row.get("fotos") or "").split(";") if u]
 
-    return {
+    payload = {
         "reference": row.get("codigo"),
         "title": title[:300],
         "business_type": business_type,
@@ -180,12 +237,15 @@ def build_payload(row):
 
         "source": "maxwork",
         "source_url": row.get("url") or None,
-        "status": "active",
+        "status": status or "active",
 
         "agent_name": row.get("agente") or None,
         "agent_phone": row.get("telefone_agente") or None,
         "agent_email": clean_email(row.get("email_agente")),
     }
+    if is_published is not None:
+        payload["is_published"] = is_published
+    return payload
 
 
 def post_to_crm(payload):

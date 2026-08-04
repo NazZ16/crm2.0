@@ -11,21 +11,30 @@ A maior parte dos campos usa atributos data-id (ex: dd[data-id="totalArea"])
 que a própria app usa internamente — muito mais fiável do que depender
 de classes CSS genéricas.
 
+Antes de começar, consulta o CRM (CRM_API_URL/SCRAPER_API_KEY) para saber
+que imóveis já lá existem (por source_url). Para esses, só entra na ficha
+para ler o essencial (estado/publicado) e salta fotos, descrição e
+características — é aí que está a maior parte do tempo de execução. Só faz
+a extração completa para imóveis novos, que o CRM ainda não conhece.
+
 COMO USAR:
     1. Corre primeiro o maxwork_to_csv.py (produz maxwork_imoveis.csv)
-    2. Garante que tens o mesmo .env (MAXWORK_EMAIL, MAXWORK_PASSWORD)
+    2. Garante que tens o mesmo .env (MAXWORK_EMAIL, MAXWORK_PASSWORD,
+       CRM_API_URL, SCRAPER_API_KEY)
     3. python maxwork_details_to_csv.py
     4. Resultado: maxwork_imoveis_detalhado.csv nesta pasta
 
-NOTA: isto visita 1 página por imóvel (233 páginas) — demora bastante
-mais do que o script da lista. Se quiseres testar rápido primeiro,
-edita LIMIT abaixo (ex: 5) para só processar os primeiros N.
+NOTA: isto continua a visitar 1 página por imóvel (233 páginas) — mas para
+os que já existem no CRM a visita é rápida (só 2 badges, sem fotos). Se
+quiseres testar rápido primeiro, edita LIMIT abaixo (ex: 5) para só
+processar os primeiros N.
 """
 
 import csv
 import os
 import re
 
+import requests
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
@@ -34,6 +43,9 @@ load_dotenv()
 EMAIL = os.getenv("MAXWORK_EMAIL", "")
 PASSWORD = os.getenv("MAXWORK_PASSWORD", "")
 HEADLESS = os.getenv("HEADLESS", "true").lower() != "false"
+
+CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/listings")
+SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
@@ -207,6 +219,36 @@ def extract_photos(page, codigo):
     return urls, local_paths
 
 
+def fetch_known_source_urls() -> set[str]:
+    """Consulta o CRM para saber que imóveis já existem (por source_url).
+    Para esses, main() vai usar extract_status_only em vez de extract_detail
+    — poupa a parte mais lenta (fotos, descrição, características) em quem
+    já foi importado antes."""
+    if not CRM_API_URL or not SCRAPER_API_KEY:
+        print("[aviso] CRM_API_URL/SCRAPER_API_KEY em falta — a tratar todos os imóveis como novos")
+        return set()
+    try:
+        resp = requests.get(CRM_API_URL, headers={"X-API-Key": SCRAPER_API_KEY}, timeout=20)
+        if not resp.ok:
+            print(f"[aviso] Falha a consultar o CRM (HTTP {resp.status_code}) — a tratar todos como novos")
+            return set()
+        return {item["source_url"] for item in resp.json() if item.get("source_url")}
+    except requests.RequestException as e:
+        print(f"[aviso] Erro de rede a consultar o CRM: {e} — a tratar todos como novos")
+        return set()
+
+
+def extract_status_only(page):
+    """Versão leve de extract_detail — só os badges do topo (estado/publicado).
+    Usada para imóveis que já existem no CRM: só precisamos de confirmar se
+    mudaram de estado, não de reimportar fotos/descrição/características."""
+    badges = [b.inner_text().strip() for b in page.query_selector_all(".badge-detail")]
+    return {
+        "estado_badge": badges[0] if len(badges) > 0 else None,
+        "publicado": badges[1] if len(badges) > 1 else None,
+    }
+
+
 def extract_detail(page, codigo):
     badges = [b.inner_text().strip() for b in page.query_selector_all(".badge-detail")]
     estado_badge = badges[0] if len(badges) > 0 else None
@@ -307,6 +349,9 @@ def main():
     if LIMIT:
         rows = rows[:LIMIT]
 
+    known_urls = fetch_known_source_urls()
+    print(f"[maxwork] {len(known_urls)} imóveis já no CRM — esses só levam atualização leve (sem fotos)")
+
     if SCRAPE_PHOTOS:
         os.makedirs(PHOTOS_DIR, exist_ok=True)
 
@@ -320,19 +365,27 @@ def main():
         for i, row in enumerate(rows, start=1):
             url = row.get("url")
             codigo = row.get("codigo")
+            already_known = bool(url and url in known_urls)
+            row["already_in_crm"] = "1" if already_known else ""
+
             if not url:
                 print(f"[{i}/{len(rows)}] {codigo} — sem url, a saltar")
                 for k in DETAIL_FIELDNAMES:
                     row[k] = None
                 continue
 
-            print(f"[{i}/{len(rows)}] {codigo} -> {url}")
+            mode = "atualização leve" if already_known else "completo"
+            print(f"[{i}/{len(rows)}] {codigo} -> {url} ({mode})")
             try:
                 page.goto(url)
                 page.wait_for_selector(".badge-detail", timeout=15000)
                 page.wait_for_timeout(300)
-                detail = extract_detail(page, codigo)
-                row.update(detail)
+                if already_known:
+                    for k in DETAIL_FIELDNAMES:
+                        row.setdefault(k, None)
+                    row.update(extract_status_only(page))
+                else:
+                    row.update(extract_detail(page, codigo))
             except Exception as e:
                 print(f"     [erro] {e}")
                 for k in DETAIL_FIELDNAMES:

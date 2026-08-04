@@ -773,6 +773,7 @@ export interface Listing {
   source: string | null
   source_url: string | null
   status: ListingStatus
+  is_published: boolean | null
   lead_id: string | null
   notes: string | null
 
