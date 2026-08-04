@@ -1,8 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Key, Clock, Bell, Search, Smartphone, Send } from 'lucide-react'
+import { Key, Clock, Bell, Smartphone, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { ApiKeysSection } from './ApiKeysSection'
-import { ScraperConfigSection } from './ScraperConfigSection'
 import { PwaInstallButton } from '@/components/PwaInstallButton'
 import { GoogleCalendarSection } from './GoogleCalendarSection'
 
@@ -93,12 +92,6 @@ export default async function SettingsPage({
     teamId = member?.team_id ?? null
   }
 
-  const { data: scraperConfig } = await supabase
-    .from('team_scraper_config')
-    .select('zones, max_price, typologies, enabled')
-    .eq('team_id', teamId ?? '')
-    .maybeSingle()
-
   // Estado da conexao Google
   let googleEmail: string | null = null
   let googleScope: string | null = null
@@ -119,13 +112,6 @@ export default async function SettingsPage({
     : params.google_error
     ? { type: 'error' as const, text: `Erro: ${params.google_error}` }
     : null
-
-  const defaultScraperConfig = {
-    zones: [] as string[],
-    max_price: 800000,
-    typologies: [] as string[],
-    enabled: true,
-  }
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -164,7 +150,7 @@ export default async function SettingsPage({
             API Keys — Scraper &amp; Integrações Externas
           </CardTitle>
           <CardDescription>
-            Gera keys para autenticar o scraper Remax e outras integrações externas.
+            Gera keys para autenticar os scrapers (Maxwork) e outras integrações externas.
             Cada equipa gere as suas próprias keys de forma independente.
           </CardDescription>
         </CardHeader>
@@ -180,42 +166,17 @@ export default async function SettingsPage({
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Search size={16} />
-            Scraper Remax — Configuração
-          </CardTitle>
-          <CardDescription>
-            Define as zonas, preço máximo e tipologias que o scraper procura diariamente.
-            Podes também acionar o scraper manualmente aqui ou a partir do perfil de uma lead.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isAdmin ? (
-            <ScraperConfigSection initialConfig={scraperConfig ?? defaultScraperConfig} />
-          ) : (
-            <div className="text-sm text-gray-500 space-y-1">
-              <p>Zonas: {scraperConfig?.zones?.join(', ') || '—'}</p>
-              <p>Preço máximo: {scraperConfig?.max_price?.toLocaleString('pt-PT') ?? '—'} €</p>
-              <p>Tipologias: {scraperConfig?.typologies?.join(', ') || 'Todas'}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
             <Clock size={16} />
             Automação — Cron Jobs
           </CardTitle>
           <CardDescription>
-            Corre via Vercel Cron (config em vercel.json) e GitHub Actions (scraper) — sem orquestrador externo.
+            Corre via Vercel Cron (config em vercel.json) — sem orquestrador externo.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-gray-600">
           <p>✅ <strong>Morning Briefing</strong> — Cron 7:00 AM dias úteis → POST /api/agents/followup</p>
           <p>✅ <strong>Alerta Leads Frias</strong> — Cron Domingo 18:00 → POST /api/agents/followup</p>
           <p>✅ <strong>Coach Semanal</strong> — Cron Domingo 9:00 → GET /api/agents/coach?type=weekly</p>
-          <p>✅ <strong>Scraper Remax</strong> — GitHub Actions diário → POST /api/opportunities</p>
         </CardContent>
       </Card>
 

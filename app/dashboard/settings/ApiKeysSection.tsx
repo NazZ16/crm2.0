@@ -95,7 +95,7 @@ export function ApiKeysSection({ isAdmin }: { isAdmin: boolean }) {
       <div className="space-y-3">
         <div className="flex items-end gap-2">
           <div className="flex-1">
-            <Label className="text-xs text-gray-500 mb-1 block">Nome da key (ex: Scraper Remax)</Label>
+            <Label className="text-xs text-gray-500 mb-1 block">Nome da key (ex: Scraper Maxwork)</Label>
             <Input
               placeholder="Descrição da key"
               value={label}

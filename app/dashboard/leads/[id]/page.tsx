@@ -9,7 +9,6 @@ import { LeadDetailClient } from './LeadDetailClient'
 import { TaskList } from './TaskList'
 import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
-import { ScraperTriggerButton } from './ScraperTriggerButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
 import { DraftSendButtons } from './DraftSendButtons'
 import { QuickActionFab } from './QuickActionFab'
@@ -115,11 +114,6 @@ export default async function LeadDetailPage({ params }: Props) {
     .eq('lead_id', lead.id)
     .maybeSingle()
 
-  const leadZones = (leadProfile?.home_preferences as { zonas?: string[] } | null)?.zonas ?? undefined
-  const leadBudget = (leadProfile?.financial_profile as { orcamento_max?: number } | null)?.orcamento_max ?? undefined
-  const leadTypology = (leadProfile?.home_preferences as { tipologia?: string } | null)?.tipologia
-  const leadTypologies = leadTypology ? [leadTypology] : undefined
-
   // Tipo de lead (migration 015) e perfil de vendedor.
   const leadType = ((lead.lead_type as LeadType | null | undefined) ?? 'unknown') as LeadType
   const sellerProfile = (leadProfile?.seller_profile as SellerProfile | null) ?? null
@@ -222,14 +216,6 @@ export default async function LeadDetailPage({ params }: Props) {
                   <TrendingUp className="mr-1 h-3 w-3" /> Ver Perfil de Investidor
                 </Badge>
               </Link>
-            )}
-            {member.role !== 'viewer' && isBuyerLead && (
-              <ScraperTriggerButton
-                leadId={lead.id}
-                zones={leadZones}
-                maxPrice={leadBudget}
-                typologies={leadTypologies}
-              />
             )}
           </div>
         </div>

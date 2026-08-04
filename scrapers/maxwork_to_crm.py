@@ -3,9 +3,8 @@
 Maxwork -> CRM (listings)
 
 Lê "maxwork_imoveis_detalhado.csv" (gerado pelo maxwork_details_to_csv.py)
-e faz POST para /api/listings do CRM 2.0, no mesmo princípio que o
-remax_scraper.py já usa. O servidor trata sozinho do dedup por
-source_url (atualiza o preço se já existir, cria se for novo).
+e faz POST para /api/listings do CRM 2.0. O servidor trata sozinho do
+dedup por source_url (atualiza os dados se já existir, cria se for novo).
 
 "listings" é o módulo de imóveis próprios/angariados para venda ou
 arrendamento (diferente de "opportunities", que é só para o módulo de
