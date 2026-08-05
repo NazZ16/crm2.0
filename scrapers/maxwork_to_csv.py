@@ -65,31 +65,46 @@ def has_next_page(page):
     return page.query_selector(NEXT_PAGE_SELECTOR) is not None
 
 
-def select_agency_filter(page, agency_name: str) -> bool:
+def select_agency_filter(page, agency_name: str, attempts: int = 3) -> bool:
     """Escreve o nome no campo react-select 'Agência' e escolhe a primeira
     opção correspondente. Devolve False se não aparecer nenhuma opção
     (nome não bate certo com o que o Maxwork tem registado).
     Clica na caixa toda (.select__control) em vez do input isolado — o
     texto do placeholder ("Agência") fica visualmente por cima do input
-    e intercepta o clique se se tentar clicar só no input."""
-    page.locator(SEARCH_AGENCY_CONTROL_SELECTOR).click()
-    field = page.locator(SEARCH_AGENCY_INPUT_SELECTOR)
-    field.wait_for(state="visible", timeout=5000)
-    field.fill(agency_name)
-    try:
-        option = page.locator(".select__menu .select__option", has_text=agency_name).first
-        option.wait_for(timeout=8000)
-        option.click()
-        page.wait_for_timeout(300)  # dá tempo ao estado do react-select assentar antes de pesquisar
-        return True
-    except PlaywrightTimeout:
-        options = page.locator(".select__menu .select__option").all_inner_texts()
-        print(f"  [aviso] Nenhuma agência encontrada para \"{agency_name}\" — a saltar")
-        if options:
-            print(f"  [debug] opções visíveis no dropdown: {options}")
-        else:
-            print("  [debug] dropdown sem opções visíveis (menu pode não ter aberto)")
-        return False
+    e intercepta o clique se se tentar clicar só no input.
+
+    A lista de agências deste campo é carregada de forma assíncrona (só
+    depois de escrever é que o Maxwork vai buscar as opções ao servidor)
+    — logo a seguir a um load/reload da página essa lista às vezes ainda
+    não está pronta e o dropdown aparece vazio, mesmo com o nome certo.
+    Por isso tenta várias vezes antes de desistir."""
+    for attempt in range(1, attempts + 1):
+        page.locator(SEARCH_AGENCY_CONTROL_SELECTOR).click()
+        field = page.locator(SEARCH_AGENCY_INPUT_SELECTOR)
+        field.wait_for(state="visible", timeout=5000)
+        field.fill(agency_name)
+        try:
+            option = page.locator(".select__menu .select__option", has_text=agency_name).first
+            option.wait_for(timeout=8000)
+            option.click()
+            page.wait_for_timeout(300)  # dá tempo ao estado do react-select assentar antes de pesquisar
+            return True
+        except PlaywrightTimeout:
+            options = page.locator(".select__menu .select__option").all_inner_texts()
+            if options:
+                # o dropdown abriu com opções a sério, só nenhuma bate certo
+                # com o nome — não vale a pena repetir, o nome é que está errado
+                print(f"  [aviso] Nenhuma agência encontrada para \"{agency_name}\" — a saltar")
+                print(f"  [debug] opções visíveis no dropdown: {options}")
+                return False
+            if attempt < attempts:
+                print(f"  [aviso] dropdown ainda sem opções (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(1500)
+            else:
+                print(f"  [aviso] Nenhuma agência encontrada para \"{agency_name}\" — a saltar")
+                print("  [debug] dropdown sem opções visíveis (menu pode não ter aberto) após várias tentativas")
+    return False
 
 
 def run_search(page):
