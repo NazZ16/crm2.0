@@ -53,3 +53,4 @@ __pycache__/
 scrapers/maxwork_session.json
 scrapers/maxwork_imoveis*.csv
 scrapers/fotos/
+scrapers/logs/

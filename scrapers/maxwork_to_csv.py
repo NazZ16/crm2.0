@@ -118,6 +118,26 @@ def run_search(page):
     page.wait_for_timeout(1500)
 
 
+def wait_for_results(page, agency_name: str, attempts: int = 3) -> bool:
+    """Espera pelos cartões de resultados depois de clicar "Ver Resultados".
+    Já aconteceu ficar sem nenhum cartão mesmo com a agência bem filtrada —
+    a mesma instabilidade de carregamento assíncrono do dropdown "Agência",
+    desta vez a atrasar a pesquisa em si. Por isso volta a clicar em "Ver
+    Resultados" e a tentar de novo antes de assumir que é mesmo zero
+    resultados."""
+    for attempt in range(1, attempts + 1):
+        try:
+            page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
+            return True
+        except PlaywrightTimeout:
+            if attempt < attempts:
+                print(f"  [aviso] cartões ainda não apareceram (tentativa {attempt}/{attempts}) — a repetir a pesquisa...")
+                run_search(page)
+            else:
+                print(f"  [aviso] Sem resultados para \"{agency_name}\" após {attempts} tentativas")
+    return False
+
+
 def maximize_search_page_size(page):
     try:
         page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
@@ -242,10 +262,7 @@ def scrape_agency(page, agency_name: str, reload: bool = True) -> list[dict]:
         return []
 
     run_search(page)
-    try:
-        page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=25000)
-    except PlaywrightTimeout:
-        print(f"  [aviso] Sem resultados para \"{agency_name}\" (ou a pesquisa demorou mais de 25s a carregar)")
+    if not wait_for_results(page, agency_name):
         return []
 
     maximize_search_page_size(page)

@@ -6,12 +6,57 @@ login, parsing de números, e as variáveis de ambiente comuns. Evita ter
 o mesmo código de login/credenciais copiado três vezes.
 """
 
+import datetime
 import os
 import re
+import sys
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+
+
+class _Tee:
+    """Escreve em vários streams ao mesmo tempo (ex.: terminal + ficheiro)."""
+
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, data):
+        for s in self.streams:
+            s.write(data)
+        return len(data)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+
+def setup_logging():
+    """Duplica tudo o que é impresso (print + tracebacks de erros) também
+    para um ficheiro em scrapers/logs/ — para conseguires ver o que
+    aconteceu mesmo depois de a janela do terminal fechar (corrida pelo
+    Task Scheduler, ou a janela a fechar sozinha no fim/num erro).
+
+    Usa MAXWORK_RUN_LOG (definida pelo run_all.bat) para os 3 scripts
+    escreverem no mesmo ficheiro numa única corrida; sem essa variável
+    (a correr um script sozinho, fora do run_all.bat), cria o seu
+    próprio ficheiro com a hora atual."""
+    os.makedirs(LOG_DIR, exist_ok=True)
+    log_path = os.getenv("MAXWORK_RUN_LOG") or os.path.join(
+        LOG_DIR, f"run_{datetime.datetime.now():%Y%m%d_%H%M%S}.log"
+    )
+    log_file = open(log_path, "a", encoding="utf-8")
+    sys.stdout = _Tee(sys.__stdout__, log_file)
+    sys.stderr = _Tee(sys.__stderr__, log_file)
+    script = os.path.basename(sys.argv[0])
+    print(f"\n{'=' * 70}\n{datetime.datetime.now():%Y-%m-%d %H:%M:%S} — {script}\n{'=' * 70}")
+    return log_path
+
+
+setup_logging()
 
 EMAIL = os.getenv("MAXWORK_EMAIL", "")
 PASSWORD = os.getenv("MAXWORK_PASSWORD", "")
