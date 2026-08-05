@@ -114,31 +114,50 @@ def run_search(page):
     # (30s) antes sequer de tentar ler os resultados. Quem espera mesmo
     # pelos resultados é o wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR)
     # em scrape_agency(), que verifica o DOM diretamente.
+    print("  a clicar em \"Ver Resultados\"...")
     page.get_by_role("button", name="Ver Resultados").first.click()
     page.wait_for_timeout(1500)
 
 
-def wait_for_results(page, agency_name: str, attempts: int = 3) -> bool:
-    """Espera pelos cartões de resultados depois de clicar "Ver Resultados".
-    Já aconteceu ficar sem nenhum cartão mesmo com a agência bem filtrada —
-    a mesma instabilidade de carregamento assíncrono do dropdown "Agência",
-    desta vez a atrasar a pesquisa em si. Por isso volta a clicar em "Ver
-    Resultados" e a tentar de novo antes de assumir que é mesmo zero
-    resultados."""
+def first_card_key(page) -> str | None:
+    """Assinatura (href) do 1º cartão de resultados no ecrã. A Maxwork
+    atualiza o número em "Total de imóveis encontrados" assim que se muda
+    de agência, mas os CARTÕES por baixo continuam a ser os da pesquisa
+    anterior até a grelha atualizar a sério — por isso não chega verificar
+    que existe ALGUM cartão, é preciso confirmar que já não é o mesmo de
+    antes de pesquisar."""
+    card = page.query_selector(SEARCH_RESULTS_CARD_SELECTOR)
+    if not card:
+        return None
+    link = card.query_selector('.item-name a[href*="/listing/details/"]')
+    return link.get_attribute("href") if link else None
+
+
+def wait_for_results(page, agency_name: str, previous_first: str | None, attempts: int = 3) -> bool:
+    """Espera que a grelha de resultados atualize a sério depois de clicar
+    "Ver Resultados" — não só que apareça ALGUM cartão (podem ser os da
+    pesquisa anterior, ver first_card_key()), mas que o 1º cartão seja
+    diferente do que estava lá antes. Se não atualizar, ou se não aparecer
+    cartão nenhum, volta a clicar em "Ver Resultados" e tenta de novo."""
     for attempt in range(1, attempts + 1):
         try:
             page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
-            return True
+            if previous_first is None or first_card_key(page) != previous_first:
+                return True
+            print(f"  [aviso] resultados ainda são os da pesquisa anterior (tentativa {attempt}/{attempts})")
         except PlaywrightTimeout:
-            if attempt < attempts:
-                print(f"  [aviso] cartões ainda não apareceram (tentativa {attempt}/{attempts}) — a repetir a pesquisa...")
-                run_search(page)
-            else:
-                print(f"  [aviso] Sem resultados para \"{agency_name}\" após {attempts} tentativas")
+            print(f"  [aviso] cartões ainda não apareceram (tentativa {attempt}/{attempts})")
+
+        if attempt < attempts:
+            print("  a repetir a pesquisa...")
+            run_search(page)
+        else:
+            print(f"  [aviso] Sem resultados (novos) para \"{agency_name}\" após {attempts} tentativas")
     return False
 
 
 def maximize_search_page_size(page):
+    print("  a aumentar o tamanho de página da pesquisa...")
     try:
         page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
         page.wait_for_timeout(1500)
@@ -261,8 +280,9 @@ def scrape_agency(page, agency_name: str, reload: bool = True) -> list[dict]:
     if not select_agency_filter(page, agency_name):
         return []
 
+    previous_first = first_card_key(page)
     run_search(page)
-    if not wait_for_results(page, agency_name):
+    if not wait_for_results(page, agency_name, previous_first):
         return []
 
     maximize_search_page_size(page)
