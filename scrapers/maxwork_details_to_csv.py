@@ -227,13 +227,21 @@ def extract_status_only(page):
     estado ou de nível de interesse, não de reimportar fotos/descrição/
     características — tudo isto é barato de ler (só texto)."""
     badges = [b.inner_text().strip() for b in page.query_selector_all(".badge-detail")]
-    return {
+    result = {
         "estado_badge": badges[0] if len(badges) > 0 else None,
         "publicado": badges[1] if len(badges) > 1 else None,
         "dias_mercado": parse_number(li_span_text(page, "Dias no Mercado")),
         "visitas": parse_number(li_span_text(page, "Visitas")),
         "propostas": parse_number(li_span_text(page, "Propostas")),
     }
+    # "Preço do Imóvel" na ficha é mais fiável que o preço lido no cartão da
+    # pesquisa (maxwork_to_csv.py) — só sobrepõe a coluna "preco" existente
+    # se conseguir ler um valor, para não perder o preço da pesquisa em caso
+    # de erro.
+    preco = parse_number(li_span_text(page, "Preço do Imóvel"))
+    if preco is not None:
+        result["preco"] = preco
+    return result
 
 
 def extract_detail(page, codigo):
@@ -287,6 +295,12 @@ def extract_detail(page, codigo):
         "visitas": parse_number(li_span_text(page, "Visitas")),
         "propostas": parse_number(li_span_text(page, "Propostas")),
     }
+
+    # Idem extract_status_only(): o preço da ficha é mais fiável que o do
+    # cartão da pesquisa.
+    preco = parse_number(li_span_text(page, "Preço do Imóvel"))
+    if preco is not None:
+        detail["preco"] = preco
 
     urls, local_paths = extract_photos(page, codigo)
     detail["fotos"] = ";".join(urls)

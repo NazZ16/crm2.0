@@ -46,7 +46,26 @@ def login(page, start_url: str = LOGIN_URL):
     podem nunca deixar a rede "parada"."""
     print("A abrir o Maxwork...")
     page.goto(start_url)
-    page.wait_for_selector(f"{EMAIL_SELECTOR}, {APP_LOADED_SELECTOR}", timeout=20000)
+
+    # Com storage_state de uma sessão anterior, a Microsoft por vezes não
+    # avança logo para a app — mostra o ecrã "Escolher conta" (a sessão SSO
+    # continua ativa, mas o Azure AD pede para confirmar qual conta usar
+    # antes de continuar). Sem tratar isto, o script fica preso à espera do
+    # campo de email ou da app carregar, e nenhum dos dois aparece.
+    account_tile_selector = f'[data-test-id="{EMAIL}"]'
+    page.wait_for_selector(
+        f"{EMAIL_SELECTOR}, {APP_LOADED_SELECTOR}, {account_tile_selector}",
+        timeout=20000,
+    )
+
+    if not page.query_selector(APP_LOADED_SELECTOR) and not page.query_selector(EMAIL_SELECTOR):
+        account_tile = page.locator(account_tile_selector)
+        if account_tile.count() == 0 and EMAIL:
+            account_tile = page.get_by_text(EMAIL, exact=False)
+        if account_tile.count() > 0:
+            print("Ecrã 'Escolher conta' da Microsoft — a selecionar a conta guardada...")
+            account_tile.first.click()
+            page.wait_for_selector(f"{EMAIL_SELECTOR}, {APP_LOADED_SELECTOR}", timeout=15000)
 
     if page.query_selector(EMAIL_SELECTOR):
         print("A fazer login...")
@@ -85,15 +104,19 @@ def open_session(browser):
 
 
 def parse_number(text):
-    """Extrai o número do INÍCIO do texto, parando antes da unidade (ex.:
-    'm2') e preservando casas decimais (ex.: '165.13 m2' -> 165.13, não
-    16513 — filtrar dígitos do texto todo colava o '2' de 'm2' ao valor)."""
+    """Extrai o número do texto, parando antes da unidade (ex.: 'm2') e
+    preservando casas decimais (ex.: '165.13 m2' -> 165.13, não 16513 —
+    filtrar dígitos do texto todo colava o '2' de 'm2' ao valor).
+
+    Preços do Maxwork usam espaço como separador de milhares (ex.:
+    '3 250 000 €') — sem tratar o espaço como parte do número, o regex
+    parava no primeiro espaço e devolvia só '3'."""
     if not text:
         return None
-    match = re.match(r"\s*([\d.,]+)", text)
+    match = re.search(r"\d[\d.,\s]*", text)
     if not match:
         return None
-    raw = match.group(1).replace(",", "")
+    raw = match.group(0).replace(",", "").replace(" ", "").strip()
     try:
         value = float(raw)
     except ValueError:
