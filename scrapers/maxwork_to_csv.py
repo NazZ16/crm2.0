@@ -73,16 +73,22 @@ def select_agency_filter(page, agency_name: str) -> bool:
     texto do placeholder ("Agência") fica visualmente por cima do input
     e intercepta o clique se se tentar clicar só no input."""
     page.locator(SEARCH_AGENCY_CONTROL_SELECTOR).click()
-    page.wait_for_timeout(300)
     field = page.locator(SEARCH_AGENCY_INPUT_SELECTOR)
+    field.wait_for(state="visible", timeout=5000)
     field.fill(agency_name)
     try:
         option = page.locator(".select__menu .select__option", has_text=agency_name).first
         option.wait_for(timeout=8000)
         option.click()
+        page.wait_for_timeout(300)  # dá tempo ao estado do react-select assentar antes de pesquisar
         return True
     except PlaywrightTimeout:
+        options = page.locator(".select__menu .select__option").all_inner_texts()
         print(f"  [aviso] Nenhuma agência encontrada para \"{agency_name}\" — a saltar")
+        if options:
+            print(f"  [debug] opções visíveis no dropdown: {options}")
+        else:
+            print("  [debug] dropdown sem opções visíveis (menu pode não ter aberto)")
         return False
 
 
@@ -188,13 +194,16 @@ def scrape_search_all(page) -> list[dict]:
     return all_rows
 
 
-def scrape_agency(page, agency_name: str) -> list[dict]:
+def scrape_agency(page, agency_name: str, reload: bool = True) -> list[dict]:
     print(f"\n[maxwork] === Agência: {agency_name} ===")
 
-    # login() já deixa a página em SEARCH_URL — recarregar outra vez à toa
-    # só torna as coisas mais lentas/instáveis na primeira agência. Para as
-    # seguintes, o reload é preciso para limpar o filtro da pesquisa anterior.
-    if not page.url.startswith(SEARCH_URL):
+    # login() já deixa a página em SEARCH_URL, mas a pesquisa filtra por JS
+    # sem mudar de URL — sem reload, os cartões de resultados da agência
+    # anterior continuam no ecrã e ficam por cima do filtro "Agência",
+    # impedindo abrir/preencher o campo para a agência seguinte. Só a
+    # primeira chamada (logo a seguir ao login, página ainda limpa) pode
+    # poupar este reload.
+    if reload:
         page.goto(SEARCH_URL, wait_until="domcontentloaded")
 
     # Espera por um elemento concreto em vez de "networkidle" — a página tem
@@ -219,9 +228,9 @@ def scrape_agency(page, agency_name: str) -> list[dict]:
 
     run_search(page)
     try:
-        page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
+        page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=25000)
     except PlaywrightTimeout:
-        print(f"  [aviso] Sem resultados para \"{agency_name}\"")
+        print(f"  [aviso] Sem resultados para \"{agency_name}\" (ou a pesquisa demorou mais de 25s a carregar)")
         return []
 
     maximize_search_page_size(page)
@@ -254,8 +263,8 @@ def main():
         context, page = open_session(browser)
 
         all_rows = []
-        for agency_name in AGENCIES:
-            all_rows.extend(scrape_agency(page, agency_name))
+        for i, agency_name in enumerate(AGENCIES):
+            all_rows.extend(scrape_agency(page, agency_name, reload=(i > 0)))
 
         context.close()
         browser.close()
