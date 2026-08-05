@@ -62,66 +62,86 @@ PHOTOS_TAB_TEXT = "Media e Documentos"
 PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel (só se DOWNLOAD_PHOTOS=True)
 
 
-def dd_text(page, data_id):
-    el = page.query_selector(f'dd[data-id="{data_id}"]')
-    if not el:
-        return None
-    text = el.inner_text().strip()
-    return text if text else None
-
-
-def dt_dd_text(page, label):
-    """Para campos SEM data-id (ex: Elevador, Carregamento carros elétricos):
-    procura um <dt> cujo texto seja este label e devolve o texto do <dd>
-    logo a seguir — mesmo padrão dt/dd usado no resto da ficha, só que sem
-    o atributo data-id nestes casos específicos."""
-    return page.evaluate(
-        """(label) => {
-            const dts = Array.from(document.querySelectorAll('dt.fw-bolder'));
-            for (const dt of dts) {
-                const text = dt.textContent.trim().replace(/:$/, '').trim();
-                if (text === label) {
-                    const dd = dt.nextElementSibling;
-                    const value = dd ? dd.textContent.trim() : '';
-                    return value || null;
-                }
+# Lê TODOS os campos da ficha de uma só vez dentro do browser (1 chamada
+# JS) em vez de um query_selector/inner_text por campo em Python — a
+# versão anterior fazia ~85 idas-e-voltas Python<->browser por imóvel novo
+# (17 campos dd[data-id], badges, descrição, características, sinais de
+# negócio, cada um com a sua própria chamada); tudo dentro do próprio
+# browser evita esse custo.
+_EXTRACT_DETAIL_JS = """
+() => {
+    const ddText = (id) => {
+        const el = document.querySelector(`dd[data-id="${id}"]`);
+        const t = el ? el.innerText.trim() : '';
+        return t || null;
+    };
+    const dtDdText = (label) => {
+        const dts = Array.from(document.querySelectorAll('dt.fw-bolder'));
+        for (const dt of dts) {
+            const text = dt.textContent.trim().replace(/:$/, '').trim();
+            if (text === label) {
+                const dd = dt.nextElementSibling;
+                const value = dd ? dd.textContent.trim() : '';
+                return value || null;
             }
-            return null;
-        }""",
-        label,
-    )
-
-
-def li_span_text(page, label):
-    """Para os sinais de negócio (Dias no Mercado, Visitas, Propostas):
-    <li><span class="fw-bolder me-25">Label: </span><span>Valor</span></li>
-    — procura o <span> cujo texto seja este label e devolve o texto do
-    <span> irmão seguinte."""
-    return page.evaluate(
-        """(label) => {
-            const spans = Array.from(document.querySelectorAll('li span.fw-bolder.me-25'));
-            for (const span of spans) {
-                const text = span.textContent.trim().replace(/:$/, '').trim();
-                if (text === label) {
-                    const value = span.nextElementSibling;
-                    return value ? value.textContent.trim() : null;
-                }
+        }
+        return null;
+    };
+    const liSpanText = (label) => {
+        const spans = Array.from(document.querySelectorAll('li span.fw-bolder.me-25'));
+        for (const span of spans) {
+            const text = span.textContent.trim().replace(/:$/, '').trim();
+            if (text === label) {
+                const value = span.nextElementSibling;
+                return value ? value.textContent.trim() : null;
             }
-            return null;
-        }""",
-        label,
-    )
+        }
+        return null;
+    };
 
+    const badges = Array.from(document.querySelectorAll('.badge-detail')).map((b) => b.innerText.trim());
 
-def extract_amenities(page):
-    """Lista de 'chips' na secção Características (ex: Praia, Varanda, Piscina)."""
-    els = page.query_selector_all("#listing-attribute label.custom-button-chips")
-    amenities = []
-    for el in els:
-        text = el.inner_text().strip()
-        if text:
-            amenities.append(text)
-    return amenities
+    let descEls = Array.from(document.querySelectorAll('#listing-description dd.mb-1.col'));
+    if (descEls.length < 2) {
+        descEls = Array.from(document.querySelectorAll('#listing-summary-description dd.mb-1.col'));
+    }
+
+    const amenities = Array.from(document.querySelectorAll('#listing-attribute label.custom-button-chips'))
+        .map((el) => el.innerText.trim())
+        .filter(Boolean);
+
+    return {
+        estado_badge: badges[0] || null,
+        publicado: badges[1] || null,
+        descricao_html: descEls.length > 1 ? descEls[1].innerHTML : null,
+        titulo_html: descEls.length > 3 ? descEls[3].innerHTML : null,
+        distrito: ddText('regionName1'),
+        concelho: ddText('regionName2'),
+        freguesia: ddText('regionName3'),
+        codigo_postal: ddText('zipCode'),
+        morada_rua: ddText('address'),
+        latitude: ddText('latitude'),
+        longitude: ddText('longitude'),
+        area_bruta_privativa_raw: ddText('totalArea'),
+        area_util_raw: ddText('livingArea'),
+        area_exterior_raw: ddText('exteriorPrivateArea'),
+        area_lote_raw: ddText('lotSize'),
+        ano_construcao: ddText('constructionYear'),
+        eficiencia_energetica: ddText('energyEfficiencyLevel'),
+        tipo_estacionamento: ddText('parkingTypeID'),
+        num_lugares_garagem: ddText('garageType'),
+        num_pisos: ddText('floorNumber'),
+        tipo_vista: ddText('listingSightType'),
+        elevador: dtDdText('Elevador'),
+        carregamento_carro_eletrico: dtDdText('Carregamento carros elétricos'),
+        caracteristicas: amenities,
+        dias_mercado_raw: liSpanText('Dias no Mercado'),
+        visitas_raw: liSpanText('Visitas'),
+        propostas_raw: liSpanText('Propostas'),
+        preco_raw: liSpanText('Preço do Imóvel'),
+    };
+}
+"""
 
 
 def html_to_text(html):
@@ -170,16 +190,26 @@ def extract_photos(page, codigo):
         page.get_by_text(PHOTOS_TAB_TEXT, exact=True).click()
         page.wait_for_selector("#listing-pictures", timeout=8000)
         page.wait_for_timeout(500)
-        imgs = page.query_selector_all("#listing-pictures .big-swipper img")
-        if not imgs:
-            imgs = page.query_selector_all("#listing-pictures .swiper-slide img")
-        urls = []
-        seen = set()
-        for img in imgs:
-            src = img.get_attribute("src")
-            if src and src not in seen:
-                seen.add(src)
-                urls.append(src)
+        # 1 chamada JS a ler todos os <img src> em vez de um get_attribute
+        # por foto (podem ser 20-30 por imóvel).
+        urls = page.evaluate(
+            """() => {
+                let imgs = Array.from(document.querySelectorAll('#listing-pictures .big-swipper img'));
+                if (imgs.length === 0) {
+                    imgs = Array.from(document.querySelectorAll('#listing-pictures .swiper-slide img'));
+                }
+                const seen = new Set();
+                const urls = [];
+                for (const img of imgs) {
+                    const src = img.getAttribute('src');
+                    if (src && !seen.has(src)) {
+                        seen.add(src);
+                        urls.push(src);
+                    }
+                }
+                return urls;
+            }"""
+        )
     except Exception as e:
         print(f"     [aviso] não consegui ler fotos: {e}")
         return [], []
@@ -226,79 +256,65 @@ def extract_status_only(page):
     imóveis que já existem no CRM: só precisamos de confirmar se mudaram de
     estado ou de nível de interesse, não de reimportar fotos/descrição/
     características — tudo isto é barato de ler (só texto)."""
-    badges = [b.inner_text().strip() for b in page.query_selector_all(".badge-detail")]
+    data = page.evaluate(_EXTRACT_DETAIL_JS)
     result = {
-        "estado_badge": badges[0] if len(badges) > 0 else None,
-        "publicado": badges[1] if len(badges) > 1 else None,
-        "dias_mercado": parse_number(li_span_text(page, "Dias no Mercado")),
-        "visitas": parse_number(li_span_text(page, "Visitas")),
-        "propostas": parse_number(li_span_text(page, "Propostas")),
+        "estado_badge": data["estado_badge"],
+        "publicado": data["publicado"],
+        "dias_mercado": parse_number(data["dias_mercado_raw"]),
+        "visitas": parse_number(data["visitas_raw"]),
+        "propostas": parse_number(data["propostas_raw"]),
     }
     # "Preço do Imóvel" na ficha é mais fiável que o preço lido no cartão da
     # pesquisa (maxwork_to_csv.py) — só sobrepõe a coluna "preco" existente
     # se conseguir ler um valor, para não perder o preço da pesquisa em caso
     # de erro.
-    preco = parse_number(li_span_text(page, "Preço do Imóvel"))
+    preco = parse_number(data["preco_raw"])
     if preco is not None:
         result["preco"] = preco
     return result
 
 
 def extract_detail(page, codigo):
-    badges = [b.inner_text().strip() for b in page.query_selector_all(".badge-detail")]
-    estado_badge = badges[0] if len(badges) > 0 else None
-    publicado = badges[1] if len(badges) > 1 else None
-
     # Descrição/título completos: o separador "Resumo" (#listing-summary-description)
     # mostra só um excerto curto (termina em "..." no próprio HTML, não é truncagem
     # CSS). O texto completo vive em #listing-description, no separador "Principal"
     # — e como a Maxwork parece renderizar todos os separadores de uma vez (só
     # esconde os inativos com CSS), não é preciso clicar em nada para o ler.
-    desc_els = page.query_selector_all("#listing-description dd.mb-1.col")
-    if len(desc_els) < 2:
-        # apanha (excerto curto) se por algum motivo a versão completa não existir
-        desc_els = page.query_selector_all("#listing-summary-description dd.mb-1.col")
-    descricao_completa = html_to_text(desc_els[1].inner_html()) if len(desc_els) > 1 else None
-    titulo_curto = html_to_text(desc_els[3].inner_html()) if len(desc_els) > 3 else None
-
-    raw_total_area = dd_text(page, "totalArea")
-    raw_living_area = dd_text(page, "livingArea")
-    raw_exterior_area = dd_text(page, "exteriorPrivateArea")
-    raw_lot_size = dd_text(page, "lotSize")
+    data = page.evaluate(_EXTRACT_DETAIL_JS)
 
     detail = {
-        "estado_badge": estado_badge,
-        "publicado": publicado,
-        "titulo_curto": titulo_curto,
-        "descricao_completa": descricao_completa,
-        "distrito": dd_text(page, "regionName1"),
-        "concelho": dd_text(page, "regionName2"),
-        "freguesia": dd_text(page, "regionName3"),
-        "codigo_postal": dd_text(page, "zipCode"),
-        "morada_rua": dd_text(page, "address"),
-        "latitude": dd_text(page, "latitude"),
-        "longitude": dd_text(page, "longitude"),
-        "area_bruta_privativa_m2": parse_number(raw_total_area),
-        "area_util_m2": parse_number(raw_living_area),
-        "area_exterior_privativa_m2": parse_number(raw_exterior_area),
-        "area_lote_m2": parse_number(raw_lot_size),
-        "ano_construcao": dd_text(page, "constructionYear"),
-        "eficiencia_energetica": dd_text(page, "energyEfficiencyLevel"),
-        "tipo_estacionamento": dd_text(page, "parkingTypeID"),
-        "num_lugares_garagem": dd_text(page, "garageType"),
-        "num_pisos": dd_text(page, "floorNumber"),
-        "tipo_vista": dd_text(page, "listingSightType"),
-        "elevador": dt_dd_text(page, "Elevador"),
-        "carregamento_carro_eletrico": dt_dd_text(page, "Carregamento carros elétricos"),
-        "caracteristicas": ";".join(extract_amenities(page)),
-        "dias_mercado": parse_number(li_span_text(page, "Dias no Mercado")),
-        "visitas": parse_number(li_span_text(page, "Visitas")),
-        "propostas": parse_number(li_span_text(page, "Propostas")),
+        "estado_badge": data["estado_badge"],
+        "publicado": data["publicado"],
+        "titulo_curto": html_to_text(data["titulo_html"]),
+        "descricao_completa": html_to_text(data["descricao_html"]),
+        "distrito": data["distrito"],
+        "concelho": data["concelho"],
+        "freguesia": data["freguesia"],
+        "codigo_postal": data["codigo_postal"],
+        "morada_rua": data["morada_rua"],
+        "latitude": data["latitude"],
+        "longitude": data["longitude"],
+        "area_bruta_privativa_m2": parse_number(data["area_bruta_privativa_raw"]),
+        "area_util_m2": parse_number(data["area_util_raw"]),
+        "area_exterior_privativa_m2": parse_number(data["area_exterior_raw"]),
+        "area_lote_m2": parse_number(data["area_lote_raw"]),
+        "ano_construcao": data["ano_construcao"],
+        "eficiencia_energetica": data["eficiencia_energetica"],
+        "tipo_estacionamento": data["tipo_estacionamento"],
+        "num_lugares_garagem": data["num_lugares_garagem"],
+        "num_pisos": data["num_pisos"],
+        "tipo_vista": data["tipo_vista"],
+        "elevador": data["elevador"],
+        "carregamento_carro_eletrico": data["carregamento_carro_eletrico"],
+        "caracteristicas": ";".join(data["caracteristicas"]),
+        "dias_mercado": parse_number(data["dias_mercado_raw"]),
+        "visitas": parse_number(data["visitas_raw"]),
+        "propostas": parse_number(data["propostas_raw"]),
     }
 
     # Idem extract_status_only(): o preço da ficha é mais fiável que o do
     # cartão da pesquisa.
-    preco = parse_number(li_span_text(page, "Preço do Imóvel"))
+    preco = parse_number(data["preco_raw"])
     if preco is not None:
         detail["preco"] = preco
 
