@@ -1,20 +1,31 @@
 import { createClient } from '@/lib/supabase/server'
 import {
   LISTING_STATUS_LABELS, LISTING_STATUS_COLORS, LISTING_PROPERTY_TYPE_LABELS,
-  LISTING_BUSINESS_TYPE_LABELS, type ListingStatus,
+  LISTING_BUSINESS_TYPE_LABELS, type ListingStatus, type ListingBusinessType, type ListingPropertyType,
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import Link from 'next/link'
-import { Plus, MapPin, BedDouble, Ruler, Home as HomeIcon, Chrome, Clock } from 'lucide-react'
+import { Plus, MapPin, BedDouble, Ruler, Home as HomeIcon, Chrome, Clock, Search } from 'lucide-react'
+import { ListingsSearchBar } from './ListingsSearchBar'
+import { ListingsFilters } from './ListingsFilters'
 
 export const dynamic = 'force-dynamic'
 
 const STATUS_ORDER: ListingStatus[] = ['active', 'reserved', 'sold', 'withdrawn']
+const BUSINESS_TYPES: ListingBusinessType[] = ['venda', 'arrendamento']
+const PROPERTY_TYPES: ListingPropertyType[] = ['apartamento', 'moradia', 'terreno', 'comercial', 'garagem', 'outro']
 
 interface Props {
-  searchParams: Promise<{ status?: string }>
+  searchParams: Promise<{
+    status?: string
+    q?: string
+    business_type?: string
+    property_type?: string
+    price_min?: string
+    price_max?: string
+  }>
 }
 
 function formatPrice(price: number | null): string {
@@ -22,8 +33,21 @@ function formatPrice(price: number | null): string {
   return new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(price)
 }
 
+/**
+ * Sanitiza o termo de pesquisa para usar dentro de um filtro PostgREST .or().
+ * Remove caracteres que podem partir o parser do Supabase (virgulas, parentesis,
+ * percentagens literais) e o operador "*". Também limita o comprimento.
+ */
+function sanitizeQ(input: string): string {
+  return input
+    .replace(/[%,()*]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+}
+
 export default async function ListingsPage({ searchParams }: Props) {
-  const { status } = await searchParams
+  const { status, q: rawQ, business_type, property_type, price_min, price_max } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -36,16 +60,33 @@ export default async function ListingsPage({ searchParams }: Props) {
 
   if (!member) return null
 
+  const q = rawQ ? sanitizeQ(rawQ) : ''
+  const activeStatus = status && STATUS_ORDER.includes(status as ListingStatus) ? (status as ListingStatus) : undefined
+  const activeBusinessType = business_type && BUSINESS_TYPES.includes(business_type as ListingBusinessType) ? (business_type as ListingBusinessType) : undefined
+  const activePropertyType = property_type && PROPERTY_TYPES.includes(property_type as ListingPropertyType) ? (property_type as ListingPropertyType) : undefined
+  const priceMin = price_min ? Number(price_min) : undefined
+  const priceMax = price_max ? Number(price_max) : undefined
+
   let query = supabase
     .from('listings')
     .select('*')
     .eq('team_id', member.team_id)
     .order('created_at', { ascending: false })
 
-  const activeStatus = status && STATUS_ORDER.includes(status as ListingStatus) ? (status as ListingStatus) : undefined
   if (activeStatus) query = query.eq('status', activeStatus)
+  if (activeBusinessType) query = query.eq('business_type', activeBusinessType)
+  if (activePropertyType) query = query.eq('property_type', activePropertyType)
+  if (priceMin != null && !Number.isNaN(priceMin)) query = query.gte('price', priceMin)
+  if (priceMax != null && !Number.isNaN(priceMax)) query = query.lte('price', priceMax)
+  if (q.length > 0) {
+    const pattern = `%${q}%`
+    query = query.or(
+      `title.ilike.${pattern},reference.ilike.${pattern},municipality.ilike.${pattern},zone.ilike.${pattern},address.ilike.${pattern}`
+    )
+  }
 
   const { data: listings } = await query
+  const hasActiveFilters = Boolean(q || activeStatus || activeBusinessType || activePropertyType || priceMin != null || priceMax != null)
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-5 overflow-x-hidden">
@@ -53,7 +94,9 @@ export default async function ListingsPage({ searchParams }: Props) {
         <div className="min-w-0">
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">Imóveis</h1>
           <p className="text-xs md:text-sm text-gray-500 mt-0.5">
-            {listings?.length ?? 0} imóvel{listings?.length === 1 ? '' : 'eis'} — importa e faz match com as tuas leads compradoras
+            {listings?.length ?? 0} imóvel{listings?.length === 1 ? '' : 'eis'}
+            {q ? <> para <strong>&quot;{q}&quot;</strong></> : null}
+            {!q && !hasActiveFilters ? ' — importa e faz match com as tuas leads compradoras' : null}
           </p>
         </div>
         {member.role !== 'viewer' && (
@@ -74,31 +117,69 @@ export default async function ListingsPage({ searchParams }: Props) {
         )}
       </div>
 
+      <ListingsSearchBar />
+
+      <ListingsFilters />
+
+      {/* Filtros de estado — scroll horizontal em mobile para nao quebrar o layout */}
       <div className="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
-        <Link href="/dashboard/listings">
-          <Badge variant={!activeStatus ? 'default' : 'outline'} className="cursor-pointer text-xs md:text-sm px-2.5 py-1 flex-shrink-0">
-            Todos
-          </Badge>
-        </Link>
-        {STATUS_ORDER.map((s) => (
-          <Link key={s} href={`/dashboard/listings?status=${s}`}>
-            <Badge variant={activeStatus === s ? 'default' : 'outline'} className="cursor-pointer text-xs md:text-sm px-2.5 py-1 flex-shrink-0 whitespace-nowrap">
-              {LISTING_STATUS_LABELS[s]}
-            </Badge>
-          </Link>
-        ))}
+        {(() => {
+          const baseParams = new URLSearchParams()
+          if (q) baseParams.set('q', q)
+          if (activeBusinessType) baseParams.set('business_type', activeBusinessType)
+          if (activePropertyType) baseParams.set('property_type', activePropertyType)
+          if (price_min) baseParams.set('price_min', price_min)
+          if (price_max) baseParams.set('price_max', price_max)
+          const baseQs = baseParams.toString()
+
+          return (
+            <>
+              <Link href={baseQs ? `/dashboard/listings?${baseQs}` : '/dashboard/listings'}>
+                <Badge variant={!activeStatus ? 'default' : 'outline'} className="cursor-pointer text-xs md:text-sm px-2.5 py-1 flex-shrink-0">
+                  Todos
+                </Badge>
+              </Link>
+              {STATUS_ORDER.map((s) => {
+                const params = new URLSearchParams(baseParams)
+                params.set('status', s)
+                return (
+                  <Link key={s} href={`/dashboard/listings?${params.toString()}`}>
+                    <Badge variant={activeStatus === s ? 'default' : 'outline'} className="cursor-pointer text-xs md:text-sm px-2.5 py-1 flex-shrink-0 whitespace-nowrap">
+                      {LISTING_STATUS_LABELS[s]}
+                    </Badge>
+                  </Link>
+                )
+              })}
+            </>
+          )
+        })()}
       </div>
 
       {!listings || listings.length === 0 ? (
         <div className="text-center py-16 bg-white rounded-xl border border-dashed border-gray-200">
-          <HomeIcon size={32} className="mx-auto text-gray-300 mb-3" />
-          <p className="text-gray-400 mb-4">Ainda não importaste nenhum imóvel</p>
-          <Link href="/dashboard/listings/new">
-            <Button variant="outline" className="gap-2">
-              <Plus size={16} />
-              Importar primeiro imóvel
-            </Button>
-          </Link>
+          {hasActiveFilters ? (
+            <>
+              <Search size={32} className="mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-500">Nenhum imóvel encontrado{q ? <> para <strong>&quot;{q}&quot;</strong></> : null}</p>
+              <p className="text-xs text-gray-400 mt-1">Tenta outro termo ou ajusta os filtros</p>
+              <div className="mt-4">
+                <Link href="/dashboard/listings">
+                  <Button variant="outline" size="sm">Limpar pesquisa e filtros</Button>
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <HomeIcon size={32} className="mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-400 mb-4">Ainda não importaste nenhum imóvel</p>
+              <Link href="/dashboard/listings/new">
+                <Button variant="outline" className="gap-2">
+                  <Plus size={16} />
+                  Importar primeiro imóvel
+                </Button>
+              </Link>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
