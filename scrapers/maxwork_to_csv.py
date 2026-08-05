@@ -40,11 +40,9 @@ import re
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from maxwork_common import EMAIL, PASSWORD, HEADLESS, APP_LOADED_SELECTOR, open_session, parse_number
+from maxwork_common import EMAIL, PASSWORD, HEADLESS, open_session, parse_number
 
 OUTPUT_CSV = "maxwork_imoveis.csv"
-
-SEARCH_URL = "https://app.maxwork.pt/listing/search"
 
 MAXWORK_AGENCIES_RAW = os.getenv("MAXWORK_AGENCIES", "")
 AGENCIES = [a.strip() for a in re.split(r"[,\n]+", MAXWORK_AGENCIES_RAW) if a.strip()]
@@ -63,6 +61,19 @@ def has_next_page(page):
     if page.query_selector(NEXT_PAGE_DISABLED_SELECTOR):
         return False
     return page.query_selector(NEXT_PAGE_SELECTOR) is not None
+
+
+def ensure_filters_open(page):
+    """Garante que o painel de filtros (onde vive o campo "Agência") está
+    visível. A Maxwork recolhe este painel sozinha a seguir a "Ver
+    Resultados" — o botão passa de "Esconder Filtros" a "Ver Filtros" — e
+    sem o reabrir o campo Agência continua no DOM mas invisível: um clique
+    nele fica preso ~30s à espera que fique visível, sem nunca conseguir
+    (foi o que aconteceu ao mudar de agência sem recarregar a página)."""
+    toggle = page.get_by_role("button", name="Ver Filtros")
+    if toggle.count() > 0:
+        toggle.first.click()
+        page.wait_for_timeout(500)
 
 
 def select_agency_filter(page, agency_name: str, attempts: int = 3) -> bool:
@@ -165,61 +176,81 @@ def maximize_search_page_size(page):
         print("  [aviso] não consegui aumentar o tamanho de página na pesquisa")
 
 
+# Lê os ~100 cartões da página de uma só vez dentro do browser (1 chamada
+# JS) em vez de um query_selector/inner_text por campo por cartão em
+# Python — com 100 cartões x ~10 campos isso eram ~1000 idas-e-voltas
+# Python<->browser por página, cada uma com o seu bocadinho de latência;
+# tudo dentro do próprio browser é ordens de magnitude mais rápido.
+_EXTRACT_CARDS_JS = """
+() => Array.from(document.querySelectorAll('.ecommerce-card')).map((card) => {
+    const text = (el) => el ? el.innerText.trim() : null;
+    const linkEl = card.querySelector('.item-name a[href*="/listing/details/"]');
+    const href = linkEl ? linkEl.getAttribute('href') : null;
+    const titulo = linkEl ? linkEl.innerText.trim() : null;
+
+    let tipo = null, transacao = null;
+    for (const el of card.querySelectorAll('h5.item-description')) {
+        if (el.getAttribute('data-class')) continue;
+        const t = el.innerText.trim();
+        const idx = t.indexOf(' - ');
+        if (idx !== -1) {
+            tipo = t.slice(0, idx).trim();
+            transacao = t.slice(idx + 3).trim();
+            break;
+        }
+    }
+
+    return {
+        href,
+        titulo,
+        tipo,
+        transacao,
+        estado_raw: text(card.querySelector('[data-class="item-status"]')),
+        preco_raw: text(card.querySelector('[data-class="item-price"]')),
+        area_raw: text(card.querySelector('[data-class="item-totalArea"]')),
+        quartos: text(card.querySelector('[data-class="item-typology"]')),
+        casas_banho: text(card.querySelector('[data-class="item-numberOfBathrooms"]')),
+        morada: text(card.querySelector('[data-class="item-address"]')),
+        foto_capa: (() => { const i = card.querySelector('img.card-img-top'); return i ? i.getAttribute('src') : null; })(),
+        agente: text(card.querySelector('[data-class="item-userName"]')),
+        telefone_agente: text(card.querySelector('[data-class="item-phone"]')),
+        email_agente: text(card.querySelector('[data-class="item-email"]')),
+        agencia: text(card.querySelector('[data-class="item-officeName"]')),
+    };
+})
+"""
+
+
 def extract_search_cards(page) -> list[dict]:
     """Extrai os cartões da pesquisa global (/listing/search) — usa
     atributos data-class estáveis para cada campo."""
     rows = []
-    cards = page.query_selector_all(SEARCH_RESULTS_CARD_SELECTOR)
-    for card in cards:
+    for c in page.evaluate(_EXTRACT_CARDS_JS):
         try:
-            link_el = card.query_selector('.item-name a[href*="/listing/details/"]')
-            href = link_el.get_attribute("href") if link_el else None
+            href = c.get("href")
             url = f"https://app.maxwork.pt{href}" if href else None
-
-            title_text = link_el.inner_text().strip() if link_el else ""
+            title_text = c.get("titulo") or ""
             codigo = title_text.split(" - ", 1)[0].strip() if title_text else None
-
-            address_el = card.query_selector('[data-class="item-address"]')
-            status_el = card.query_selector('[data-class="item-status"]')
-            price_el = card.query_selector('[data-class="item-price"]')
-            area_el = card.query_selector('[data-class="item-totalArea"]')
-            typology_el = card.query_selector('[data-class="item-typology"]')
-            bathrooms_el = card.query_selector('[data-class="item-numberOfBathrooms"]')
-
-            # "Terreno - Venda" / "Moradia - Venda" vem num <h5 class="item-description">
-            # sem data-class, distinto dos outros que têm data-class.
-            tipo = transacao = None
-            for el in card.query_selector_all("h5.item-description"):
-                if el.get_attribute("data-class"):
-                    continue
-                text = el.inner_text().strip()
-                if " - " in text:
-                    tipo, transacao = [p.strip() for p in text.split(" - ", 1)]
-                    break
-
-            agente_el = card.query_selector('[data-class="item-userName"]')
-            agencia_el = card.query_selector('[data-class="item-officeName"]')
-            email_el = card.query_selector('[data-class="item-email"]')
-            telefone_el = card.query_selector('[data-class="item-phone"]')
-            img_el = card.query_selector("img.card-img-top")
+            estado_raw = c.get("estado_raw")
+            area_raw = c.get("area_raw")
 
             rows.append({
                 "codigo": codigo,
                 "titulo": title_text or None,
-                "tipo": tipo,
-                "transacao": transacao,
-                "estado": status_el.inner_text().split(":")[-1].strip() if status_el else None,
-                "preco": parse_number(price_el.inner_text()) if price_el else None,
-                "area_m2": parse_number(area_el.inner_text().split(":")[-1]) if area_el else None,
-                "quartos": typology_el.inner_text().strip() if typology_el else None,
-                "casas_banho": bathrooms_el.inner_text().strip() if bathrooms_el else None,
+                "tipo": c.get("tipo"),
+                "transacao": c.get("transacao"),
+                "estado": estado_raw.split(":")[-1].strip() if estado_raw else None,
+                "preco": parse_number(c.get("preco_raw")),
+                "area_m2": parse_number(area_raw.split(":")[-1]) if area_raw else None,
+                "quartos": c.get("quartos"),
+                "casas_banho": c.get("casas_banho"),
                 "dias_mercado": None,
-                "morada": address_el.inner_text().strip() if address_el else None,
-                "foto_capa": img_el.get_attribute("src") if img_el else None,
-                "agente": agente_el.inner_text().strip() if agente_el else None,
-                "telefone_agente": telefone_el.inner_text().strip() if telefone_el else None,
-                "email_agente": email_el.inner_text().strip() if email_el else None,
-                "agencia": agencia_el.inner_text().strip() if agencia_el else None,
+                "morada": c.get("morada"),
+                "foto_capa": c.get("foto_capa"),
+                "agente": c.get("agente"),
+                "telefone_agente": c.get("telefone_agente"),
+                "email_agente": c.get("email_agente"),
+                "agencia": c.get("agencia"),
                 "id_interno": href.rstrip("/").split("/")[-1] if href else None,
                 "url": url,
             })
@@ -248,26 +279,15 @@ def scrape_search_all(page) -> list[dict]:
     return all_rows
 
 
-def scrape_agency(page, agency_name: str, reload: bool = True) -> list[dict]:
+def scrape_agency(page, agency_name: str) -> list[dict]:
     print(f"\n[maxwork] === Agência: {agency_name} ===")
 
-    # login() já deixa a página em SEARCH_URL, mas a pesquisa filtra por JS
-    # sem mudar de URL — sem reload, os cartões de resultados da agência
-    # anterior continuam no ecrã e ficam por cima do filtro "Agência",
-    # impedindo abrir/preencher o campo para a agência seguinte. Só a
-    # primeira chamada (logo a seguir ao login, página ainda limpa) pode
-    # poupar este reload.
-    if reload:
-        page.goto(SEARCH_URL, wait_until="domcontentloaded")
-
-    # Espera por um elemento concreto em vez de "networkidle" — a página tem
-    # widgets de fundo (chat, analytics) que fazem pedidos periódicos e podem
-    # nunca deixar a rede "parada", o que faria o networkidle ficar preso.
-    try:
-        page.wait_for_selector(APP_LOADED_SELECTOR, timeout=25000)
-    except PlaywrightTimeout:
-        print(f"  [aviso] Página de pesquisa não carregou (URL atual: {page.url}) — a saltar")
-        return []
+    # Nada de reload da página entre agências: a pesquisa filtra por JS
+    # sem mudar de URL, por isso um reload não limpa nada (a Maxwork guarda
+    # o último filtro usado e volta a mostrá-lo) — só torna a página mais
+    # lenta e instável a repetir todo o carregamento inicial. Basta reabrir
+    # o painel de filtros (ensure_filters_open) e mudar a Agência no sítio.
+    ensure_filters_open(page)
 
     try:
         page.wait_for_selector(SEARCH_AGENCY_INPUT_SELECTOR, timeout=25000)
@@ -315,8 +335,8 @@ def main():
         context, page = open_session(browser)
 
         all_rows = []
-        for i, agency_name in enumerate(AGENCIES):
-            all_rows.extend(scrape_agency(page, agency_name, reload=(i > 0)))
+        for agency_name in AGENCIES:
+            all_rows.extend(scrape_agency(page, agency_name))
 
         context.close()
         browser.close()
