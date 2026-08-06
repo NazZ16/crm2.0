@@ -3,8 +3,10 @@
 Maxwork -> CRM (listings)
 
 Lê "maxwork_imoveis_detalhado.csv" (gerado pelo maxwork_details_to_csv.py)
-e faz POST para /api/listings do CRM 2.0. O servidor trata sozinho do
-dedup por source_url (atualiza os dados se já existir, cria se for novo).
+e faz POST em lotes (BATCH_SIZE de cada vez) para /api/listings/bulk do
+CRM 2.0. O servidor trata sozinho do dedup por source_url (atualiza os
+dados se já existir, cria se for novo) — a nível de aplicação e também
+com uma constraint única na base de dados.
 
 Para imóveis já conhecidos do CRM (coluna "already_in_crm", marcada pelo
 maxwork_details_to_csv.py), envia só o essencial — preço, estado (ativo/
@@ -22,22 +24,30 @@ COMO USAR:
     2. Cria um .env nesta pasta (ou usa o que já tens) com:
            CRM_API_URL=http://localhost:3000/api/listings
            SCRAPER_API_KEY=<key gerada em /dashboard/settings>
+       (CRM_BULK_API_URL é derivado de CRM_API_URL automaticamente —
+       só precisas de o definir à parte se o endpoint bulk estiver noutro
+       sítio.)
     3. Corre primeiro com DRY_RUN=True (só mostra o que ia enviar,
        não escreve nada no CRM) e confirma que os dados saem bem
     4. Muda DRY_RUN para False e corre outra vez para enviar a sério
 """
 
 import csv
+import json
 import os
+import time
 
 import requests
 
-from maxwork_common import CRM_API_URL, SCRAPER_API_KEY
+from maxwork_common import CRM_BULK_API_URL, SCRAPER_API_KEY
 
 INPUT_CSV = "maxwork_imoveis_detalhado.csv"
+DRY_RUN_BATCHES_PATH = os.path.join("logs", "dry_run_batches.jsonl")
 
 DRY_RUN = False  # muda para False depois de confirmares os payloads
-LIMIT = 1  # None = processa tudo; um número pequeno para testar primeiro
+LIMIT = None  # None = processa tudo; um número pequeno para testar primeiro
+BATCH_SIZE = 200  # imóveis por pedido — cabe folgado no limite de 4.5MB da Vercel
+RETRY_DELAYS = (2, 4, 8)  # segundos entre tentativas em caso de erro de rede/5xx
 
 # Valores devolvidos pelo Maxwork -> enum "property_type" da tabela listings
 # ('apartamento','moradia','terreno','comercial','garagem','outro')
@@ -251,19 +261,35 @@ def build_payload(row):
     return payload
 
 
-def post_to_crm(payload):
+def post_batch_to_crm(payloads):
+    """Envia um lote de imóveis para /api/listings/bulk. Tenta 3 vezes (com
+    espera crescente) em erro de rede ou 5xx antes de desistir do lote —
+    devolve None nesse caso, para o resto do CSV continuar a ser processado
+    em vez de abortar tudo por causa de um lote."""
     headers = {"Content-Type": "application/json", "X-API-Key": SCRAPER_API_KEY}
-    try:
-        resp = requests.post(CRM_API_URL, json=payload, headers=headers, timeout=15)
-        if resp.status_code in (200, 201):
-            action = "criado" if resp.status_code == 201 else "atualizado"
-            print(f"  OK {action} — {payload['title'][:60]}")
-            return True
+    body = {"listings": payloads}
+
+    for attempt, delay in enumerate((0,) + RETRY_DELAYS):
+        if delay:
+            print(f"  a repetir em {delay}s...")
+            time.sleep(delay)
+        try:
+            resp = requests.post(CRM_BULK_API_URL, json=body, headers=headers, timeout=60)
+        except requests.RequestException as e:
+            print(f"  ERRO de rede (tentativa {attempt + 1}): {e}")
+            continue
+
+        if resp.status_code == 200:
+            return resp.json()
+        if 500 <= resp.status_code < 600:
+            print(f"  ERRO HTTP {resp.status_code} (tentativa {attempt + 1}): {resp.text[:300]}")
+            continue
+
         print(f"  ERRO HTTP {resp.status_code}: {resp.text[:300]}")
-        return False
-    except requests.RequestException as e:
-        print(f"  ERRO de rede: {e}")
-        return False
+        return None
+
+    print("  lote falhou depois de todas as tentativas, a saltar")
+    return None
 
 
 def main():
@@ -284,30 +310,45 @@ def main():
     if LIMIT:
         rows = rows[:LIMIT]
 
-    print(f"{'DRY RUN — nada será enviado' if DRY_RUN else f'A ENVIAR para {CRM_API_URL}'}")
-    print(f"{len(rows)} imóveis a processar\n")
+    print(f"{'DRY RUN — nada será enviado' if DRY_RUN else f'A ENVIAR para {CRM_BULK_API_URL}'}")
+    print(f"{len(rows)} imóveis a processar em lotes de {BATCH_SIZE}\n")
 
+    payloads = []
     skipped = 0
-    success = 0
-    for i, row in enumerate(rows, start=1):
+    for row in rows:
         payload = build_payload(row)
         if not payload:
-            print(f"[{i}/{len(rows)}] {row.get('codigo')} — sem preço ou tipo de negócio desconhecido, a saltar")
+            print(f"{row.get('codigo')} — sem preço ou tipo de negócio desconhecido, a saltar")
             skipped += 1
             continue
+        payloads.append(payload)
 
-        if DRY_RUN:
-            print(f"[{i}/{len(rows)}] {row.get('codigo')}")
-            import json
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
-            print()
-        else:
-            print(f"[{i}/{len(rows)}] {row.get('codigo')}", end=" ")
-            if post_to_crm(payload):
-                success += 1
+    batches = [payloads[i:i + BATCH_SIZE] for i in range(0, len(payloads), BATCH_SIZE)]
 
-    enviados_ou_prontos = "prontos a enviar" if DRY_RUN else "enviados"
-    print(f"\nConcluído: {success if not DRY_RUN else len(rows) - skipped}/{len(rows)} {enviados_ou_prontos} ({skipped} saltados)")
+    if DRY_RUN:
+        os.makedirs("logs", exist_ok=True)
+        with open(DRY_RUN_BATCHES_PATH, "w", encoding="utf-8") as f:
+            for batch in batches:
+                f.write(json.dumps(batch, ensure_ascii=False) + "\n")
+        print(f"{len(payloads)} imóveis prontos a enviar em {len(batches)} lote(s) — ver {DRY_RUN_BATCHES_PATH}")
+        print(f"({skipped} saltados)")
+        return
+
+    inserted = updated = failed_batches = 0
+    for i, batch in enumerate(batches, start=1):
+        print(f"[lote {i}/{len(batches)}] a enviar {len(batch)} imóveis...")
+        result = post_batch_to_crm(batch)
+        if result is None:
+            failed_batches += 1
+            continue
+        inserted += result.get("inserted", 0)
+        updated += result.get("updated", 0)
+        n_errors = len(result.get("errors", []))
+        print(f"  {result.get('inserted', 0)} novos, {result.get('updated', 0)} atualizados, {n_errors} erros")
+        for err in result.get("errors", [])[:5]:
+            print(f"    - {err}")
+
+    print(f"\nConcluído: {inserted} novos, {updated} atualizados, {skipped} saltados no parsing, {failed_batches} lote(s) falharam")
 
 
 if __name__ == "__main__":

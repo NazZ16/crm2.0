@@ -63,6 +63,7 @@ PASSWORD = os.getenv("MAXWORK_PASSWORD", "")
 HEADLESS = os.getenv("HEADLESS", "true").lower() != "false"
 
 CRM_API_URL = os.getenv("CRM_API_URL", "http://localhost:3000/api/listings")
+CRM_BULK_API_URL = os.getenv("CRM_BULK_API_URL", CRM_API_URL.rstrip("/") + "/bulk")
 SCRAPER_API_KEY = os.getenv("SCRAPER_API_KEY", "")
 
 LOGIN_URL = "https://app.maxwork.pt/listing/search"
