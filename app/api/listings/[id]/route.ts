@@ -30,7 +30,7 @@ const updateListingSchema = z.object({
   parking_spaces: z.number().int().min(0).nullable().optional(),
   has_elevator: z.boolean().nullable().optional(),
   construction_year: z.number().int().min(1800).max(2100).nullable().optional(),
-  energy_rating: z.string().max(10).nullable().optional(),
+  energy_rating: z.string().max(20).nullable().optional(),
 
   features: z.array(z.string().max(100)).max(100).optional(),
   description: z.string().max(10000).nullable().optional(),

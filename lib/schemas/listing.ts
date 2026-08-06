@@ -29,7 +29,7 @@ export const listingSchema = z.object({
   parking_spaces: z.number().int().min(0).optional().nullable(),
   has_elevator: z.boolean().optional().nullable(),
   construction_year: z.number().int().min(1800).max(2100).optional().nullable(),
-  energy_rating: z.string().max(10).optional().nullable(),
+  energy_rating: z.string().max(20).optional().nullable(),
 
   features: z.array(z.string().max(100)).max(100).default([]),
   description: z.string().max(10000).optional().nullable(),
