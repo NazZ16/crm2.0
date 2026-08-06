@@ -53,7 +53,13 @@ NEXT_PAGE_DISABLED_SELECTOR = "li.page-item.next-item.disabled"
 # Página /listing/search — filtros por JS (react-select), não por URL
 SEARCH_AGENCY_CONTROL_SELECTOR = '[data-id="officeId"] .select__control'
 SEARCH_AGENCY_INPUT_SELECTOR = '[data-id="officeId"] input.select__input'
-SEARCH_RESULTS_CARD_SELECTOR = ".ecommerce-card"
+SEARCH_RESULTS_CARD_SELECTOR = ".property-card"
+
+# Extrai o ID interno do imóvel a partir do src da foto de capa —
+# "/listings/{officeId}/{internalId}/{photoUuid}.jpg". A Maxwork deixou de
+# pôr um <a href="/listing/details/{id}"> no cartão (mudança de HTML de
+# ago/2026), este é o único sítio onde o ID interno ainda aparece.
+_IMAGE_ID_RE = re.compile(r"/listings/\d+/(\d+)/")
 SEARCH_PAGE_SIZE_SELECT_SELECTOR = "select.custom-select"
 
 
@@ -131,17 +137,19 @@ def run_search(page):
 
 
 def first_card_key(page) -> str | None:
-    """Assinatura (href) do 1º cartão de resultados no ecrã. A Maxwork
-    atualiza o número em "Total de imóveis encontrados" assim que se muda
-    de agência, mas os CARTÕES por baixo continuam a ser os da pesquisa
-    anterior até a grelha atualizar a sério — por isso não chega verificar
-    que existe ALGUM cartão, é preciso confirmar que já não é o mesmo de
-    antes de pesquisar."""
+    """Assinatura (src da foto de capa) do 1º cartão de resultados no ecrã.
+    A Maxwork atualiza o número em "Total de imóveis encontrados" assim que
+    se muda de agência, mas os CARTÕES por baixo continuam a ser os da
+    pesquisa anterior até a grelha atualizar a sério — por isso não chega
+    verificar que existe ALGUM cartão, é preciso confirmar que já não é o
+    mesmo de antes de pesquisar. Usa o src da imagem em vez do href porque
+    os cartões deixaram de ter um <a href="/listing/details/..."> (mudança
+    de HTML de ago/2026)."""
     card = page.query_selector(SEARCH_RESULTS_CARD_SELECTOR)
     if not card:
         return None
-    link = card.query_selector('.item-name a[href*="/listing/details/"]')
-    return link.get_attribute("href") if link else None
+    img = card.query_selector("img")
+    return img.get_attribute("src") if img else None
 
 
 def wait_for_results(page, agency_name: str, previous_first: str | None, attempts: int = 3) -> bool:
@@ -181,77 +189,98 @@ def maximize_search_page_size(page):
 # Python — com 100 cartões x ~10 campos isso eram ~1000 idas-e-voltas
 # Python<->browser por página, cada uma com o seu bocadinho de latência;
 # tudo dentro do próprio browser é ordens de magnitude mais rápido.
+# A Maxwork mudou o HTML da página de pesquisa (ago/2026): já não há
+# atributos data-class nem <a href> no cartão — os campos agora vivem em
+# classes fixas (.badges-top-left, .price-box, .dynamic-fields-zone,
+# .agent-section) e o ID interno só existe embutido no src da foto.
 _EXTRACT_CARDS_JS = """
-() => Array.from(document.querySelectorAll('.ecommerce-card')).map((card) => {
+() => Array.from(document.querySelectorAll('.property-card')).map((card) => {
     const text = (el) => el ? el.innerText.trim() : null;
-    const linkEl = card.querySelector('.item-name a[href*="/listing/details/"]');
-    const href = linkEl ? linkEl.getAttribute('href') : null;
-    const titulo = linkEl ? linkEl.innerText.trim() : null;
 
-    let tipo = null, transacao = null;
-    for (const el of card.querySelectorAll('h5.item-description')) {
-        if (el.getAttribute('data-class')) continue;
-        const t = el.innerText.trim();
-        const idx = t.indexOf(' - ');
-        if (idx !== -1) {
-            tipo = t.slice(0, idx).trim();
-            transacao = t.slice(idx + 3).trim();
-            break;
-        }
-    }
+    const img = card.querySelector('img');
+    const imgSrc = img ? img.getAttribute('src') : null;
+
+    // Ordem confirmada nos cartões: estado, transação, tipo, eficiência energética
+    const badges = Array.from(card.querySelectorAll('.badges-top-left .badge-overlay-custom')).map((b) => b.innerText.trim());
+
+    const titleEl = card.querySelector('.property-title');
+    const titulo = titleEl ? titleEl.innerText.trim() : null;
+    const freguesia = text(card.querySelector('.property-id'));
+
+    const addressEl = card.querySelector('.property-address');
+    const morada = addressEl ? addressEl.getAttribute('title') : null;
+
+    const preco_raw = text(card.querySelector('.price-box .price-value'));
+
+    // Ordem confirmada (por forma do ícone SVG): quartos, casas de banho, garagem, área
+    const dynFields = Array.from(card.querySelectorAll('.dynamic-fields-zone .dynamic-field-value')).map((el) => el.innerText.trim());
+
+    const agentNameText = text(card.querySelector('.agent-section .agent-name'));
+    const detailItems = Array.from(card.querySelectorAll('.agent-details .agent-detail-item')).map((el) => el.innerText.trim());
 
     return {
-        href,
+        imgSrc,
+        estado_raw: badges[0] || null,
+        transacao: badges[1] || null,
+        tipo: badges[2] || null,
         titulo,
-        tipo,
-        transacao,
-        estado_raw: text(card.querySelector('[data-class="item-status"]')),
-        preco_raw: text(card.querySelector('[data-class="item-price"]')),
-        area_raw: text(card.querySelector('[data-class="item-totalArea"]')),
-        quartos: text(card.querySelector('[data-class="item-typology"]')),
-        casas_banho: text(card.querySelector('[data-class="item-numberOfBathrooms"]')),
-        morada: text(card.querySelector('[data-class="item-address"]')),
-        foto_capa: (() => { const i = card.querySelector('img.card-img-top'); return i ? i.getAttribute('src') : null; })(),
-        agente: text(card.querySelector('[data-class="item-userName"]')),
-        telefone_agente: text(card.querySelector('[data-class="item-phone"]')),
-        email_agente: text(card.querySelector('[data-class="item-email"]')),
-        agencia: text(card.querySelector('[data-class="item-officeName"]')),
+        freguesia,
+        morada,
+        preco_raw,
+        quartos: dynFields[0] || null,
+        casas_banho: dynFields[1] || null,
+        area_raw: dynFields[3] || null,
+        agentNameText,
+        detailItems,
     };
 })
 """
 
 
 def extract_search_cards(page) -> list[dict]:
-    """Extrai os cartões da pesquisa global (/listing/search) — usa
-    atributos data-class estáveis para cada campo."""
+    """Extrai os cartões da pesquisa global (/listing/search)."""
     rows = []
     for c in page.evaluate(_EXTRACT_CARDS_JS):
         try:
-            href = c.get("href")
-            url = f"https://app.maxwork.pt{href}" if href else None
+            img_src = c.get("imgSrc") or ""
+            id_match = _IMAGE_ID_RE.search(img_src)
+            id_interno = id_match.group(1) if id_match else None
+            url = f"https://app.maxwork.pt/listing/details/{id_interno}" if id_interno else None
+
             title_text = c.get("titulo") or ""
-            codigo = title_text.split(" - ", 1)[0].strip() if title_text else None
-            estado_raw = c.get("estado_raw")
-            area_raw = c.get("area_raw")
+            codigo = title_text.split(" / ", 1)[0].strip() if title_text else None
+
+            agent_name_text = c.get("agentNameText") or ""
+            if " - " in agent_name_text:
+                agencia, agente = agent_name_text.split(" - ", 1)
+            else:
+                agencia, agente = None, agent_name_text or None
+
+            telefone_agente, email_agente = None, None
+            for item in c.get("detailItems") or []:
+                if "@" in item:
+                    email_agente = item
+                elif item:
+                    telefone_agente = item
 
             rows.append({
                 "codigo": codigo,
                 "titulo": title_text or None,
                 "tipo": c.get("tipo"),
                 "transacao": c.get("transacao"),
-                "estado": estado_raw.split(":")[-1].strip() if estado_raw else None,
+                "estado": c.get("estado_raw"),
                 "preco": parse_number(c.get("preco_raw")),
-                "area_m2": parse_number(area_raw.split(":")[-1]) if area_raw else None,
+                "area_m2": parse_number(c.get("area_raw")),
                 "quartos": c.get("quartos"),
                 "casas_banho": c.get("casas_banho"),
                 "dias_mercado": None,
-                "morada": c.get("morada"),
-                "foto_capa": c.get("foto_capa"),
-                "agente": c.get("agente"),
-                "telefone_agente": c.get("telefone_agente"),
-                "email_agente": c.get("email_agente"),
-                "agencia": c.get("agencia"),
-                "id_interno": href.rstrip("/").split("/")[-1] if href else None,
+                "morada": c.get("morada") or c.get("freguesia"),
+                "foto_capa": img_src or None,
+                "agente": agente.strip() if agente else None,
+                "telefone_agente": telefone_agente,
+                "email_agente": email_agente,
+                "agencia": agencia.strip() if agencia else None,
+                "id_interno": id_interno,
                 "url": url,
             })
         except Exception as e:

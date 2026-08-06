@@ -154,14 +154,17 @@ def parse_number(text):
     filtrar dígitos do texto todo colava o '2' de 'm2' ao valor).
 
     Preços do Maxwork usam espaço como separador de milhares (ex.:
-    '3 250 000 €') — sem tratar o espaço como parte do número, o regex
-    parava no primeiro espaço e devolvia só '3'."""
+    '3 250 000 €', ou '3\xa0250\xa0000\xa0€' com espaço não-quebrável nos
+    cartões da pesquisa) — sem tratar o espaço como parte do número, o
+    regex parava no primeiro espaço e devolvia só '3'. \\s no regex já
+    apanha \\xa0, mas .replace(" ", "") só remove o espaço normal — por
+    isso usa re.sub com \\s para remover também o \\xa0."""
     if not text:
         return None
     match = re.search(r"\d[\d.,\s]*", text)
     if not match:
         return None
-    raw = match.group(0).replace(",", "").replace(" ", "").strip()
+    raw = re.sub(r"\s", "", match.group(0).replace(",", ""))
     try:
         value = float(raw)
     except ValueError:
