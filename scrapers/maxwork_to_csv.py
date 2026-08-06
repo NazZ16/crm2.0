@@ -212,6 +212,14 @@ def maximize_search_page_size(page, attempts: int = 3):
     print("  a aumentar o tamanho de página da pesquisa...")
     for attempt in range(1, attempts + 1):
         try:
+            # O <select> "Mostrar" vive no rodapé da tabela de resultados,
+            # que só é montado quando já há resultados a mostrar — logo a
+            # seguir a mudar de agência pode ainda não existir no DOM.
+            # eval_on_selector rebenta de imediato se não encontrar nada
+            # (ao contrário de query_selector), por isso esperar por ele
+            # primeiro evita gastar as 3 tentativas em ~instantâneo, sem
+            # dar tempo nenhum ao rodapé para aparecer.
+            page.wait_for_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, timeout=10000)
             current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
             if current == "100":
                 page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50")
@@ -225,6 +233,7 @@ def maximize_search_page_size(page, attempts: int = 3):
             print(f"  [aviso] só {card_count} cartões depois de pedir 100 por página (tentativa {attempt}/{attempts}) — a tentar outra vez...")
         except Exception as e:
             print(f"  [aviso] não consegui aumentar o tamanho de página na pesquisa (tentativa {attempt}/{attempts}): {e}")
+            page.wait_for_timeout(1000)
     print("  [aviso] a pesquisa desta agência pode ficar com menos de 100 resultados por página (pode ser normal se a agência tiver poucos imóveis)")
 
 
@@ -353,6 +362,16 @@ def wait_for_new_first_card(page, previous_first: str | None, timeout_ms: int = 
 def scrape_search_all(page) -> list[dict]:
     all_rows = []
     page_num = 1
+    # Antes de ler a 1ª página, garante que a grelha tem mesmo cartões
+    # neste preciso momento — se maximize_search_page_size() gastou as
+    # tentativas todas à espera do dropdown "Mostrar" (ex.: rodapé da
+    # tabela ainda não montado), a grelha pode continuar instável quando
+    # chegamos aqui, e ler de imediato apanhava 0 cartões mesmo havendo
+    # resultados a sério.
+    try:
+        page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=10000)
+    except PlaywrightTimeout:
+        pass
     while True:
         print(f"  A ler página {page_num} da pesquisa...")
         rows = extract_search_cards(page)
