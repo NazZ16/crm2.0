@@ -86,9 +86,14 @@ function mapPropertyType(raw: string | null): ListingPropertyType | null {
   const v = raw.toLowerCase()
   if (v.includes('moradia')) return 'moradia'
   if (v.includes('apartamento')) return 'apartamento'
+  if (v.includes('quinta')) return 'quinta'
   if (v.includes('terreno')) return 'terreno'
   if (v.includes('garagem')) return 'garagem'
-  if (v.includes('loja') || v.includes('escritório') || v.includes('escritorio') || v.includes('comercial') || v.includes('armazém') || v.includes('armazem')) return 'comercial'
+  if (v.includes('loja')) return 'loja'
+  if (v.includes('armazém') || v.includes('armazem')) return 'armazem'
+  if (v.includes('escritório') || v.includes('escritorio')) return 'escritorio'
+  if (v.includes('prédio') || v.includes('predio')) return 'predio'
+  if (v.includes('comercial')) return 'comercial'
   return 'outro'
 }
 

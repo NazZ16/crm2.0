@@ -730,7 +730,9 @@ export const MAX_RENOVATION_LABELS: Record<MaxRenovation, string> = {
 // compradores usando lead_profiles.home_preferences / financial_profile.
 
 export type ListingBusinessType = 'venda' | 'arrendamento'
-export type ListingPropertyType = 'apartamento' | 'moradia' | 'terreno' | 'comercial' | 'garagem' | 'outro'
+export type ListingPropertyType =
+  | 'apartamento' | 'moradia' | 'terreno' | 'comercial' | 'garagem' | 'outro'
+  | 'quinta' | 'loja' | 'armazem' | 'escritorio' | 'predio'
 export type ListingStatus = 'active' | 'reserved' | 'sold' | 'withdrawn'
 
 export interface Listing {
@@ -850,6 +852,11 @@ export const LISTING_PROPERTY_TYPE_LABELS: Record<ListingPropertyType, string> =
   comercial: 'Comercial',
   garagem: 'Garagem',
   outro: 'Outro',
+  quinta: 'Quinta',
+  loja: 'Loja',
+  armazem: 'Armazém',
+  escritorio: 'Escritório',
+  predio: 'Prédio',
 }
 
 export const LISTING_STATUS_LABELS: Record<ListingStatus, string> = {

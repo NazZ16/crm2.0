@@ -72,7 +72,17 @@ EMAIL_NEXT_SELECTOR = "input[type='submit']"
 PASSWORD_SELECTOR = "input[name='passwd']"
 PASSWORD_SUBMIT_SELECTOR = "input[type='submit']"
 STAY_SIGNED_IN_SELECTOR = "input#idSIButton9"
-APP_LOADED_SELECTOR = "#search-term"
+# #search-term não serve para detetar "app carregada": a Maxwork usa o
+# mesmo id="search-term" em DOIS campos diferentes ("Pesquisar por ID" e
+# "Pesquisar por Matriz Predial", um bug deles de id duplicado) e os dois
+# vivem dentro do painel de filtros avançados ("Ver Mais"), que está
+# colapsado ao carregar a página — por isso :visible nunca batia certo
+# no login() (que corre antes de qualquer clique em "Ver Mais") e o
+# wait_for_selector ficava preso até rebentar em TimeoutError.
+# .dropdown-user-link é o menu do utilizador na navbar do topo — único,
+# sem duplicados, e visível em qualquer página autenticada assim que a
+# app carrega, sem depender de nenhum painel estar aberto.
+APP_LOADED_SELECTOR = ".dropdown-user-link"
 
 # Sessão de login guardada (cookies + local storage) — reutilizada entre
 # corridas para não precisar de fazer login Microsoft outra vez sempre que
@@ -131,19 +141,43 @@ def login(page, start_url: str = LOGIN_URL):
     print("Login OK.")
 
 
+def launch_browser(pw):
+    """Lança o Chromium com argumentos que reduzem a frequência de "Page
+    crashed" (o processo do Chromium a abaixo sozinho — aconteceu numa
+    corrida real no Windows logo no primeiro page.goto(), antes de
+    qualquer login). --disable-gpu evita crashes ligados a aceleração de
+    GPU em modo headless; --disable-dev-shm-usage evita ficar sem memória
+    partilhada em ambientes com pouco /dev/shm."""
+    return pw.chromium.launch(headless=HEADLESS, args=["--disable-gpu", "--disable-dev-shm-usage"])
+
+
 def open_session(browser):
     """Abre uma página do Maxwork já autenticada, reutilizando a sessão
     guardada em maxwork_session.json de uma corrida anterior (se existir e
     ainda for válida — login() só volta a pedir email/password se tiver
     expirado). Grava a sessão logo a seguir, para ficar disponível mesmo
     que o resto do script falhe a meio. Devolve (context, page) — fecha o
-    context (não só a page) quando terminares, para libertar os recursos."""
+    context (não só a page) quando terminares, para libertar os recursos.
+
+    Se o Chromium encravar ("Page crashed") logo ao abrir — já aconteceu
+    numa corrida real —, a page fica inutilizável para sempre; tenta mais
+    uma vez com uma page nova no mesmo context (mantém os cookies/sessão
+    já carregados) antes de desistir."""
     context = browser.new_context(
         locale="pt-PT",
         storage_state=STORAGE_STATE_PATH if os.path.exists(STORAGE_STATE_PATH) else None,
     )
     page = context.new_page()
-    login(page)
+    for attempt in range(1, 3):
+        try:
+            login(page)
+            break
+        except Exception as e:
+            if attempt >= 2 or "crash" not in str(e).lower():
+                raise
+            print(f"  [aviso] a página encravou a abrir o Maxwork (Page crashed) — a tentar outra vez ({attempt}/2)...")
+            page.close()
+            page = context.new_page()
     context.storage_state(path=STORAGE_STATE_PATH)
     return context, page
 
@@ -154,14 +188,17 @@ def parse_number(text):
     filtrar dígitos do texto todo colava o '2' de 'm2' ao valor).
 
     Preços do Maxwork usam espaço como separador de milhares (ex.:
-    '3 250 000 €') — sem tratar o espaço como parte do número, o regex
-    parava no primeiro espaço e devolvia só '3'."""
+    '3 250 000 €', ou '3\xa0250\xa0000\xa0€' com espaço não-quebrável nos
+    cartões da pesquisa) — sem tratar o espaço como parte do número, o
+    regex parava no primeiro espaço e devolvia só '3'. \\s no regex já
+    apanha \\xa0, mas .replace(" ", "") só remove o espaço normal — por
+    isso usa re.sub com \\s para remover também o \\xa0."""
     if not text:
         return None
     match = re.search(r"\d[\d.,\s]*", text)
     if not match:
         return None
-    raw = match.group(0).replace(",", "").replace(" ", "").strip()
+    raw = re.sub(r"\s", "", match.group(0).replace(",", ""))
     try:
         value = float(raw)
     except ValueError:

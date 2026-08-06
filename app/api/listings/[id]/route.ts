@@ -6,7 +6,7 @@ const updateListingSchema = z.object({
   reference: z.string().max(100).nullable().optional(),
   title: z.string().min(1).max(300).optional(),
   business_type: z.enum(['venda', 'arrendamento']).optional(),
-  property_type: z.enum(['apartamento', 'moradia', 'terreno', 'comercial', 'garagem', 'outro']).optional(),
+  property_type: z.enum(['apartamento', 'moradia', 'terreno', 'comercial', 'garagem', 'outro', 'quinta', 'loja', 'armazem', 'escritorio', 'predio']).optional(),
   typology: z.string().max(20).nullable().optional(),
   price: z.number().nonnegative().nullable().optional(),
   condo_fee: z.number().nonnegative().nullable().optional(),
