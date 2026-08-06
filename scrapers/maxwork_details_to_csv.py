@@ -36,24 +36,40 @@ de negociação): dias no mercado, nº de visitas, nº de propostas. São
 baratos de ler (só texto, sem fotos), por isso são lidos mesmo na
 passagem "leve" de imóveis já conhecidos do CRM.
 
-NOTA: isto continua a visitar 1 página por imóvel (233 páginas) — mas para
-os que já existem no CRM a visita é rápida (só os badges/sinais, sem
-fotos). Se quiseres testar rápido primeiro, edita LIMIT abaixo (ex: 5)
-para só processar os primeiros N.
+NOTA: isto visita 1 página por imóvel — mas para os que já existem no CRM
+a visita é rápida (só os badges/sinais, sem fotos). Se quiseres testar
+rápido primeiro, edita LIMIT abaixo (ex: 5) para só processar os
+primeiros N.
+
+PARALELISMO: ao contrário da pesquisa (/listing/search, que guarda
+filtro/paginação partilhados por conta — duas abas ao mesmo tempo lá
+davam resultados errados, ver git log), cada ficha de imóvel
+(/listing/details/{id}) é uma página independente e só de leitura, sem
+estado partilhado entre imóveis. Por isso corre com vários workers em
+paralelo (MAXWORK_DETAILS_CONCURRENCY no .env, omissão 4), cada um no
+seu processo Chromium, todos autenticados pela mesma sessão guardada.
+Começa por confirmar com um LIMIT pequeno que corre bem antes de correr
+para a lista toda.
 """
 
 import csv
 import os
+import queue
 import re
+import threading
 
 import requests
 from playwright.sync_api import sync_playwright
 
-from maxwork_common import EMAIL, PASSWORD, CRM_API_URL, SCRAPER_API_KEY, open_session, launch_browser, parse_number
+from maxwork_common import (
+    EMAIL, PASSWORD, CRM_API_URL, SCRAPER_API_KEY, STORAGE_STATE_PATH,
+    open_session, launch_browser, parse_number,
+)
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
 LIMIT = 5  # ex: 5 para testar só os primeiros 5; None = todos
+CONCURRENCY = int(os.getenv("MAXWORK_DETAILS_CONCURRENCY", "4"))  # nº de abas em paralelo
 
 DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM usa
                           # diretamente os URLs do Maxwork (confirmado públicos,
@@ -376,6 +392,63 @@ def format_row_for_csv(row):
     return formatted
 
 
+def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: str):
+    url = row.get("url")
+    codigo = row.get("codigo")
+    already_known = bool(url and url in known_urls)
+    row["already_in_crm"] = "1" if already_known else ""
+
+    if not url:
+        print(f"{label} [{i}/{total}] {codigo} — sem url, a saltar")
+        for k in DETAIL_FIELDNAMES:
+            row[k] = None
+        return
+
+    mode = "atualização leve" if already_known else "completo"
+    print(f"{label} [{i}/{total}] {codigo} -> {url} ({mode})")
+    try:
+        page.goto(url)
+        page.wait_for_selector(".badge-detail", timeout=15000)
+        page.wait_for_timeout(300)
+        dismiss_blocking_modal(page)
+        if already_known:
+            for k in DETAIL_FIELDNAMES:
+                row.setdefault(k, None)
+            row.update(extract_status_only(page))
+        else:
+            row.update(extract_detail(page, codigo))
+    except Exception as e:
+        print(f"{label}     [erro] {codigo}: {e}")
+        for k in DETAIL_FIELDNAMES:
+            row[k] = None
+
+
+def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: int):
+    """Cada worker abre o seu próprio browser (processo Chromium à parte —
+    o Playwright sync não é seguro entre threads dentro da mesma instância)
+    autenticado pela mesma sessão gravada, e vai tirando imóveis da fila
+    partilhada até esta esvaziar. Cada ficha é uma página independente e só
+    de leitura — ao contrário da pesquisa (/listing/search), não há filtro
+    nem paginação partilhados para os workers pisarem-se uns aos outros."""
+    label = f"[worker {worker_id}]"
+    try:
+        with sync_playwright() as pw:
+            browser = launch_browser(pw)
+            context = browser.new_context(locale="pt-PT", storage_state=STORAGE_STATE_PATH)
+            page = context.new_page()
+            while True:
+                try:
+                    i, row = work_queue.get_nowait()
+                except queue.Empty:
+                    break
+                _process_row(page, i, total, row, known_urls, label)
+                work_queue.task_done()
+            context.close()
+            browser.close()
+    except Exception as e:
+        print(f"{label} [erro fatal] {e}")
+
+
 def main():
     if not EMAIL or not PASSWORD:
         raise SystemExit("Falta MAXWORK_EMAIL / MAXWORK_PASSWORD no ficheiro .env")
@@ -394,42 +467,30 @@ def main():
     if DOWNLOAD_PHOTOS:
         os.makedirs(PHOTOS_DIR, exist_ok=True)
 
+    print(f"[maxwork] {len(rows)} imóveis a processar com {CONCURRENCY} worker(s) em paralelo")
+
+    # Garante login válido e a sessão gravada ANTES de lançar os workers em
+    # threads separadas — todos reutilizam o mesmo maxwork_session.json, já
+    # preparado aqui, para não fazerem login Microsoft ao mesmo tempo nem
+    # escreverem no ficheiro de sessão em simultâneo.
     with sync_playwright() as pw:
         browser = launch_browser(pw)
-        context, page = open_session(browser)
-
-        for i, row in enumerate(rows, start=1):
-            url = row.get("url")
-            codigo = row.get("codigo")
-            already_known = bool(url and url in known_urls)
-            row["already_in_crm"] = "1" if already_known else ""
-
-            if not url:
-                print(f"[{i}/{len(rows)}] {codigo} — sem url, a saltar")
-                for k in DETAIL_FIELDNAMES:
-                    row[k] = None
-                continue
-
-            mode = "atualização leve" if already_known else "completo"
-            print(f"[{i}/{len(rows)}] {codigo} -> {url} ({mode})")
-            try:
-                page.goto(url)
-                page.wait_for_selector(".badge-detail", timeout=15000)
-                page.wait_for_timeout(300)
-                dismiss_blocking_modal(page)
-                if already_known:
-                    for k in DETAIL_FIELDNAMES:
-                        row.setdefault(k, None)
-                    row.update(extract_status_only(page))
-                else:
-                    row.update(extract_detail(page, codigo))
-            except Exception as e:
-                print(f"     [erro] {e}")
-                for k in DETAIL_FIELDNAMES:
-                    row[k] = None
-
+        context, _ = open_session(browser)
         context.close()
         browser.close()
+
+    work_queue: "queue.Queue" = queue.Queue()
+    for i, row in enumerate(rows, start=1):
+        work_queue.put((i, row))
+
+    threads = [
+        threading.Thread(target=_worker, args=(w, work_queue, known_urls, len(rows)))
+        for w in range(1, CONCURRENCY + 1)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     fieldnames = list(rows[0].keys()) if rows else []
     with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
