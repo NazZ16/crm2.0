@@ -72,13 +72,17 @@ EMAIL_NEXT_SELECTOR = "input[type='submit']"
 PASSWORD_SELECTOR = "input[name='passwd']"
 PASSWORD_SUBMIT_SELECTOR = "input[type='submit']"
 STAY_SIGNED_IN_SELECTOR = "input#idSIButton9"
-# :visible (extensão do motor de seleção do Playwright, não é CSS puro) —
-# desde a mudança de layout responsivo da Maxwork há DOIS inputs com
-# id="search-term" no DOM ao mesmo tempo (um para desktop, outro para
-# mobile, escondido por CSS) o que fazia o Playwright avisar em cada
-# verificação "locator resolved to 2 elements. Proceeding with the first
-# one" — inofensivo (usa sempre o 1º), mas escondia o resto do log.
-APP_LOADED_SELECTOR = "#search-term:visible"
+# #search-term não serve para detetar "app carregada": a Maxwork usa o
+# mesmo id="search-term" em DOIS campos diferentes ("Pesquisar por ID" e
+# "Pesquisar por Matriz Predial", um bug deles de id duplicado) e os dois
+# vivem dentro do painel de filtros avançados ("Ver Mais"), que está
+# colapsado ao carregar a página — por isso :visible nunca batia certo
+# no login() (que corre antes de qualquer clique em "Ver Mais") e o
+# wait_for_selector ficava preso até rebentar em TimeoutError.
+# .dropdown-user-link é o menu do utilizador na navbar do topo — único,
+# sem duplicados, e visível em qualquer página autenticada assim que a
+# app carrega, sem depender de nenhum painel estar aberto.
+APP_LOADED_SELECTOR = ".dropdown-user-link"
 
 # Sessão de login guardada (cookies + local storage) — reutilizada entre
 # corridas para não precisar de fazer login Microsoft outra vez sempre que
