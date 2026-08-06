@@ -49,18 +49,6 @@ AGENCIES = [a.strip() for a in re.split(r"[,\n]+", MAXWORK_AGENCIES_RAW) if a.st
 
 NEXT_PAGE_SELECTOR = "li.page-item.next-item a.page-link"
 NEXT_PAGE_DISABLED_SELECTOR = "li.page-item.next-item.disabled"
-PREV_PAGE_SELECTOR = "li.page-item.prev-item a.page-link"
-PREV_PAGE_DISABLED_SELECTOR = "li.page-item.prev-item.disabled"
-
-# Números de página clicáveis na paginação (react-paginate) — usados por
-# maxwork_to_csv_bulk.py para saltar direto para a última página visível
-# em vez de percorrer tudo com "seguinte". Cada link tem aria-label="Page N"
-# (a página atual tem "Page N is your current page" — o regex mais abaixo
-# apanha o número na mesma); o "..." do meio não tem aria-label nenhum,
-# por isso [aria-label] já o exclui sozinho.
-PAGINATION_LINK_SELECTOR = "ul.react-paginate li.pagination-item a"
-PAGINATION_NUMBER_SELECTOR = f"{PAGINATION_LINK_SELECTOR}[aria-label]"
-_PAGE_ARIA_RE = re.compile(r"Page (\d+)")
 
 # Página /listing/search — filtros por JS (react-select), não por URL
 SEARCH_AGENCY_CONTROL_SELECTOR = '[data-id="officeId"] .select__control'
@@ -355,82 +343,19 @@ def extract_search_cards(page) -> list[dict]:
 
 
 def wait_for_new_first_card(page, previous_first: str | None, timeout_ms: int = 10000, poll_ms: int = 300) -> bool:
-    """Espera (por polling curto) que a grelha mude a sério depois de
-    paginar/saltar de página — um sleep fixo não chega sempre (já
-    aconteceu numa corrida real ler 0 cartões logo a seguir a clicar em
-    "seguinte", com a grelha ainda a meio da transição). Conta como
-    "mudou a sério" tanto um novo 1º cartão diferente do anterior (página
-    com resultados) como a grelha ficar mesmo vazia de forma estável —
-    2 leituras seguidas sem cartão nenhum (página sem resultados, ex.:
-    para lá do fim real da lista, incluindo ao saltar direto para uma
-    página bem acima do fim, tipo a "1000" que a Maxwork mostra sempre).
-    Devolve False só se nunca se estabilizar dentro do timeout."""
+    """Espera (por polling curto) que o 1º cartão mude a sério depois de
+    paginar — um sleep fixo não chega sempre (já aconteceu numa corrida
+    real ler 0 cartões logo a seguir a clicar em "seguinte", com a grelha
+    ainda a meio da transição). Devolve False se nunca mudar dentro do
+    timeout — sinal de que já não há página seguinte a sério, mesmo que o
+    botão "seguinte" continue visualmente ativo."""
     elapsed = 0
-    empty_streak = 0
     while elapsed < timeout_ms:
         page.wait_for_timeout(poll_ms)
         elapsed += poll_ms
         current = first_card_key(page)
         if current is not None and current != previous_first:
             return True
-        if current is None:
-            empty_streak += 1
-            if empty_streak >= 2:
-                return True
-        else:
-            empty_streak = 0
-    return False
-
-
-def has_prev_page(page) -> bool:
-    if page.query_selector(PREV_PAGE_DISABLED_SELECTOR):
-        return False
-    return page.query_selector(PREV_PAGE_SELECTOR) is not None
-
-
-def retreat_to_prev_page(page, previous_first: str | None, attempts: int = 3) -> bool:
-    """Como advance_to_next_page(), só que a recuar — mesma lógica de
-    repetir antes de desistir, direção oposta."""
-    for attempt in range(1, attempts + 1):
-        page.click(PREV_PAGE_SELECTOR)
-        if wait_for_new_first_card(page, previous_first):
-            return True
-        if attempt < attempts:
-            print(f"  [aviso] a página anterior ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
-    return False
-
-
-def highest_visible_page_number(page) -> int | None:
-    """Número da página mais alta atualmente visível na barra de
-    paginação (react-paginate) — na primeira vista da pesquisa costuma
-    ser "1000", um limite genérico da Maxwork que NÃO reflete o total
-    real de resultados (a maior parte dessas páginas pode estar vazia —
-    ver comentário em scrape_search_all)."""
-    links = page.query_selector_all(PAGINATION_NUMBER_SELECTOR)
-    if not links:
-        return None
-    aria = links[-1].get_attribute("aria-label") or ""
-    match = _PAGE_ARIA_RE.search(aria)
-    return int(match.group(1)) if match else None
-
-
-def jump_to_page(page, page_number: int, previous_first: str | None, attempts: int = 3) -> bool:
-    """Clica diretamente num link de página visível na paginação
-    (aria-label="Page N") — o react-paginate pede logo essa página, sem
-    precisar de clicar em "seguinte"/"anterior" repetidamente até lá
-    chegar. Só funciona para números já visíveis na barra (ex.: os
-    poucos primeiros/últimos que a Maxwork mostra sempre) — não é uma
-    forma de saltar para um número qualquer."""
-    selector = f'{PAGINATION_LINK_SELECTOR}[aria-label="Page {page_number}"]'
-    for attempt in range(1, attempts + 1):
-        link = page.query_selector(selector)
-        if not link:
-            return False
-        link.click()
-        if wait_for_new_first_card(page, previous_first):
-            return True
-        if attempt < attempts:
-            print(f"  [aviso] a página {page_number} ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
     return False
 
 
