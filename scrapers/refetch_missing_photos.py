@@ -28,7 +28,7 @@ import shutil
 
 from playwright.sync_api import sync_playwright
 
-from maxwork_common import EMAIL, PASSWORD, HEADLESS, open_session
+from maxwork_common import EMAIL, PASSWORD, open_session, launch_browser
 from maxwork_details_to_csv import dismiss_blocking_modal, extract_detail, format_row_for_csv
 
 INPUT_CSV = "maxwork_imoveis_detalhado.csv"
@@ -66,7 +66,7 @@ def main():
     print(f"[maxwork] cópia de segurança guardada em {backup_path}")
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=HEADLESS)
+        browser = launch_browser(pw)
         context, page = open_session(browser)
 
         for i, row in enumerate(targets, start=1):

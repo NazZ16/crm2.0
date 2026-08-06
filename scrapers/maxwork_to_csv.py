@@ -40,7 +40,7 @@ import re
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from maxwork_common import EMAIL, PASSWORD, HEADLESS, open_session, parse_number
+from maxwork_common import EMAIL, PASSWORD, open_session, launch_browser, parse_number
 
 OUTPUT_CSV = "maxwork_imoveis.csv"
 
@@ -375,7 +375,7 @@ def main():
     print(f"[maxwork] {len(AGENCIES)} agência(s) a pesquisar: {', '.join(AGENCIES)}")
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=HEADLESS)
+        browser = launch_browser(pw)
         context, page = open_session(browser)
 
         all_rows = []

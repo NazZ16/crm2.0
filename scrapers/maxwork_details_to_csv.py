@@ -49,7 +49,7 @@ import re
 import requests
 from playwright.sync_api import sync_playwright
 
-from maxwork_common import EMAIL, PASSWORD, HEADLESS, CRM_API_URL, SCRAPER_API_KEY, open_session, parse_number
+from maxwork_common import EMAIL, PASSWORD, CRM_API_URL, SCRAPER_API_KEY, open_session, launch_browser, parse_number
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
@@ -395,7 +395,7 @@ def main():
         os.makedirs(PHOTOS_DIR, exist_ok=True)
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=HEADLESS)
+        browser = launch_browser(pw)
         context, page = open_session(browser)
 
         for i, row in enumerate(rows, start=1):

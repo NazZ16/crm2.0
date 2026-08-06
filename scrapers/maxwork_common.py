@@ -131,19 +131,43 @@ def login(page, start_url: str = LOGIN_URL):
     print("Login OK.")
 
 
+def launch_browser(pw):
+    """Lança o Chromium com argumentos que reduzem a frequência de "Page
+    crashed" (o processo do Chromium a abaixo sozinho — aconteceu numa
+    corrida real no Windows logo no primeiro page.goto(), antes de
+    qualquer login). --disable-gpu evita crashes ligados a aceleração de
+    GPU em modo headless; --disable-dev-shm-usage evita ficar sem memória
+    partilhada em ambientes com pouco /dev/shm."""
+    return pw.chromium.launch(headless=HEADLESS, args=["--disable-gpu", "--disable-dev-shm-usage"])
+
+
 def open_session(browser):
     """Abre uma página do Maxwork já autenticada, reutilizando a sessão
     guardada em maxwork_session.json de uma corrida anterior (se existir e
     ainda for válida — login() só volta a pedir email/password se tiver
     expirado). Grava a sessão logo a seguir, para ficar disponível mesmo
     que o resto do script falhe a meio. Devolve (context, page) — fecha o
-    context (não só a page) quando terminares, para libertar os recursos."""
+    context (não só a page) quando terminares, para libertar os recursos.
+
+    Se o Chromium encravar ("Page crashed") logo ao abrir — já aconteceu
+    numa corrida real —, a page fica inutilizável para sempre; tenta mais
+    uma vez com uma page nova no mesmo context (mantém os cookies/sessão
+    já carregados) antes de desistir."""
     context = browser.new_context(
         locale="pt-PT",
         storage_state=STORAGE_STATE_PATH if os.path.exists(STORAGE_STATE_PATH) else None,
     )
     page = context.new_page()
-    login(page)
+    for attempt in range(1, 3):
+        try:
+            login(page)
+            break
+        except Exception as e:
+            if attempt >= 2 or "crash" not in str(e).lower():
+                raise
+            print(f"  [aviso] a página encravou a abrir o Maxwork (Page crashed) — a tentar outra vez ({attempt}/2)...")
+            page.close()
+            page = context.new_page()
     context.storage_state(path=STORAGE_STATE_PATH)
     return context, page
 
