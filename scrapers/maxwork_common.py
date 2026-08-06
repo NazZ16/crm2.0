@@ -72,7 +72,13 @@ EMAIL_NEXT_SELECTOR = "input[type='submit']"
 PASSWORD_SELECTOR = "input[name='passwd']"
 PASSWORD_SUBMIT_SELECTOR = "input[type='submit']"
 STAY_SIGNED_IN_SELECTOR = "input#idSIButton9"
-APP_LOADED_SELECTOR = "#search-term"
+# :visible (extensão do motor de seleção do Playwright, não é CSS puro) —
+# desde a mudança de layout responsivo da Maxwork há DOIS inputs com
+# id="search-term" no DOM ao mesmo tempo (um para desktop, outro para
+# mobile, escondido por CSS) o que fazia o Playwright avisar em cada
+# verificação "locator resolved to 2 elements. Proceeding with the first
+# one" — inofensivo (usa sempre o 1º), mas escondia o resto do log.
+APP_LOADED_SELECTOR = "#search-term:visible"
 
 # Sessão de login guardada (cookies + local storage) — reutilizada entre
 # corridas para não precisar de fazer login Microsoft outra vez sempre que
