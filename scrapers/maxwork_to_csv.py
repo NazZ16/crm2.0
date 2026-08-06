@@ -359,6 +359,27 @@ def wait_for_new_first_card(page, previous_first: str | None, timeout_ms: int = 
     return False
 
 
+def advance_to_next_page(page, previous_first: str | None, attempts: int = 3) -> bool:
+    """Clica em "seguinte" e espera que o 1º cartão mude a sério — antes
+    de assumir que já não há mais páginas, tenta clicar outra vez em vez
+    de desistir logo ao primeiro wait_for_new_first_card() falhado.
+
+    Numa pesquisa sem filtro de agência (muitas mais páginas seguidas do
+    que qualquer pesquisa por agência testada até agora) já aconteceu a
+    página seguinte simplesmente demorar mais do que a janela de espera
+    habitual (rede/servidor mais lentos nalguns momentos) — sem repetir
+    a tentativa, isso era lido como "fim dos resultados" e cortava a
+    paginação a meio, com corridas seguidas a pararem em páginas
+    diferentes mesmo sem o conjunto de dados ter mudado."""
+    for attempt in range(1, attempts + 1):
+        page.click(NEXT_PAGE_SELECTOR)
+        if wait_for_new_first_card(page, previous_first):
+            return True
+        if attempt < attempts:
+            print(f"  [aviso] a página seguinte ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+    return False
+
+
 def scrape_search_all(page) -> list[dict]:
     all_rows = []
     page_num = 1
@@ -389,9 +410,8 @@ def scrape_search_all(page) -> list[dict]:
             break
 
         previous_first = first_card_key(page)
-        page.click(NEXT_PAGE_SELECTOR)
-        if not wait_for_new_first_card(page, previous_first):
-            print("  [aviso] a página seguinte não trouxe cartões novos — a parar a paginação")
+        if not advance_to_next_page(page, previous_first):
+            print("  [aviso] a página seguinte não trouxe cartões novos depois de várias tentativas — a parar a paginação")
             break
         page_num += 1
 
