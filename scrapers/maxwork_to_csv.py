@@ -167,11 +167,13 @@ def first_card_key(page) -> str | None:
 
 
 def wait_for_results(page, agency_name: str, previous_first: str | None, attempts: int = 3) -> bool:
-    """Espera que a grelha de resultados atualize a sério depois de clicar
-    "Ver Resultados" — não só que apareça ALGUM cartão (podem ser os da
-    pesquisa anterior, ver first_card_key()), mas que o 1º cartão seja
-    diferente do que estava lá antes. Se não atualizar, ou se não aparecer
-    cartão nenhum, volta a clicar em "Ver Resultados" e tenta de novo."""
+    """Espera que a grelha de resultados atualize a sério depois de mudar
+    de agência — a Maxwork já pesquisa sozinha ao selecionar a opção no
+    dropdown, sem precisar de clicar em "Ver Resultados". Não chega
+    verificar que aparece ALGUM cartão (podem ser os da pesquisa anterior,
+    ver first_card_key()), tem de ser o 1º cartão diferente do que estava
+    lá antes. Só clica em "Ver Resultados" como recurso se a atualização
+    automática não acontecer dentro do tempo de espera."""
     for attempt in range(1, attempts + 1):
         try:
             page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
@@ -310,6 +312,13 @@ def scrape_search_all(page) -> list[dict]:
         print(f"  A ler página {page_num} da pesquisa...")
         rows = extract_search_cards(page)
         print(f"    {len(rows)} imóveis nesta página")
+        if not rows:
+            # O paginador da Maxwork mostra sempre até à "Page 1000" — é
+            # genérico, não reflete o total real de resultados filtrados
+            # por agência — por isso o botão "seguinte" continua ativo
+            # muito depois de a filtragem já ter acabado. Parar aqui, não
+            # em has_next_page(), é o único sinal fiável de "já não há mais".
+            break
         all_rows.extend(rows)
 
         if not has_next_page(page):
@@ -341,11 +350,17 @@ def scrape_agency(page, agency_name: str) -> list[dict]:
         print(f"  [debug] HTML da página tem {len(html)} caracteres")
         return []
 
+    # A assinatura do 1º cartão tem de ser lida ANTES de escolher a
+    # agência: a Maxwork agora atualiza os resultados sozinha assim que a
+    # opção é selecionada no dropdown (já não é preciso clicar em "Ver
+    # Resultados"). Se ler esta assinatura depois de select_agency_filter,
+    # já apanha o resultado novo como se fosse o "antigo" — wait_for_results
+    # fica então à espera de uma mudança que já aconteceu, esgota as
+    # tentativas e desiste (reportava 0 imóveis nalgumas agências).
+    previous_first = first_card_key(page)
     if not select_agency_filter(page, agency_name):
         return []
 
-    previous_first = first_card_key(page)
-    run_search(page)
     if not wait_for_results(page, agency_name, previous_first):
         return []
 
