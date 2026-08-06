@@ -32,6 +32,7 @@ export function ListingsSearchBar() {
     } else {
       params.delete('q')
     }
+    params.delete('page')
     const qs = params.toString()
     startTransition(() => {
       router.replace(qs ? `${pathname}?${qs}` : pathname)

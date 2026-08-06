@@ -41,6 +41,7 @@ export function ListingsFilters() {
     } else {
       params.delete(key)
     }
+    params.delete('page')
     const qs = params.toString()
     startTransition(() => {
       router.replace(qs ? `${pathname}?${qs}` : pathname)
@@ -62,6 +63,7 @@ export function ListingsFilters() {
     params.delete('property_type')
     params.delete('price_min')
     params.delete('price_max')
+    params.delete('page')
     const qs = params.toString()
     startTransition(() => {
       router.replace(qs ? `${pathname}?${qs}` : pathname)
