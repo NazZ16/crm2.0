@@ -192,10 +192,17 @@ def wait_for_results(page, agency_name: str, previous_first: str | None, attempt
 
 
 def maximize_search_page_size(page):
+    """Muda o tamanho de página para 100 — isto obriga a grelha a voltar a
+    carregar (fica momentaneamente vazia enquanto o pedido novo não
+    chega). Um sleep fixo de 1.5s não chegava sempre — já aconteceu numa
+    corrida real ler 0 cartões logo a seguir por a grelha ainda estar a
+    meio da transição. wait_for_selector espera mesmo até haver cartões
+    a sério, por mais tempo que isso demore (até ao timeout)."""
     print("  a aumentar o tamanho de página da pesquisa...")
     try:
         page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
-        page.wait_for_timeout(1500)
+        page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
+        page.wait_for_timeout(500)
     except Exception:
         print("  [aviso] não consegui aumentar o tamanho de página na pesquisa")
 
@@ -305,6 +312,23 @@ def extract_search_cards(page) -> list[dict]:
     return rows
 
 
+def wait_for_new_first_card(page, previous_first: str | None, timeout_ms: int = 10000, poll_ms: int = 300) -> bool:
+    """Espera (por polling curto) que o 1º cartão mude a sério depois de
+    paginar — um sleep fixo não chega sempre (já aconteceu numa corrida
+    real ler 0 cartões logo a seguir a clicar em "seguinte", com a grelha
+    ainda a meio da transição). Devolve False se nunca mudar dentro do
+    timeout — sinal de que já não há página seguinte a sério, mesmo que o
+    botão "seguinte" continue visualmente ativo."""
+    elapsed = 0
+    while elapsed < timeout_ms:
+        page.wait_for_timeout(poll_ms)
+        elapsed += poll_ms
+        current = first_card_key(page)
+        if current is not None and current != previous_first:
+            return True
+    return False
+
+
 def scrape_search_all(page) -> list[dict]:
     all_rows = []
     page_num = 1
@@ -324,8 +348,11 @@ def scrape_search_all(page) -> list[dict]:
         if not has_next_page(page):
             break
 
+        previous_first = first_card_key(page)
         page.click(NEXT_PAGE_SELECTOR)
-        page.wait_for_timeout(1500)
+        if not wait_for_new_first_card(page, previous_first):
+            print("  [aviso] a página seguinte não trouxe cartões novos — a parar a paginação")
+            break
         page_num += 1
 
     return all_rows
