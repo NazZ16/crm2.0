@@ -191,20 +191,34 @@ def wait_for_results(page, agency_name: str, previous_first: str | None, attempt
     return False
 
 
-def maximize_search_page_size(page):
+def maximize_search_page_size(page, attempts: int = 3):
     """Muda o tamanho de página para 100 — isto obriga a grelha a voltar a
     carregar (fica momentaneamente vazia enquanto o pedido novo não
     chega). Um sleep fixo de 1.5s não chegava sempre — já aconteceu numa
     corrida real ler 0 cartões logo a seguir por a grelha ainda estar a
     meio da transição. wait_for_selector espera mesmo até haver cartões
-    a sério, por mais tempo que isso demore (até ao timeout)."""
+    a sério, por mais tempo que isso demore (até ao timeout).
+
+    Confirma sempre o valor do dropdown depois de o mudar: numa corrida
+    real, funcionou na 1ª agência mas voltou sozinho a "10" (o valor por
+    omissão) em todas as agências seguintes — a Maxwork parece repor o
+    tamanho de página ao trocar de agência, às vezes depois do nosso
+    select_option já ter corrido. Sem esta confirmação, as agências
+    seguintes ficavam limitadas a 10 resultados por página sem aviso
+    nenhum."""
     print("  a aumentar o tamanho de página da pesquisa...")
-    try:
-        page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
-        page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
-        page.wait_for_timeout(500)
-    except Exception:
-        print("  [aviso] não consegui aumentar o tamanho de página na pesquisa")
+    for attempt in range(1, attempts + 1):
+        try:
+            page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
+            page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
+            page.wait_for_timeout(500)
+            current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
+            if current == "100":
+                return
+            print(f"  [aviso] tamanho de página voltou a \"{current}\" (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+        except Exception as e:
+            print(f"  [aviso] não consegui aumentar o tamanho de página na pesquisa (tentativa {attempt}/{attempts}): {e}")
+    print("  [aviso] a pesquisa desta agência vai ficar com o tamanho de página por omissão")
 
 
 # Lê os ~100 cartões da página de uma só vez dentro do browser (1 chamada
