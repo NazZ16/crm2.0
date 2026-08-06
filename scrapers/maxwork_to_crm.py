@@ -53,6 +53,7 @@ PROPERTY_TYPE_MAP = {
     "predio": "comercial",
     "garagem": "garagem",
 }
+VALID_PROPERTY_TYPES = {"apartamento", "moradia", "terreno", "comercial", "garagem", "outro"}
 
 # Valores devolvidos pelo Maxwork -> enum "business_type" da tabela listings
 # ('venda','arrendamento')
@@ -74,7 +75,7 @@ def map_property_type(tipo):
     key = strip_accents(tipo or "").lower()
     for needle, mapped in PROPERTY_TYPE_MAP.items():
         if needle in key:
-            return mapped
+            return mapped if mapped in VALID_PROPERTY_TYPES else "outro"
     return "outro"
 
 
@@ -124,6 +125,17 @@ def clean_email(text):
     senão o pedido inteiro falha por causa de um campo secundário."""
     value = (text or "").strip()
     return value if "@" in value else None
+
+
+def clean_energy_rating(text):
+    """O CRM limita "energy_rating" a 10 caracteres — a Maxwork por vezes
+    devolve algo mais longo (ex.: "Não determinado", 16 caracteres), o
+    que fazia o pedido inteiro falhar com HTTP 400 por causa de um campo
+    secundário, saltando o imóvel todo."""
+    value = (text or "").strip()
+    if not value:
+        return None
+    return value[:10] if len(value) > 10 else value
 
 
 def parse_bool(text):
@@ -227,7 +239,7 @@ def build_payload(row):
         "bathrooms": parse_int(row.get("casas_banho")),
         "construction_year": parse_int(row.get("ano_construcao")),
         "has_elevator": parse_bool(row.get("elevador")),
-        "energy_rating": row.get("eficiencia_energetica"),
+        "energy_rating": clean_energy_rating(row.get("eficiencia_energetica")),
 
         "features": [f for f in (row.get("caracteristicas") or "").split(";") if f],
         "description": description,
