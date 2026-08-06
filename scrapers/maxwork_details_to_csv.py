@@ -163,6 +163,28 @@ def sanitize_folder_name(name):
     return re.sub(r"[^A-Za-z0-9_-]", "_", name or "sem_codigo")
 
 
+def dismiss_blocking_modal(page):
+    """Fecha um modal Bootstrap (.modal.show) que tenha ficado aberto e
+    bloqueia cliques — apanhado em produção a impedir SEMPRE o clique em
+    "Media e Documentos", em dezenas de imóveis seguidos (30s de retries
+    Playwright cada vez, com o log a mostrar
+    '<div role="dialog" ... class="modal fade sh…"> ... intercepts
+    pointer events'). Chamado antes de qualquer clique que possa ser
+    bloqueado por isto."""
+    try:
+        modal = page.locator(".modal.show").first
+        if modal.count() == 0:
+            return
+        close_btn = modal.locator("[data-bs-dismiss='modal'], .btn-close").first
+        if close_btn.count() > 0:
+            close_btn.click(timeout=2000)
+        else:
+            page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
+    except Exception:
+        pass
+
+
 def download_photo(page, url, dest_path):
     """Descarrega uma foto usando a sessão autenticada do browser (page.request
     partilha os cookies/estado do Playwright — evita problemas de acesso)."""
@@ -186,6 +208,7 @@ def extract_photos(page, codigo):
     """Lê os URLs das fotos (sempre — é o que o CRM guarda) e, só se
     DOWNLOAD_PHOTOS=True, descarrega cada uma para fotos/<codigo>/NN.jpg.
     Devolve (urls, caminhos_locais)."""
+    dismiss_blocking_modal(page)
     try:
         page.get_by_text(PHOTOS_TAB_TEXT, exact=True).click()
         page.wait_for_selector("#listing-pictures", timeout=8000)
@@ -393,6 +416,7 @@ def main():
                 page.goto(url)
                 page.wait_for_selector(".badge-detail", timeout=15000)
                 page.wait_for_timeout(300)
+                dismiss_blocking_modal(page)
                 if already_known:
                     for k in DETAIL_FIELDNAMES:
                         row.setdefault(k, None)
