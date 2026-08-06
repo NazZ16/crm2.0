@@ -82,6 +82,20 @@ def ensure_filters_open(page):
         page.wait_for_timeout(500)
 
 
+def ensure_more_filters_open(page):
+    """O campo "Agência" só fica acessível depois de clicar em "Ver Mais"
+    — os filtros avançados (onde a Agência vive) ficam escondidos por
+    omissão desde a mudança de HTML de ago/2026. Sem este clique o campo
+    Agência continua inacessível e a espera por ele expira. Uma vez
+    aberto o botão passa a "Ver Menos" e get_by_role deixa de o encontrar
+    por este nome — por isso é seguro chamar isto em cada agência sem
+    voltar a fechar os filtros avançados sem querer."""
+    toggle = page.get_by_role("button", name="Ver Mais")
+    if toggle.count() > 0:
+        toggle.first.click()
+        page.wait_for_timeout(500)
+
+
 def select_agency_filter(page, agency_name: str, attempts: int = 3) -> bool:
     """Escreve o nome no campo react-select 'Agência' e escolhe a primeira
     opção correspondente. Devolve False se não aparecer nenhuma opção
@@ -317,6 +331,7 @@ def scrape_agency(page, agency_name: str) -> list[dict]:
     # lenta e instável a repetir todo o carregamento inicial. Basta reabrir
     # o painel de filtros (ensure_filters_open) e mudar a Agência no sítio.
     ensure_filters_open(page)
+    ensure_more_filters_open(page)
 
     try:
         page.wait_for_selector(SEARCH_AGENCY_INPUT_SELECTOR, timeout=25000)
