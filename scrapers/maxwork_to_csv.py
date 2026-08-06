@@ -50,6 +50,17 @@ AGENCIES = [a.strip() for a in re.split(r"[,\n]+", MAXWORK_AGENCIES_RAW) if a.st
 NEXT_PAGE_SELECTOR = "li.page-item.next-item a.page-link"
 NEXT_PAGE_DISABLED_SELECTOR = "li.page-item.next-item.disabled"
 
+# Números de página clicáveis na paginação (react-paginate) — usados por
+# maxwork_to_csv_bulk.py para saber se uma pesquisa atingiu o limite de
+# 100 páginas (10 000 resultados) que a Maxwork impõe a cada pesquisa —
+# um limite do próprio motor de busca, não da agência/filtro escolhido.
+# Cada link tem aria-label="Page N" (a página atual tem "Page N is your
+# current page" — o regex mais abaixo apanha o número na mesma); o "..."
+# do meio não tem aria-label nenhum, por isso [aria-label] já o exclui.
+PAGINATION_LINK_SELECTOR = "ul.react-paginate li.pagination-item a"
+PAGINATION_NUMBER_SELECTOR = f"{PAGINATION_LINK_SELECTOR}[aria-label]"
+_PAGE_ARIA_RE = re.compile(r"Page (\d+)")
+
 # Página /listing/search — filtros por JS (react-select), não por URL
 SEARCH_AGENCY_CONTROL_SELECTOR = '[data-id="officeId"] .select__control'
 SEARCH_AGENCY_INPUT_SELECTOR = '[data-id="officeId"] input.select__input'
@@ -378,6 +389,23 @@ def advance_to_next_page(page, previous_first: str | None, attempts: int = 3) ->
         if attempt < attempts:
             print(f"  [aviso] a página seguinte ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
     return False
+
+
+def highest_visible_page_number(page) -> int | None:
+    """Número da página mais alta atualmente visível na barra de
+    paginação (react-paginate). A Maxwork limita qualquer pesquisa a no
+    máximo 100 páginas (10 000 resultados, a 100 por página) — é um
+    limite do próprio motor de busca, não da agência/filtro escolhido:
+    se uma pesquisa tiver mais do que isso, esta função devolve 100
+    (nunca mais), mesmo que o total real seja muito maior. Usado por
+    maxwork_to_csv_bulk.py para saber quando uma pesquisa por preço
+    precisa de ser dividida em fatias mais pequenas."""
+    links = page.query_selector_all(PAGINATION_NUMBER_SELECTOR)
+    if not links:
+        return None
+    aria = links[-1].get_attribute("aria-label") or ""
+    match = _PAGE_ARIA_RE.search(aria)
+    return int(match.group(1)) if match else None
 
 
 def scrape_search_all(page) -> list[dict]:
