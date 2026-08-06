@@ -52,5 +52,6 @@ __pycache__/
 # scrapers — sessão de login guardada e dados descarregados, nunca para o git
 scrapers/maxwork_session.json
 scrapers/maxwork_imoveis*.csv
+scrapers/maxwork_imoveis*.csv.bak
 scrapers/fotos/
 scrapers/logs/
