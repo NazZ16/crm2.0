@@ -199,26 +199,33 @@ def maximize_search_page_size(page, attempts: int = 3):
     meio da transição. wait_for_selector espera mesmo até haver cartões
     a sério, por mais tempo que isso demore (até ao timeout).
 
-    Confirma sempre o valor do dropdown depois de o mudar: numa corrida
-    real, funcionou na 1ª agência mas voltou sozinho a "10" (o valor por
-    omissão) em todas as agências seguintes — a Maxwork parece repor o
-    tamanho de página ao trocar de agência, às vezes depois do nosso
-    select_option já ter corrido. Sem esta confirmação, as agências
-    seguintes ficavam limitadas a 10 resultados por página sem aviso
-    nenhum."""
+    Isto NÃO é um bug do nosso lado — é a própria Maxwork: o dropdown
+    "Mostrar" fica visualmente em "100" de uma agência para a seguinte
+    (não reinicia), mas os resultados aplicados voltam sozinhos a 10 ao
+    trocar de agência. Como o dropdown já mostra "100", select_option
+    para o mesmo valor não gera uma mudança real — o onChange que
+    aplicaria o tamanho de página a sério nunca dispara. Por isso, se já
+    estiver em "100", muda primeiro para outro valor (forçando uma
+    mudança real) antes de voltar a pôr 100. E confirma pelo NÚMERO DE
+    CARTÕES a sério — não pelo valor do dropdown, que pode continuar a
+    mostrar "100" mesmo com os resultados presos em 10."""
     print("  a aumentar o tamanho de página da pesquisa...")
     for attempt in range(1, attempts + 1):
         try:
+            current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
+            if current == "100":
+                page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50")
+                page.wait_for_timeout(500)
             page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100")
             page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=15000)
             page.wait_for_timeout(500)
-            current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
-            if current == "100":
+            card_count = len(page.query_selector_all(SEARCH_RESULTS_CARD_SELECTOR))
+            if card_count > 10:
                 return
-            print(f"  [aviso] tamanho de página voltou a \"{current}\" (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+            print(f"  [aviso] só {card_count} cartões depois de pedir 100 por página (tentativa {attempt}/{attempts}) — a tentar outra vez...")
         except Exception as e:
             print(f"  [aviso] não consegui aumentar o tamanho de página na pesquisa (tentativa {attempt}/{attempts}): {e}")
-    print("  [aviso] a pesquisa desta agência vai ficar com o tamanho de página por omissão")
+    print("  [aviso] a pesquisa desta agência pode ficar com menos de 100 resultados por página (pode ser normal se a agência tiver poucos imóveis)")
 
 
 # Lê os ~100 cartões da página de uma só vez dentro do browser (1 chamada
