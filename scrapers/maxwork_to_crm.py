@@ -134,6 +134,17 @@ def parse_int(text):
     return int(str(text).strip())
 
 
+def parse_construction_year(text):
+    """Como parse_int, mas descarta valores fora de um intervalo plausível
+    (ex.: "1" em vez do ano real) — o servidor rejeita o imóvel inteiro se
+    o ano vier disparatado, por isso é melhor omitir o campo do que travar
+    o import por causa de um valor claramente errado na origem."""
+    year = parse_int(text)
+    if year is None or year < 1800 or year > 2100:
+        return None
+    return year
+
+
 def clean_email(text):
     """O servidor valida o formato do email — só envia se parecer válido,
     senão o pedido inteiro falha por causa de um campo secundário."""
@@ -251,7 +262,7 @@ def build_payload(row):
         "area_plot_m2": parse_pt_number(row.get("area_lote_m2")),
         "bedrooms": parse_int(row.get("quartos")),
         "bathrooms": parse_int(row.get("casas_banho")),
-        "construction_year": parse_int(row.get("ano_construcao")),
+        "construction_year": parse_construction_year(row.get("ano_construcao")),
         "has_elevator": parse_bool(row.get("elevador")),
         "energy_rating": clean_energy_rating(row.get("eficiencia_energetica")),
 
