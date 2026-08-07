@@ -15,12 +15,19 @@ Essa resposta é JSON estruturado com:
     quartos, eficiência energética, ano de construção, contacto do
     agente, ...).
 
-ESTE SCRIPT É SÓ PARA TESTAR se dá para chamar esta API diretamente
-(reaproveitando a sessão de login já autenticada, via page.request —
-que partilha os cookies com o browser) e se o totalCount bate certo com
-o que a Maxwork mostra (~47k) — antes de reescrever o
-maxwork_to_csv_bulk.py a sério para usar isto em vez de ler os cartões
-no ecrã.
+1ª tentativa (chamar a API diretamente com page.request, replicando o
+pedido do HAR) deu 401 — a Maxwork autentica os pedidos de API de outra
+forma (provavelmente um token ligado ao login Microsoft/Azure AD, não
+cookies simples) que não temos como replicar manualmente.
+
+Esta versão usa outra estratégia: em vez de construirmos o pedido nós
+próprios, deixamos a PRÓPRIA APP fazer o pedido (como já faz quando
+clicamos em "Ver Resultados" — isso sabemos que funciona, é a base de
+todo o scraper) e só intercetamos a resposta com
+page.expect_response(). Também lemos o CORPO DO PEDIDO que a app envia
+quando aplicamos o filtro de preço na UI — assim descobrimos o nome
+certo do campo de preço na API sem precisar de adivinhar nem de outro
+HAR.
 
 COMO USAR:
     1. Garante que tens MAXWORK_EMAIL/MAXWORK_PASSWORD no .env (já
@@ -34,50 +41,45 @@ import json
 from playwright.sync_api import sync_playwright
 
 from maxwork_common import EMAIL, PASSWORD, open_session, launch_browser
+from maxwork_to_csv import ensure_filters_open, run_search
+from maxwork_to_csv_bulk import (
+    ensure_no_agency_filter,
+    ensure_results_loaded,
+    PRICE_MIN_SELECTOR,
+    PRICE_MAX_SELECTOR,
+)
 
-BASE_URL = "https://app.maxwork.pt"
-SEARCH_API_PATH = "/api/Metadata/multi-match-listing-search"
-PROFILE_API_PATH = "/api/User/GetUserProfile"
-
-# ListingClassID=1 ("Habitação") e ListingStatusID=1 ("Ativo") são os
-# filtros que já vêm por omissão na pesquisa normal (confirmado no HAR)
-# — os mesmos que maxwork_to_csv_bulk.py já assume ao não mexer neles.
-DEFAULT_FILTER_FIELDS = [
-    ("ListingClassID", "1"),
-    ("ListingStatusID", "1"),
-]
+SEARCH_API_PATH_FRAGMENT = "multi-match-listing-search"
 
 
-def _full_filter(field: str, value: str) -> dict:
-    """A API espera todos estes campos presentes no objeto do filtro
-    (mesmo a null) — replica exatamente a forma vista no pedido real
-    capturado do DevTools, para não arriscar um 400 por faltar um campo."""
-    return {
-        "field": field, "type": 0, "value": value, "fuzziness": None,
-        "latitude": None, "longitude": None, "topLeftLatitude": None,
-        "topLeftLongitude": None, "bottomRightLatitude": None,
-        "bottomRightLongitude": None, "distance": None, "greaterThan": None,
-        "lessThan": None, "biggerThan": None, "smallerThan": None, "boost": None,
-    }
+def capture_search(page, trigger):
+    """Regista a interceção da resposta da API de pesquisa ANTES de
+    disparar "trigger" (a ação que a provoca — clicar em "Ver
+    Resultados", mudar o tamanho de página, etc.), devolve
+    (request_body, response_json) ou (None, None) se não aparecer
+    nenhuma dentro do timeout."""
+    try:
+        with page.expect_response(
+            lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=15000
+        ) as resp_info:
+            trigger()
+        response = resp_info.value
+    except Exception as e:
+        print(f"  [aviso] não apanhei nenhuma resposta da API: {e}")
+        return None, None
 
+    print(f"  HTTP {response.status} — {response.url}")
+    req_body = None
+    try:
+        req_body = response.request.post_data_json
+    except Exception:
+        pass
 
-def search(page, filters: list[dict], headers: dict, page_number: int = 1, size: int = 100):
-    body = {
-        "filters": filters,
-        "sort": {"fieldToSort": "PublishDate", "order": 1},
-        "index": None,
-        "size": None,
-    }
-    resp = page.request.post(
-        f"{BASE_URL}{SEARCH_API_PATH}?page={page_number}&size={size}",
-        data=json.dumps(body),
-        headers=headers,
-    )
-    print(f"  HTTP {resp.status}")
-    if not resp.ok:
-        print(f"  corpo da resposta: {resp.text()[:500]}")
-        return None
-    return resp.json()
+    if not response.ok:
+        print(f"  corpo da resposta: {response.text()[:500]}")
+        return req_body, None
+
+    return req_body, response.json()
 
 
 def main():
@@ -88,54 +90,47 @@ def main():
         browser = launch_browser(pw)
         context, page = open_session(browser)
 
-        print("[teste] a chamar GetUserProfile (para descobrir agentID/officeID)...")
-        profile_resp = page.request.get(f"{BASE_URL}{PROFILE_API_PATH}")
-        print(f"  HTTP {profile_resp.status}")
-        agent_id = ""
-        office_id = ""
-        if profile_resp.ok:
-            profile = profile_resp.json()
-            agent_id = str(profile.get("id", ""))
-            office_id = str(profile.get("officeID", ""))
-            print(f"  utilizador: {profile.get('name')}, agentID: {agent_id}, officeID: {office_id}")
-        else:
-            print(f"  [aviso] não consegui o perfil — corpo: {profile_resp.text()[:300]}")
+        ensure_no_agency_filter(page)
+        if not ensure_results_loaded(page):
+            context.close()
+            browser.close()
+            raise SystemExit("A grelha de resultados nunca carregou — corre com HEADLESS=false para ver o que se passa")
 
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "impersonateagentid": agent_id,
-            "impersonateofficeid": office_id,
-            "impersonateuserteamid": "",
-            "x-languageid": "9",
-        }
+        print("\n[teste 1] a intercetar a resposta ao clicar em \"Ver Resultados\" (sem preço)...")
+        req_body, data = capture_search(page, lambda: run_search(page))
 
-        filters = [_full_filter(field, value) for field, value in DEFAULT_FILTER_FIELDS]
-
-        print("\n[teste 1] pesquisa sem preço (página 1, 100 por página)...")
-        data = search(page, filters, headers, page_number=1, size=100)
         if data is None:
-            print("  FALHOU — ver detalhes acima. Pode faltar algum header; compara com o HAR.")
+            print("  FALHOU — não apanhei uma resposta válida da API.")
         else:
             print(f"  totalCount: {data.get('totalCount')}")
             print(f"  totalPages: {data.get('totalPages')}")
-            print(f"  nº items devolvidos: {len(data.get('items', []))}")
             items = data.get("items") or []
+            print(f"  nº items devolvidos: {len(items)}")
             if items:
                 print("\n  1º imóvel (todos os campos):")
                 print(json.dumps(items[0], indent=2, ensure_ascii=False))
                 sem_foto = [it for it in items if not it.get("listingPictureUrl")]
                 print(f"\n  imóveis sem foto nesta página (que antes ficavam sem URL): {len(sem_foto)}")
 
-        print("\n[teste 2] pesquisa com preço (0 a 200 000, página 1)...")
-        filters_com_preco = filters + [
-            {**_full_filter("Price", None), "greaterThan": 0, "lessThan": 200000},
-        ]
-        data2 = search(page, filters_com_preco, headers, page_number=1, size=10)
+        print("\n[teste 2] a preencher preço 0-200000 e intercetar o pedido/resposta...")
+        ensure_filters_open(page)
+
+        def fill_price_and_search():
+            page.locator(PRICE_MIN_SELECTOR).fill("0")
+            page.locator(PRICE_MAX_SELECTOR).fill("200000")
+            run_search(page)
+
+        req_body2, data2 = capture_search(page, fill_price_and_search)
+
+        if req_body2 is not None:
+            print("\n  corpo do pedido que a APP enviou (para descobrir o nome do campo de preço):")
+            print(json.dumps(req_body2, indent=2, ensure_ascii=False))
+
         if data2 is None:
-            print("  FALHOU — o nome do campo \"Price\" pode estar errado. Precisamos de outro HAR com filtro de preço aplicado para confirmar o nome certo.")
+            print("\n  FALHOU — não apanhei uma resposta válida da API para a pesquisa com preço.")
         else:
-            print(f"  totalCount: {data2.get('totalCount')} (devia ser bem menor que os {data.get('totalCount') if data else '?'} totais)")
+            total_antes = data.get("totalCount") if data else "?"
+            print(f"\n  totalCount com preço: {data2.get('totalCount')} (devia ser bem menor que os {total_antes} totais)")
 
         context.close()
         browser.close()
