@@ -64,6 +64,7 @@ filtrada de uma corrida anterior.
 """
 
 import csv
+import re
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
@@ -91,41 +92,74 @@ PRICE_MAX_SELECTOR = '[data-id="minPriceId"] input[placeholder="Máximo"]'
 NO_MAX_PRICE = 50_000_000
 
 
-def capture_search(page, trigger, attempts: int = 3):
-    """Regista a interceção da resposta da API de pesquisa ANTES de
-    disparar "trigger" (clicar em "Ver Resultados", mudar de página,
-    mudar o tamanho de página...) e devolve o JSON já parseado, ou None
-    se não aparecer nenhuma resposta válida dentro do timeout — tenta
-    outra vez antes de desistir, tal como o resto do scraper faz para
-    pedidos que por vezes demoram mais do que o costume.
+class SearchWatcher:
+    """Escuta TODAS as respostas da API de pesquisa desde que a página
+    abriu, em vez de um page.expect_response(...) de cada vez — mais
+    fácil de depurar (cada resposta que chega fica logada na hora,
+    veem-se logo se estão mesmo a chegar) e evita qualquer ambiguidade
+    sobre qual resposta em concreto estamos à espera."""
+
+    def __init__(self, page):
+        self.page = page
+        self._pending: list = []
+        page.on("response", self._on_response)
+
+    def _on_response(self, response):
+        if SEARCH_API_PATH_FRAGMENT in response.url:
+            print(f"    [debug] resposta recebida: HTTP {response.status} — {response.url}")
+            self._pending.append(response)
+
+    def clear(self):
+        self._pending.clear()
+
+    def wait_for_next(self, timeout_ms: int = 15000, poll_ms: int = 200):
+        elapsed = 0
+        while elapsed < timeout_ms:
+            if self._pending:
+                return self._pending.pop(0)
+            self.page.wait_for_timeout(poll_ms)
+            elapsed += poll_ms
+        return None
+
+
+def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3):
+    """Dispara "trigger" (clicar em "Ver Resultados", mudar de página,
+    mudar o tamanho de página...) e devolve o JSON já parseado da
+    próxima resposta da API de pesquisa que chegar, ou None se não
+    aparecer nenhuma válida dentro do timeout — tenta outra vez antes
+    de desistir, tal como o resto do scraper faz para pedidos que por
+    vezes demoram mais do que o costume.
 
     Uma pequena pausa antes de disparar (SEARCH_PAUSE_MS) evita
     encadear pesquisas depressa demais uma atrás da outra — já
     aconteceu numa corrida real ficar preso a meio com muitas pesquisas
     seguidas sem pausa nenhuma (pode ser limite de pedidos por segundo
-    do lado da Maxwork)."""
-    page.wait_for_timeout(SEARCH_PAUSE_MS)
+    do lado da Maxwork). watcher.clear() é chamado mesmo antes de
+    disparar (não depois) — para não perder uma resposta que chegue
+    muito depressa, ainda durante o próprio "trigger"."""
+    watcher.page.wait_for_timeout(SEARCH_PAUSE_MS)
     for attempt in range(1, attempts + 1):
         print(f"  a aguardar resposta da pesquisa (tentativa {attempt}/{attempts})...")
+        watcher.clear()
         try:
-            with page.expect_response(
-                lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=15000
-            ) as resp_info:
-                print("  a disparar a ação (clique/mudança)...")
-                trigger()
-                print("  ação disparada, a aguardar a resposta chegar...")
-            response = resp_info.value
-        except PlaywrightTimeout:
-            print(f"  [aviso] a resposta da pesquisa não chegou em 15s (tentativa {attempt}/{attempts})")
-            continue
+            trigger()
         except Exception as e:
-            print(f"  [aviso] erro a disparar a pesquisa (tentativa {attempt}/{attempts}): {e}")
+            print(f"  [aviso] erro a disparar a ação (tentativa {attempt}/{attempts}): {e}")
+            continue
+
+        response = watcher.wait_for_next(timeout_ms=15000)
+        if response is None:
+            print(f"  [aviso] a resposta da pesquisa não chegou em 15s (tentativa {attempt}/{attempts})")
             continue
 
         if not response.ok:
             print(f"  [aviso] HTTP {response.status} na pesquisa — corpo: {response.text()[:300]}")
             return None
-        return response.json()
+        try:
+            return response.json()
+        except Exception as e:
+            print(f"  [aviso] resposta não é JSON válido (tentativa {attempt}/{attempts}): {e}")
+            continue
     return None
 
 
@@ -194,8 +228,11 @@ def set_price_range(page, min_price: int, max_price: int):
     for attempt in range(1, 3):
         page.locator(PRICE_MIN_SELECTOR).fill(min_text)
         page.locator(PRICE_MAX_SELECTOR).fill(max_text)
-        actual_min = page.locator(PRICE_MIN_SELECTOR).input_value()
-        actual_max = page.locator(PRICE_MAX_SELECTOR).input_value()
+        # O campo mostra o valor formatado ("1 000 000 €"), não o texto em
+        # bruto que escrevemos — compara só os dígitos, senão isto dava
+        # sempre "diferente" mesmo quando preencheu certo.
+        actual_min = re.sub(r"\D", "", page.locator(PRICE_MIN_SELECTOR).input_value())
+        actual_max = re.sub(r"\D", "", page.locator(PRICE_MAX_SELECTOR).input_value())
         if actual_min == min_text and actual_max == max_text:
             return
         print(f"  [aviso] campos de preço não ficaram como esperado (min='{actual_min}', esperado='{min_text}'; max='{actual_max}', esperado='{max_text}') — a tentar outra vez...")
@@ -253,33 +290,35 @@ def map_api_item_to_row(item: dict) -> dict:
     }
 
 
-def set_page_size_100(page) -> dict | None:
+def set_page_size_100(watcher: "SearchWatcher") -> dict | None:
     """Muda o tamanho de página para 100 e devolve o JSON dessa
     resposta — separado em ações individuais (uma select_option por
     vez) para nunca ter dúvidas de qual pedido estamos a intercetar,
     ao contrário de disparar 2 mudanças seguidas e só apanhar a 1ª."""
+    page = watcher.page
     page.wait_for_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, timeout=10000)
     current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
     if current == "100":
         # já mostra "100" visualmente de uma pesquisa anterior — força uma
         # mudança real (senão o onChange que aplicaria a sério não dispara)
-        capture_search(page, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"))
-    return capture_search(page, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"))
+        capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"))
+    return capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"))
 
 
 MAX_SPLIT_DEPTH = 30  # rede de segurança — garante que a recursão acaba mesmo que o intervalo nunca fique fino o suficiente
 
 
-def scrape_price_bucket(page, min_price: int, max_price: int, depth: int = 0) -> list[dict]:
+def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int, depth: int = 0) -> list[dict]:
     """Pesquisa um intervalo de preço via API; se o totalCount passar do
     limite do motor de busca, divide o intervalo a meio e tenta cada
     metade separadamente (recursivo) até cada fatia ficar abaixo do
     limite."""
+    page = watcher.page
     label = price_label(min_price, max_price)
     print(f"{label} a pesquisar...")
 
     set_price_range(page, min_price, max_price)
-    data = capture_search(page, lambda: run_search(page))
+    data = capture_search(watcher, lambda: run_search(page))
 
     if data is None:
         print(f"{label} sem resposta válida da pesquisa depois de várias tentativas — a saltar esta fatia (podem faltar imóveis deste intervalo)")
@@ -292,15 +331,15 @@ def scrape_price_bucket(page, min_price: int, max_price: int, depth: int = 0) ->
         else:
             mid = split_point(min_price, max_price)
             print(f"{label} {total} resultados (> {MAX_RESULTS_PER_SEARCH}) — a dividir em dois")
-            left = scrape_price_bucket(page, min_price, mid, depth + 1)
-            right = scrape_price_bucket(page, mid + 1, max_price, depth + 1)
+            left = scrape_price_bucket(watcher, min_price, mid, depth + 1)
+            right = scrape_price_bucket(watcher, mid + 1, max_price, depth + 1)
             return left + right
 
     if total == 0:
         print(f"{label} sem resultados")
         return []
 
-    data100 = set_page_size_100(page)
+    data100 = set_page_size_100(watcher)
     if data100 is not None:
         data = data100
 
@@ -315,7 +354,7 @@ def scrape_price_bucket(page, min_price: int, max_price: int, depth: int = 0) ->
     # sempre sem nunca ler uma página com 0 imóveis.
     while items and data.get("hasNextPage") and has_next_page(page):
         page_num += 1
-        data = capture_search(page, lambda: page.click(NEXT_PAGE_SELECTOR))
+        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR))
         if data is None:
             print(f"{label} [aviso] falhou a apanhar a página {page_num} — a parar aqui, pode faltar o resto desta fatia")
             break
@@ -357,7 +396,8 @@ def main():
             browser.close()
             raise SystemExit("A grelha de resultados nunca carregou — corre com HEADLESS=false para ver o que se passa")
 
-        rows = scrape_price_bucket(page, 0, NO_MAX_PRICE)
+        watcher = SearchWatcher(page)
+        rows = scrape_price_bucket(watcher, 0, NO_MAX_PRICE)
 
         context.close()
         browser.close()
