@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """
-Maxwork -> CSV (pesquisa global, SEM filtro de agência, por fatias de preço)
+Maxwork -> CSV (pesquisa global, SEM filtro de agência, via API + fatias de preço)
 
 Variante de maxwork_to_csv.py para quando queres TODOS os imóveis do
 Maxwork (todas as agências, sem escolher nenhuma) em vez de percorrer
-uma lista de agências — reutiliza a lógica de paginação/extração de
-cartões desse ficheiro (não duplicada aqui).
+uma lista de agências.
 
-O Maxwork limita qualquer pesquisa a no máximo 100 páginas (10 000
-resultados, a 100 por página) — um limite do próprio motor de busca
-(tipo Elasticsearch), independente de quantos imóveis existam mesmo
-(a Maxwork diz ter ~47 000 angariações no total). Para ir além dos
-10 000 é preciso dividir a pesquisa em fatias que fiquem cada uma
-abaixo do limite — este script faz isso automaticamente pelo filtro
-"Preço Atual" (Mínimo/Máximo): sempre que uma fatia bate no limite de
-100 páginas, divide o intervalo de preço a meio e tenta cada metade
-separadamente, recursivamente, até cada fatia ficar abaixo do limite.
+Em vez de ler os cartões da grelha no ecrã, intercetamos a resposta da
+API que alimenta a pesquisa (POST /api/Metadata/multi-match-listing-
+search — descoberta num HAR do DevTools, confirmada com
+maxwork_to_csv_api_test.py). Isto dá o ID real de cada imóvel, sempre
+presente mesmo sem foto — a extração antiga (regex na foto de capa)
+deixava ~1559 imóveis sem URL (sem foto) e confundia ~966 grupos de
+imóveis diferentes que partilhavam a mesma foto de capa (prédios com
+várias frações). Chamar a API diretamente por fora (sem passar pela UI)
+dá 401 — a autenticação está ligada ao login Microsoft, não a cookies
+simples — por isso continuamos a deixar a UI disparar o pedido (clicar
+em "Ver Resultados", mudar de página) e só lemos a resposta.
+
+O Maxwork limita qualquer pesquisa a no máximo 10 000 resultados — um
+limite do próprio motor de busca (tipo Elasticsearch), independente de
+quantos imóveis existam mesmo (a API diz totalCount ~47 500). Para ir
+além disso é preciso dividir a pesquisa em fatias que fiquem cada uma
+abaixo do limite — feito automaticamente pelo filtro "Preço Atual"
+(Mínimo/Máximo): sempre que uma fatia bate no limite, divide o
+intervalo de preço a meio e tenta cada metade separadamente,
+recursivamente, até cada fatia ficar abaixo do limite. Agora usamos o
+totalCount exato da API para decidir isto, em vez de adivinhar pelo
+número de páginas visíveis.
 
 Corre TUDO num único separador, sequencialmente (não em paralelo) —
 já tentámos correr 2 pesquisas em simultâneo na mesma conta e deu
@@ -55,25 +67,53 @@ import csv
 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-from maxwork_common import EMAIL, PASSWORD, open_session, launch_browser
+from maxwork_common import EMAIL, PASSWORD, open_session, launch_browser, parse_number
 from maxwork_to_csv import (
     SEARCH_AGENCY_CONTROL_SELECTOR,
     SEARCH_RESULTS_CARD_SELECTOR,
+    SEARCH_PAGE_SIZE_SELECT_SELECTOR,
+    NEXT_PAGE_SELECTOR,
     ensure_filters_open,
     run_search,
-    maximize_search_page_size,
-    scrape_search_all,
-    highest_visible_page_number,
+    has_next_page,
 )
 
 OUTPUT_CSV = "maxwork_imoveis.csv"
 
-MAX_PAGES_PER_SEARCH = 100  # limite do motor de busca da Maxwork (100 x 100/página = 10 000)
+SEARCH_API_PATH_FRAGMENT = "multi-match-listing-search"
+MAX_RESULTS_PER_SEARCH = 10_000  # limite do motor de busca da Maxwork (confirmado via API: totalCount pode passar disto, mas nunca dá para paginar até lá)
+
 PRICE_MIN_SELECTOR = '[data-id="minPriceId"] input[placeholder="Mínimo"]'
 PRICE_MAX_SELECTOR = '[data-id="minPriceId"] input[placeholder="Máximo"]'
 # Sentinela para "sem máximo" — bem acima de qualquer imóvel real em
 # Portugal, só serve de teto inicial para a divisão binária do intervalo.
 NO_MAX_PRICE = 50_000_000
+
+
+def capture_search(page, trigger, attempts: int = 3):
+    """Regista a interceção da resposta da API de pesquisa ANTES de
+    disparar "trigger" (clicar em "Ver Resultados", mudar de página,
+    mudar o tamanho de página...) e devolve o JSON já parseado, ou None
+    se não aparecer nenhuma resposta válida dentro do timeout — tenta
+    outra vez antes de desistir, tal como o resto do scraper faz para
+    pedidos que por vezes demoram mais do que o costume."""
+    for attempt in range(1, attempts + 1):
+        try:
+            with page.expect_response(
+                lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=15000
+            ) as resp_info:
+                trigger()
+            response = resp_info.value
+        except PlaywrightTimeout:
+            if attempt < attempts:
+                print(f"  [aviso] a resposta da pesquisa ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+            continue
+
+        if not response.ok:
+            print(f"  [aviso] HTTP {response.status} na pesquisa — corpo: {response.text()[:300]}")
+            return None
+        return response.json()
+    return None
 
 
 def ensure_no_agency_filter(page):
@@ -122,13 +162,13 @@ def ensure_results_loaded(page, attempts: int = 3) -> bool:
 
 def set_price_range(page, min_price: int, max_price: int):
     """Preenche o filtro "Preço Atual" (Mínimo/Máximo, campos de texto
-    simples — sem react-select) e pesquisa. max_price == NO_MAX_PRICE
-    deixa o campo Máximo em branco (sem teto), em vez de escrever um
-    número irrealista lá dentro."""
+    simples — sem react-select). max_price == NO_MAX_PRICE deixa o
+    campo Máximo em branco (sem teto), em vez de escrever um número
+    irrealista lá dentro. Não pesquisa sozinho — quem chama decide
+    quando disparar (para poder intercetar a resposta)."""
     ensure_filters_open(page)
     page.locator(PRICE_MIN_SELECTOR).fill(str(min_price) if min_price > 0 else "")
     page.locator(PRICE_MAX_SELECTOR).fill(str(max_price) if max_price < NO_MAX_PRICE else "")
-    run_search(page)
 
 
 def price_label(min_price: int, max_price: int) -> str:
@@ -136,44 +176,95 @@ def price_label(min_price: int, max_price: int) -> str:
     return f"[preço {min_price:,}".replace(",", " ") + f"–{max_text}]"
 
 
+def map_api_item_to_row(item: dict) -> dict:
+    """Traduz um imóvel devolvido pela API para o mesmo formato de linha
+    que o resto do pipeline (maxwork_details_to_csv.py, maxwork_to_crm.py)
+    já espera — mesmos nomes de coluna de sempre, só a origem dos dados
+    mudou (API em vez de ler o ecrã)."""
+    internal_id = item.get("id")
+    codigo = item.get("listingTitle")
+    region = item.get("regionName2") or ""
+    return {
+        "codigo": codigo,
+        "id_interno": str(internal_id) if internal_id is not None else None,
+        "url": f"https://app.maxwork.pt/listing/details/{internal_id}" if internal_id is not None else None,
+        "titulo": f"{codigo} / {region}".strip(" /") if codigo else None,
+        "tipo": item.get("listingType"),
+        "transacao": item.get("businessType"),
+        "estado": item.get("listingStatus"),
+        "preco": parse_number(item.get("actualValueText")),
+        "area_m2": item.get("totalArea"),
+        "quartos": item.get("numberOfBedrooms"),
+        "casas_banho": item.get("numberOfBathrooms"),
+        "dias_mercado": None,
+        "morada": item.get("address") or item.get("regionName3"),
+        "foto_capa": item.get("listingPictureUrl"),
+        "agente": item.get("userName"),
+        "telefone_agente": item.get("userCellPhone"),
+        "email_agente": item.get("userEmail"),
+        "agencia": item.get("officeName"),
+    }
+
+
+def set_page_size_100(page) -> dict | None:
+    """Muda o tamanho de página para 100 e devolve o JSON dessa
+    resposta — separado em ações individuais (uma select_option por
+    vez) para nunca ter dúvidas de qual pedido estamos a intercetar,
+    ao contrário de disparar 2 mudanças seguidas e só apanhar a 1ª."""
+    page.wait_for_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, timeout=10000)
+    current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
+    if current == "100":
+        # já mostra "100" visualmente de uma pesquisa anterior — força uma
+        # mudança real (senão o onChange que aplicaria a sério não dispara)
+        capture_search(page, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"))
+    return capture_search(page, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"))
+
+
 def scrape_price_bucket(page, min_price: int, max_price: int) -> list[dict]:
-    """Pesquisa um intervalo de preço; se atingir o limite de 100 páginas
-    da Maxwork, divide o intervalo a meio e tenta cada metade
-    separadamente (recursivo) até cada fatia ficar abaixo do limite."""
+    """Pesquisa um intervalo de preço via API; se o totalCount passar do
+    limite do motor de busca, divide o intervalo a meio e tenta cada
+    metade separadamente (recursivo) até cada fatia ficar abaixo do
+    limite."""
     label = price_label(min_price, max_price)
     print(f"{label} a pesquisar...")
 
-    has_results = False
-    for attempt in range(1, 3):
-        set_price_range(page, min_price, max_price)
-        try:
-            page.wait_for_selector(SEARCH_RESULTS_CARD_SELECTOR, timeout=8000)
-            has_results = True
-            break
-        except PlaywrightTimeout:
-            if attempt == 1:
-                print(f"{label} sem cartões à 1ª — a confirmar se é mesmo 0 resultados...")
+    set_price_range(page, min_price, max_price)
+    data = capture_search(page, lambda: run_search(page))
 
-    if not has_results:
+    if data is None:
+        print(f"{label} sem resposta válida da pesquisa — a saltar")
+        return []
+
+    total = data.get("totalCount", 0)
+    if total > MAX_RESULTS_PER_SEARCH:
+        if max_price - min_price <= 1:
+            print(f"{label} [aviso] intervalo já não dá para dividir mais e continua acima do limite ({total} resultados) — pode faltar imóveis deste preço exato")
+        else:
+            mid = min_price + (max_price - min_price) // 2
+            print(f"{label} {total} resultados (> {MAX_RESULTS_PER_SEARCH}) — a dividir em dois")
+            left = scrape_price_bucket(page, min_price, mid)
+            right = scrape_price_bucket(page, mid + 1, max_price)
+            return left + right
+
+    if total == 0:
         print(f"{label} sem resultados")
         return []
 
-    maximize_search_page_size(page)
-    highest = highest_visible_page_number(page)
+    data100 = set_page_size_100(page)
+    if data100 is not None:
+        data = data100
 
-    if highest is not None and highest >= MAX_PAGES_PER_SEARCH:
-        if max_price - min_price <= 1:
-            print(f"{label} [aviso] intervalo já não dá para dividir mais e continua no limite de {MAX_PAGES_PER_SEARCH} páginas — pode faltar imóveis deste preço exato")
-            return scrape_search_all(page)
+    rows = [map_api_item_to_row(it) for it in data.get("items", [])]
+    page_num = 1
+    while data.get("hasNextPage") and has_next_page(page):
+        page_num += 1
+        data = capture_search(page, lambda: page.click(NEXT_PAGE_SELECTOR))
+        if data is None:
+            print(f"{label} [aviso] falhou a apanhar a página {page_num} — a parar aqui, pode faltar o resto desta fatia")
+            break
+        rows.extend(map_api_item_to_row(it) for it in data.get("items", []))
 
-        mid = min_price + (max_price - min_price) // 2
-        print(f"{label} atingiu o limite de {MAX_PAGES_PER_SEARCH} páginas — a dividir em dois")
-        left = scrape_price_bucket(page, min_price, mid)
-        right = scrape_price_bucket(page, mid + 1, max_price)
-        return left + right
-
-    rows = scrape_search_all(page)
-    print(f"{label} {len(rows)} imóveis")
+    print(f"{label} {len(rows)} imóveis ({total} esperados)")
     return rows
 
 
@@ -194,7 +285,7 @@ def main():
     if not EMAIL or not PASSWORD:
         raise SystemExit("Falta MAXWORK_EMAIL / MAXWORK_PASSWORD no ficheiro .env")
 
-    print("[maxwork] pesquisa global — sem filtro de agência, dividida por fatias de preço")
+    print("[maxwork] pesquisa global — sem filtro de agência, via API, dividida por fatias de preço")
 
     with sync_playwright() as pw:
         browser = launch_browser(pw)
@@ -213,15 +304,16 @@ def main():
 
     # O mesmo imóvel pode aparecer duas vezes perto da fronteira entre
     # duas fatias de preço (ou se a grelha repetir alguma página durante
-    # a paginação) — dedup por código, igual a maxwork_to_csv.py
+    # a paginação) — dedup por id_interno (fiável agora, vem da API,
+    # ao contrário do código que podia repetir-se por engano)
     seen = set()
     unique_rows = []
     for row in rows:
-        codigo = row.get("codigo")
-        if codigo and codigo in seen:
+        key = row.get("id_interno") or row.get("codigo")
+        if key and key in seen:
             continue
-        if codigo:
-            seen.add(codigo)
+        if key:
+            seen.add(key)
         unique_rows.append(row)
 
     write_csv(unique_rows)
