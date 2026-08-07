@@ -82,6 +82,7 @@ OUTPUT_CSV = "maxwork_imoveis.csv"
 
 SEARCH_API_PATH_FRAGMENT = "multi-match-listing-search"
 MAX_RESULTS_PER_SEARCH = 10_000  # limite do motor de busca da Maxwork (confirmado via API: totalCount pode passar disto, mas nunca dá para paginar até lá)
+SEARCH_PAUSE_MS = 800  # pausa antes de cada pesquisa nova — evita encadear pedidos depressa demais um atrás do outro
 
 PRICE_MIN_SELECTOR = '[data-id="minPriceId"] input[placeholder="Mínimo"]'
 PRICE_MAX_SELECTOR = '[data-id="minPriceId"] input[placeholder="Máximo"]'
@@ -96,17 +97,24 @@ def capture_search(page, trigger, attempts: int = 3):
     mudar o tamanho de página...) e devolve o JSON já parseado, ou None
     se não aparecer nenhuma resposta válida dentro do timeout — tenta
     outra vez antes de desistir, tal como o resto do scraper faz para
-    pedidos que por vezes demoram mais do que o costume."""
+    pedidos que por vezes demoram mais do que o costume.
+
+    Uma pequena pausa antes de disparar (SEARCH_PAUSE_MS) evita
+    encadear pesquisas depressa demais uma atrás da outra — já
+    aconteceu numa corrida real ficar preso a meio com muitas pesquisas
+    seguidas sem pausa nenhuma (pode ser limite de pedidos por segundo
+    do lado da Maxwork)."""
+    page.wait_for_timeout(SEARCH_PAUSE_MS)
     for attempt in range(1, attempts + 1):
+        print(f"  a aguardar resposta da pesquisa (tentativa {attempt}/{attempts})...")
         try:
             with page.expect_response(
-                lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=15000
+                lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=20000
             ) as resp_info:
                 trigger()
             response = resp_info.value
         except PlaywrightTimeout:
-            if attempt < attempts:
-                print(f"  [aviso] a resposta da pesquisa ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+            print(f"  [aviso] a resposta da pesquisa não chegou em 20s (tentativa {attempt}/{attempts})")
             continue
 
         if not response.ok:
@@ -234,7 +242,10 @@ def set_page_size_100(page) -> dict | None:
     return capture_search(page, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"))
 
 
-def scrape_price_bucket(page, min_price: int, max_price: int) -> list[dict]:
+MAX_SPLIT_DEPTH = 30  # rede de segurança — garante que a recursão acaba mesmo que o intervalo nunca fique fino o suficiente
+
+
+def scrape_price_bucket(page, min_price: int, max_price: int, depth: int = 0) -> list[dict]:
     """Pesquisa um intervalo de preço via API; se o totalCount passar do
     limite do motor de busca, divide o intervalo a meio e tenta cada
     metade separadamente (recursivo) até cada fatia ficar abaixo do
@@ -246,18 +257,18 @@ def scrape_price_bucket(page, min_price: int, max_price: int) -> list[dict]:
     data = capture_search(page, lambda: run_search(page))
 
     if data is None:
-        print(f"{label} sem resposta válida da pesquisa — a saltar")
+        print(f"{label} sem resposta válida da pesquisa depois de várias tentativas — a saltar esta fatia (podem faltar imóveis deste intervalo)")
         return []
 
     total = data.get("totalCount", 0)
     if total > MAX_RESULTS_PER_SEARCH:
-        if max_price - min_price <= 1:
-            print(f"{label} [aviso] intervalo já não dá para dividir mais e continua acima do limite ({total} resultados) — pode faltar imóveis deste preço exato")
+        if max_price - min_price <= 1 or depth >= MAX_SPLIT_DEPTH:
+            print(f"{label} [aviso] intervalo já não dá para dividir mais (profundidade {depth}) e continua acima do limite ({total} resultados) — pode faltar imóveis deste preço")
         else:
             mid = split_point(min_price, max_price)
             print(f"{label} {total} resultados (> {MAX_RESULTS_PER_SEARCH}) — a dividir em dois")
-            left = scrape_price_bucket(page, min_price, mid)
-            right = scrape_price_bucket(page, mid + 1, max_price)
+            left = scrape_price_bucket(page, min_price, mid, depth + 1)
+            right = scrape_price_bucket(page, mid + 1, max_price, depth + 1)
             return left + right
 
     if total == 0:
