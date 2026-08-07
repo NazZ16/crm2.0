@@ -109,12 +109,17 @@ def capture_search(page, trigger, attempts: int = 3):
         print(f"  a aguardar resposta da pesquisa (tentativa {attempt}/{attempts})...")
         try:
             with page.expect_response(
-                lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=20000
+                lambda r: SEARCH_API_PATH_FRAGMENT in r.url, timeout=15000
             ) as resp_info:
+                print("  a disparar a ação (clique/mudança)...")
                 trigger()
+                print("  ação disparada, a aguardar a resposta chegar...")
             response = resp_info.value
         except PlaywrightTimeout:
-            print(f"  [aviso] a resposta da pesquisa não chegou em 20s (tentativa {attempt}/{attempts})")
+            print(f"  [aviso] a resposta da pesquisa não chegou em 15s (tentativa {attempt}/{attempts})")
+            continue
+        except Exception as e:
+            print(f"  [aviso] erro a disparar a pesquisa (tentativa {attempt}/{attempts}): {e}")
             continue
 
         if not response.ok:
@@ -173,10 +178,30 @@ def set_price_range(page, min_price: int, max_price: int):
     simples — sem react-select). max_price == NO_MAX_PRICE deixa o
     campo Máximo em branco (sem teto), em vez de escrever um número
     irrealista lá dentro. Não pesquisa sozinho — quem chama decide
-    quando disparar (para poder intercetar a resposta)."""
+    quando disparar (para poder intercetar a resposta).
+
+    A Maxwork recolhe o painel de filtros sozinha a seguir a "Ver
+    Resultados" (ensure_filters_open reabre-o) — já vimos uma corrida
+    real em que a pesquisa seguinte saiu com o preço máximo antigo
+    (dois intervalos diferentes deram exatamente o mesmo total), sinal
+    de que o preenchimento não ficou a valer a tempo do clique
+    seguinte. Por isso confirma sempre o valor lido de volta do campo,
+    e volta a preencher se não bater certo."""
     ensure_filters_open(page)
-    page.locator(PRICE_MIN_SELECTOR).fill(str(min_price) if min_price > 0 else "")
-    page.locator(PRICE_MAX_SELECTOR).fill(str(max_price) if max_price < NO_MAX_PRICE else "")
+    min_text = str(min_price) if min_price > 0 else ""
+    max_text = str(max_price) if max_price < NO_MAX_PRICE else ""
+
+    for attempt in range(1, 3):
+        page.locator(PRICE_MIN_SELECTOR).fill(min_text)
+        page.locator(PRICE_MAX_SELECTOR).fill(max_text)
+        actual_min = page.locator(PRICE_MIN_SELECTOR).input_value()
+        actual_max = page.locator(PRICE_MAX_SELECTOR).input_value()
+        if actual_min == min_text and actual_max == max_text:
+            return
+        print(f"  [aviso] campos de preço não ficaram como esperado (min='{actual_min}', esperado='{min_text}'; max='{actual_max}', esperado='{max_text}') — a tentar outra vez...")
+        page.wait_for_timeout(500)
+
+    print("  [aviso] campos de preço continuam sem bater certo depois de repetir — a pesquisa seguinte pode sair com o filtro errado")
 
 
 def price_label(min_price: int, max_price: int) -> str:
