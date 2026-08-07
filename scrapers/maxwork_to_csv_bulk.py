@@ -91,6 +91,46 @@ def _response_page_number(response) -> int | None:
     match = _PAGE_PARAM_RE.search(response.url)
     return int(match.group(1)) if match else None
 
+
+def _normalize_price(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _response_price_bounds(response) -> tuple[int | None, int | None]:
+    """Lê o corpo do PEDIDO que gerou esta resposta e devolve o
+    intervalo de preço (biggerThan, smallerThan) que esse pedido
+    concreto usou — (None, None) se não tinha filtro de preço nenhum.
+
+    expected_page sozinho não chega para confirmar que uma resposta é
+    mesmo a da fatia de preço atual: quase todas as pesquisas novas
+    (mudar de fatia de preço, mudar tamanho de página) reiniciam para
+    ?page=1, por isso uma resposta atrasada de OUTRA fatia (que também
+    pediu a página 1) batia certo com o matcher só por coincidência do
+    número de página, e era aceite como se fosse a fatia atual — é
+    assim que duas fatias de preço diferentes acabavam com o mesmo
+    totalCount, ou uma fatia aparecia com um total minúsculo e errado."""
+    try:
+        body = response.request.post_data_json
+    except Exception:
+        return (None, None)
+    if not body:
+        return (None, None)
+    for f in body.get("filters") or []:
+        if f.get("biggerThan") is not None or f.get("smallerThan") is not None:
+            return (_normalize_price(f.get("biggerThan")), _normalize_price(f.get("smallerThan")))
+    return (None, None)
+
+
+def _expected_price_bounds(min_price: int, max_price: int) -> tuple[int | None, int | None]:
+    lo = min_price if min_price > 0 else None
+    hi = max_price if max_price < NO_MAX_PRICE else None
+    return (lo, hi)
+
 PRICE_MIN_SELECTOR = '[data-id="minPriceId"] input[placeholder="Mínimo"]'
 PRICE_MAX_SELECTOR = '[data-id="minPriceId"] input[placeholder="Máximo"]'
 # Sentinela para "sem máximo" — bem acima de qualquer imóvel real em
@@ -140,7 +180,13 @@ class SearchWatcher:
         return None
 
 
-def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3, expected_page: int | None = None):
+def capture_search(
+    watcher: "SearchWatcher",
+    trigger,
+    attempts: int = 3,
+    expected_page: int | None = None,
+    expected_price: tuple[int | None, int | None] | None = None,
+):
     """Dispara "trigger" (clicar em "Ver Resultados", mudar de página,
     mudar o tamanho de página...) e devolve o JSON já parseado da
     resposta da API de pesquisa correspondente, ou None se não aparecer
@@ -151,9 +197,15 @@ def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3, expecte
     expected_page confirma o número de página (?page=N) da resposta —
     "Ver Resultados"/mudar tamanho de página reiniciam sempre para a
     página 1; ao avançar para a página seguinte, expected_page deve ser
-    esse número. Sem isto, uma resposta atrasada de uma página anterior
-    (o servidor já mostrou sinais de sobrecarga) era aceite por engano
-    como se fosse a resposta atual.
+    esse número. expected_page sozinho NÃO chega: quase todas as
+    pesquisas novas reiniciam para a página 1, por isso uma resposta
+    atrasada de OUTRA fatia de preço (que também pediu a página 1)
+    batia certo com o matcher só por coincidência — assim é que fatias
+    de preço diferentes acabavam com o mesmo total, ou uma fatia saía
+    com um total minúsculo e errado. expected_price confirma também o
+    intervalo de preço (biggerThan/smallerThan) realmente enviado no
+    PEDIDO que gerou a resposta — só assim uma resposta fica mesmo
+    amarrada à fatia certa, independentemente de quando chega.
 
     Uma pequena pausa antes de disparar (SEARCH_PAUSE_MS) evita
     encadear pesquisas depressa demais uma atrás da outra. watcher.clear()
@@ -161,9 +213,11 @@ def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3, expecte
     uma resposta que chegue muito depressa, ainda durante o próprio
     "trigger"."""
     def matcher(response):
-        if expected_page is None:
-            return True
-        return _response_page_number(response) == expected_page
+        if expected_page is not None and _response_page_number(response) != expected_page:
+            return False
+        if expected_price is not None and _response_price_bounds(response) != expected_price:
+            return False
+        return True
 
     watcher.page.wait_for_timeout(SEARCH_PAUSE_MS)
     for attempt in range(1, attempts + 1):
@@ -318,7 +372,7 @@ def map_api_item_to_row(item: dict) -> dict:
     }
 
 
-def set_page_size_100(watcher: "SearchWatcher") -> dict | None:
+def set_page_size_100(watcher: "SearchWatcher", expected_price: tuple[int | None, int | None]) -> dict | None:
     """Muda o tamanho de página para 100 e devolve o JSON dessa
     resposta — separado em ações individuais (uma select_option por
     vez) para nunca ter dúvidas de qual pedido estamos a intercetar,
@@ -329,8 +383,8 @@ def set_page_size_100(watcher: "SearchWatcher") -> dict | None:
     if current == "100":
         # já mostra "100" visualmente de uma pesquisa anterior — força uma
         # mudança real (senão o onChange que aplicaria a sério não dispara)
-        capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"), expected_page=1)
-    return capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"), expected_page=1)
+        capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"), expected_page=1, expected_price=expected_price)
+    return capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"), expected_page=1, expected_price=expected_price)
 
 
 MAX_SPLIT_DEPTH = 30  # rede de segurança — garante que a recursão acaba mesmo que o intervalo nunca fique fino o suficiente
@@ -345,8 +399,9 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
     label = price_label(min_price, max_price)
     print(f"{label} a pesquisar...")
 
+    expected_price = _expected_price_bounds(min_price, max_price)
     set_price_range(page, min_price, max_price)
-    data = capture_search(watcher, lambda: run_search(page), expected_page=1)
+    data = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price)
 
     if data is None:
         print(f"{label} sem resposta válida da pesquisa depois de várias tentativas — a saltar esta fatia (podem faltar imóveis deste intervalo)")
@@ -367,7 +422,7 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
         print(f"{label} sem resultados")
         return []
 
-    data100 = set_page_size_100(watcher)
+    data100 = set_page_size_100(watcher, expected_price)
     if data100 is not None:
         data = data100
 
@@ -382,7 +437,7 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
     # sempre sem nunca ler uma página com 0 imóveis.
     while items and data.get("hasNextPage") and has_next_page(page):
         page_num += 1
-        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR), expected_page=page_num)
+        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR), expected_page=page_num, expected_price=expected_price)
         if data is None:
             print(f"{label} [aviso] falhou a apanhar a página {page_num} — a parar aqui, pode faltar o resto desta fatia")
             break
