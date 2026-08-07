@@ -392,6 +392,43 @@ def format_row_for_csv(row):
     return formatted
 
 
+CHECKPOINT_EVERY = 200  # grava progresso a cada N imóveis processados — uma
+                         # corrida de dezenas de milhar de imóveis pode
+                         # demorar muitas horas, e antes disto só escrevíamos
+                         # o CSV no fim: qualquer interrupção a meio (falha,
+                         # PC reiniciado, janela fechada) perdia tudo.
+
+
+def write_csv_snapshot(rows, fieldnames):
+    """Escreve o estado atual de "rows" no CSV — usado tanto para a
+    gravação final como para os checkpoints a meio da corrida. Linhas
+    ainda não processadas só têm os campos originais da pesquisa (sem os
+    de detalhe); o DictWriter deixa esses em branco sozinho."""
+    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=";", extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(format_row_for_csv(row))
+
+
+class _Progress:
+    """Contador partilhado entre workers — dispara um checkpoint (grava o
+    CSV completo, com o que já foi processado até agora) sempre que
+    cruza um múltiplo de CHECKPOINT_EVERY."""
+
+    def __init__(self, total: int):
+        self.lock = threading.Lock()
+        self.count = 0
+        self.total = total
+
+    def bump_and_maybe_checkpoint(self, rows, fieldnames):
+        with self.lock:
+            self.count += 1
+            if self.count % CHECKPOINT_EVERY == 0 or self.count == self.total:
+                write_csv_snapshot(rows, fieldnames)
+                print(f"[checkpoint] progresso gravado em {OUTPUT_CSV} ({self.count}/{self.total} imóveis processados)")
+
+
 def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: str):
     url = row.get("url")
     codigo = row.get("codigo")
@@ -423,7 +460,8 @@ def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: st
             row[k] = None
 
 
-def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: int):
+def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: int,
+            progress: "_Progress", rows: list, fieldnames: list):
     """Cada worker abre o seu próprio browser (processo Chromium à parte —
     o Playwright sync não é seguro entre threads dentro da mesma instância)
     autenticado pela mesma sessão gravada, e vai tirando imóveis da fila
@@ -443,6 +481,7 @@ def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: i
                     break
                 _process_row(page, i, total, row, known_urls, label)
                 work_queue.task_done()
+                progress.bump_and_maybe_checkpoint(rows, fieldnames)
             context.close()
             browser.close()
     except Exception as e:
@@ -479,12 +518,21 @@ def main():
         context.close()
         browser.close()
 
+    # Calculado uma vez já aqui (colunas da pesquisa + already_in_crm +
+    # campos de detalhe) — não depende de nenhuma linha em concreto já
+    # estar processada, ao contrário de usar rows[0].keys() depois de
+    # tudo acabar, que ficaria incompleto/inconsistente num checkpoint a
+    # meio da corrida (linhas por processar ainda não têm estes campos).
+    base_fieldnames = list(rows[0].keys()) if rows else []
+    fieldnames = base_fieldnames + ["already_in_crm"] + DETAIL_FIELDNAMES
+
     work_queue: "queue.Queue" = queue.Queue()
     for i, row in enumerate(rows, start=1):
         work_queue.put((i, row))
 
+    progress = _Progress(total=len(rows))
     threads = [
-        threading.Thread(target=_worker, args=(w, work_queue, known_urls, len(rows)))
+        threading.Thread(target=_worker, args=(w, work_queue, known_urls, len(rows), progress, rows, fieldnames))
         for w in range(1, CONCURRENCY + 1)
     ]
     for t in threads:
@@ -492,13 +540,7 @@ def main():
     for t in threads:
         t.join()
 
-    fieldnames = list(rows[0].keys()) if rows else []
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter=";")
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(format_row_for_csv(row))
-
+    write_csv_snapshot(rows, fieldnames)
     print(f"\n{len(rows)} imoveis detalhados guardados em {OUTPUT_CSV}")
 
 
