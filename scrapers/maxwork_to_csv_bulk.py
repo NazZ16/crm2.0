@@ -83,7 +83,13 @@ OUTPUT_CSV = "maxwork_imoveis.csv"
 
 SEARCH_API_PATH_FRAGMENT = "multi-match-listing-search"
 MAX_RESULTS_PER_SEARCH = 10_000  # limite do motor de busca da Maxwork (confirmado via API: totalCount pode passar disto, mas nunca dá para paginar até lá)
-SEARCH_PAUSE_MS = 800  # pausa antes de cada pesquisa nova — evita encadear pedidos depressa demais um atrás do outro
+SEARCH_PAUSE_MS = 1500  # pausa antes de cada pesquisa nova — o servidor já mostrou sinais de sobrecarga (504 do Cloudflare) numa corrida real
+_PAGE_PARAM_RE = re.compile(r"[?&]page=(\d+)")
+
+
+def _response_page_number(response) -> int | None:
+    match = _PAGE_PARAM_RE.search(response.url)
+    return int(match.group(1)) if match else None
 
 PRICE_MIN_SELECTOR = '[data-id="minPriceId"] input[placeholder="Mínimo"]'
 PRICE_MAX_SELECTOR = '[data-id="minPriceId"] input[placeholder="Máximo"]'
@@ -112,31 +118,53 @@ class SearchWatcher:
     def clear(self):
         self._pending.clear()
 
-    def wait_for_next(self, timeout_ms: int = 15000, poll_ms: int = 200):
+    def wait_for_next(self, timeout_ms: int = 20000, poll_ms: int = 200, matcher=None):
+        """Devolve a próxima resposta que bata com "matcher" (ou a
+        primeira que chegar, se matcher for None). O servidor da
+        Maxwork já mostrou sinais de sobrecarga (respostas lentas,
+        504) numa corrida real — pedidos de uma fatia/página anterior
+        podem chegar atrasados, DEPOIS de já termos avançado para o
+        pedido seguinte. Sem confirmar que a resposta é mesmo a que
+        pedimos (matcher), uma resposta atrasada de outra página
+        acabava a ser usada por engano, perdendo a maior parte dos
+        dados dessa fatia."""
         elapsed = 0
         while elapsed < timeout_ms:
-            if self._pending:
-                return self._pending.pop(0)
+            while self._pending:
+                response = self._pending.pop(0)
+                if matcher is None or matcher(response):
+                    return response
+                print(f"    [debug] resposta ignorada (não é a que estamos à espera — provavelmente atrasada de um pedido anterior): {response.url}")
             self.page.wait_for_timeout(poll_ms)
             elapsed += poll_ms
         return None
 
 
-def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3):
+def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3, expected_page: int | None = None):
     """Dispara "trigger" (clicar em "Ver Resultados", mudar de página,
     mudar o tamanho de página...) e devolve o JSON já parseado da
-    próxima resposta da API de pesquisa que chegar, ou None se não
-    aparecer nenhuma válida dentro do timeout — tenta outra vez antes
-    de desistir, tal como o resto do scraper faz para pedidos que por
+    resposta da API de pesquisa correspondente, ou None se não aparecer
+    nenhuma válida dentro do timeout — tenta outra vez antes de
+    desistir, tal como o resto do scraper faz para pedidos que por
     vezes demoram mais do que o costume.
 
+    expected_page confirma o número de página (?page=N) da resposta —
+    "Ver Resultados"/mudar tamanho de página reiniciam sempre para a
+    página 1; ao avançar para a página seguinte, expected_page deve ser
+    esse número. Sem isto, uma resposta atrasada de uma página anterior
+    (o servidor já mostrou sinais de sobrecarga) era aceite por engano
+    como se fosse a resposta atual.
+
     Uma pequena pausa antes de disparar (SEARCH_PAUSE_MS) evita
-    encadear pesquisas depressa demais uma atrás da outra — já
-    aconteceu numa corrida real ficar preso a meio com muitas pesquisas
-    seguidas sem pausa nenhuma (pode ser limite de pedidos por segundo
-    do lado da Maxwork). watcher.clear() é chamado mesmo antes de
-    disparar (não depois) — para não perder uma resposta que chegue
-    muito depressa, ainda durante o próprio "trigger"."""
+    encadear pesquisas depressa demais uma atrás da outra. watcher.clear()
+    é chamado mesmo antes de disparar (não depois) — para não perder
+    uma resposta que chegue muito depressa, ainda durante o próprio
+    "trigger"."""
+    def matcher(response):
+        if expected_page is None:
+            return True
+        return _response_page_number(response) == expected_page
+
     watcher.page.wait_for_timeout(SEARCH_PAUSE_MS)
     for attempt in range(1, attempts + 1):
         print(f"  a aguardar resposta da pesquisa (tentativa {attempt}/{attempts})...")
@@ -147,9 +175,9 @@ def capture_search(watcher: "SearchWatcher", trigger, attempts: int = 3):
             print(f"  [aviso] erro a disparar a ação (tentativa {attempt}/{attempts}): {e}")
             continue
 
-        response = watcher.wait_for_next(timeout_ms=15000)
+        response = watcher.wait_for_next(timeout_ms=20000, matcher=matcher)
         if response is None:
-            print(f"  [aviso] a resposta da pesquisa não chegou em 15s (tentativa {attempt}/{attempts})")
+            print(f"  [aviso] a resposta da pesquisa não chegou em 20s (tentativa {attempt}/{attempts})")
             continue
 
         if not response.ok:
@@ -301,8 +329,8 @@ def set_page_size_100(watcher: "SearchWatcher") -> dict | None:
     if current == "100":
         # já mostra "100" visualmente de uma pesquisa anterior — força uma
         # mudança real (senão o onChange que aplicaria a sério não dispara)
-        capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"))
-    return capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"))
+        capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"), expected_page=1)
+    return capture_search(watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"), expected_page=1)
 
 
 MAX_SPLIT_DEPTH = 30  # rede de segurança — garante que a recursão acaba mesmo que o intervalo nunca fique fino o suficiente
@@ -318,7 +346,7 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
     print(f"{label} a pesquisar...")
 
     set_price_range(page, min_price, max_price)
-    data = capture_search(watcher, lambda: run_search(page))
+    data = capture_search(watcher, lambda: run_search(page), expected_page=1)
 
     if data is None:
         print(f"{label} sem resposta válida da pesquisa depois de várias tentativas — a saltar esta fatia (podem faltar imóveis deste intervalo)")
@@ -354,7 +382,7 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
     # sempre sem nunca ler uma página com 0 imóveis.
     while items and data.get("hasNextPage") and has_next_page(page):
         page_num += 1
-        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR))
+        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR), expected_page=page_num)
         if data is None:
             print(f"{label} [aviso] falhou a apanhar a página {page_num} — a parar aqui, pode faltar o resto desta fatia")
             break
