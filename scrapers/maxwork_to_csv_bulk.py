@@ -388,6 +388,60 @@ def set_page_size_100(watcher: "SearchWatcher", expected_price: tuple[int | None
 
 
 MAX_SPLIT_DEPTH = 30  # rede de segurança — garante que a recursão acaba mesmo que o intervalo nunca fique fino o suficiente
+MAX_BUCKET_ATTEMPTS = 3  # se uma página a meio da fatia falhar a chegar, tenta a fatia TODA outra vez em vez de desistir do resto — mais lento, mas não perde imóveis
+
+
+def _fetch_bucket_pages(
+    watcher: "SearchWatcher",
+    label: str,
+    min_price: int,
+    max_price: int,
+    expected_price: tuple[int | None, int | None],
+    initial_data: dict | None = None,
+) -> tuple[list[dict], bool]:
+    """Uma tentativa completa de percorrer TODAS as páginas de uma fatia
+    já confirmada abaixo do limite de 10k. Devolve (linhas, completo) —
+    completo é False sempre que uma página a meio da fatia falhar a
+    chegar mesmo depois dos retries do capture_search, para quem chama
+    poder decidir tentar a fatia toda outra vez em vez de aceitar dados
+    parciais como se fosse o resultado final.
+
+    initial_data permite reaproveitar a resposta da página 1 que quem
+    chama já tem (evita repetir esse pedido na 1ª tentativa) — em
+    repetições seguintes é None, e a pesquisa da página 1 é refeita de
+    raiz."""
+    page = watcher.page
+    if initial_data is None:
+        set_price_range(page, min_price, max_price)
+        initial_data = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price)
+        if initial_data is None:
+            print(f"{label} [aviso] sem resposta válida ao repetir a pesquisa desta fatia")
+            return [], False
+
+    data100 = set_page_size_100(watcher, expected_price)
+    data = data100 if data100 is not None else initial_data
+
+    items = data.get("items", [])
+    rows = [map_api_item_to_row(it) for it in items]
+    page_num = 1
+    # A Maxwork mostra o botão "seguinte" ativo (e hasNextPage=True) bem
+    # depois de a pesquisa já ter acabado a sério — o mesmo comportamento
+    # genérico já visto na paginação da UI. Por isso o sinal fiável de
+    # "já não há mais" é a página vir mesmo vazia, não hasNextPage/
+    # has_next_page(); sem isto entra em loop infinito a "avançar" para
+    # sempre sem nunca ler uma página com 0 imóveis.
+    while items and data.get("hasNextPage") and has_next_page(page):
+        page_num += 1
+        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR), expected_page=page_num, expected_price=expected_price)
+        if data is None:
+            print(f"{label} [aviso] falhou a apanhar a página {page_num}")
+            return rows, False
+        items = data.get("items", [])
+        if not items:
+            break
+        rows.extend(map_api_item_to_row(it) for it in items)
+
+    return rows, True
 
 
 def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int, depth: int = 0) -> list[dict]:
@@ -422,32 +476,20 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
         print(f"{label} sem resultados")
         return []
 
-    data100 = set_page_size_100(watcher, expected_price)
-    if data100 is not None:
-        data = data100
+    best_rows, complete = _fetch_bucket_pages(watcher, label, min_price, max_price, expected_price, initial_data=data)
+    bucket_attempt = 1
+    while not complete and bucket_attempt < MAX_BUCKET_ATTEMPTS:
+        bucket_attempt += 1
+        print(f"{label} [aviso] fatia incompleta ({len(best_rows)}/{total} imóveis) — a tentar a fatia toda outra vez ({bucket_attempt}/{MAX_BUCKET_ATTEMPTS})...")
+        rows, complete = _fetch_bucket_pages(watcher, label, min_price, max_price, expected_price)
+        if len(rows) > len(best_rows):
+            best_rows = rows
 
-    items = data.get("items", [])
-    rows = [map_api_item_to_row(it) for it in items]
-    page_num = 1
-    # A Maxwork mostra o botão "seguinte" ativo (e hasNextPage=True) bem
-    # depois de a pesquisa já ter acabado a sério — o mesmo comportamento
-    # genérico já visto na paginação da UI. Por isso o sinal fiável de
-    # "já não há mais" é a página vir mesmo vazia, não hasNextPage/
-    # has_next_page(); sem isto entra em loop infinito a "avançar" para
-    # sempre sem nunca ler uma página com 0 imóveis.
-    while items and data.get("hasNextPage") and has_next_page(page):
-        page_num += 1
-        data = capture_search(watcher, lambda: page.click(NEXT_PAGE_SELECTOR), expected_page=page_num, expected_price=expected_price)
-        if data is None:
-            print(f"{label} [aviso] falhou a apanhar a página {page_num} — a parar aqui, pode faltar o resto desta fatia")
-            break
-        items = data.get("items", [])
-        if not items:
-            break
-        rows.extend(map_api_item_to_row(it) for it in items)
+    if not complete:
+        print(f"{label} [aviso] mesmo depois de {MAX_BUCKET_ATTEMPTS} tentativas completas, a fatia continua incompleta — pode faltar imóveis deste intervalo")
 
-    print(f"{label} {len(rows)} imóveis ({total} esperados)")
-    return rows
+    print(f"{label} {len(best_rows)} imóveis ({total} esperados)")
+    return best_rows
 
 
 def write_csv(rows):
