@@ -176,6 +176,20 @@ def price_label(min_price: int, max_price: int) -> str:
     return f"[preço {min_price:,}".replace(",", " ") + f"–{max_text}]"
 
 
+def split_point(min_price: int, max_price: int) -> int:
+    """Onde cortar um intervalo de preço que ainda está acima do limite.
+    O mercado imobiliário tem uma distribuição muito assimétrica (muitos
+    imóveis baratos, poucos caríssimos) — bisseção aritmética pura a
+    partir de "sem máximo" desperdiçava várias divisões em intervalos
+    astronomicamente irrealistas (25M, 12.5M, ...) antes de chegar a
+    preços a sério. Para o topo "sem máximo" cresce por dobragem a
+    partir de onde já vai, em vez de dividir sempre ao meio — aproxima-se
+    muito mais depressa da distribuição real do mercado."""
+    if max_price >= NO_MAX_PRICE:
+        return max(min_price * 2, min_price + 1_000_000)
+    return min_price + (max_price - min_price) // 2
+
+
 def map_api_item_to_row(item: dict) -> dict:
     """Traduz um imóvel devolvido pela API para o mesmo formato de linha
     que o resto do pipeline (maxwork_details_to_csv.py, maxwork_to_crm.py)
@@ -240,7 +254,7 @@ def scrape_price_bucket(page, min_price: int, max_price: int) -> list[dict]:
         if max_price - min_price <= 1:
             print(f"{label} [aviso] intervalo já não dá para dividir mais e continua acima do limite ({total} resultados) — pode faltar imóveis deste preço exato")
         else:
-            mid = min_price + (max_price - min_price) // 2
+            mid = split_point(min_price, max_price)
             print(f"{label} {total} resultados (> {MAX_RESULTS_PER_SEARCH}) — a dividir em dois")
             left = scrape_price_bucket(page, min_price, mid)
             right = scrape_price_bucket(page, mid + 1, max_price)
@@ -254,15 +268,25 @@ def scrape_price_bucket(page, min_price: int, max_price: int) -> list[dict]:
     if data100 is not None:
         data = data100
 
-    rows = [map_api_item_to_row(it) for it in data.get("items", [])]
+    items = data.get("items", [])
+    rows = [map_api_item_to_row(it) for it in items]
     page_num = 1
-    while data.get("hasNextPage") and has_next_page(page):
+    # A Maxwork mostra o botão "seguinte" ativo (e hasNextPage=True) bem
+    # depois de a pesquisa já ter acabado a sério — o mesmo comportamento
+    # genérico já visto na paginação da UI. Por isso o sinal fiável de
+    # "já não há mais" é a página vir mesmo vazia, não hasNextPage/
+    # has_next_page(); sem isto entra em loop infinito a "avançar" para
+    # sempre sem nunca ler uma página com 0 imóveis.
+    while items and data.get("hasNextPage") and has_next_page(page):
         page_num += 1
         data = capture_search(page, lambda: page.click(NEXT_PAGE_SELECTOR))
         if data is None:
             print(f"{label} [aviso] falhou a apanhar a página {page_num} — a parar aqui, pode faltar o resto desta fatia")
             break
-        rows.extend(map_api_item_to_row(it) for it in data.get("items", []))
+        items = data.get("items", [])
+        if not items:
+            break
+        rows.extend(map_api_item_to_row(it) for it in items)
 
     print(f"{label} {len(rows)} imóveis ({total} esperados)")
     return rows
