@@ -405,6 +405,7 @@ def _fetch_bucket_pages(
     max_price: int,
     expected_price: tuple[int | None, int | None],
     initial_data: dict | None = None,
+    initial_response=None,
 ) -> tuple[list[dict], bool]:
     """Uma tentativa completa de percorrer TODAS as páginas de uma fatia
     já confirmada abaixo do limite de 10k. Devolve (linhas, completo) —
@@ -416,7 +417,10 @@ def _fetch_bucket_pages(
     initial_data permite reaproveitar a resposta da página 1 que quem
     chama já tem (evita repetir esse pedido na 1ª tentativa) — em
     repetições seguintes é None, e a pesquisa da página 1 é refeita de
-    raiz."""
+    raiz. initial_response não é usado por esta implementação (via
+    browser) — existe só para bater certo com a assinatura de
+    fetch_leaf, que o maxwork_api_fetch.py usa para evitar um 2º
+    clique em "Ver Resultados" por fatia."""
     page = watcher.page
     if initial_data is None:
         set_price_range(page, min_price, max_price)
@@ -468,18 +472,29 @@ def scrape_price_bucket(
     (via cliques no browser, o caminho comprovado). Parametrizado para
     o maxwork_api_fetch.py poder injetar uma versão mais rápida (via
     requests diretos à API) sem duplicar a lógica de divisão/retries
-    desta função, que é a mesma nos dois casos."""
+    desta função, que é a mesma nos dois casos.
+
+    A pesquisa desta função (para saber o totalCount) usa
+    return_response=True e passa o response bruto a fetch_leaf via
+    initial_response — assim quem precisar dos headers/corpo do
+    pedido real (maxwork_api_fetch.py) não tem de disparar um 2º
+    clique em "Ver Resultados" só para os apanhar. Um 2º clique por
+    fatia já mostrou, numa corrida real, atropelar o preenchimento do
+    preço da fatia SEGUINTE — a app não tinha tempo de aplicar o novo
+    filtro antes desse clique extra, e a fatia seguinte saía sempre
+    com respostas presas ao preço antigo."""
     page = watcher.page
     label = price_label(min_price, max_price)
     print(f"{label} a pesquisar...")
 
     expected_price = _expected_price_bounds(min_price, max_price)
     set_price_range(page, min_price, max_price)
-    data = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price)
+    result = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price, return_response=True)
 
-    if data is None:
+    if result is None:
         print(f"{label} sem resposta válida da pesquisa depois de várias tentativas — a saltar esta fatia (podem faltar imóveis deste intervalo)")
         return []
+    data, response = result
 
     total = data.get("totalCount", 0)
     if total > MAX_RESULTS_PER_SEARCH:
@@ -496,7 +511,7 @@ def scrape_price_bucket(
         print(f"{label} sem resultados")
         return []
 
-    best_rows, complete = fetch_leaf(watcher, label, min_price, max_price, expected_price, initial_data=data)
+    best_rows, complete = fetch_leaf(watcher, label, min_price, max_price, expected_price, initial_data=data, initial_response=response)
     bucket_attempt = 1
     while not complete and bucket_attempt < MAX_BUCKET_ATTEMPTS:
         bucket_attempt += 1

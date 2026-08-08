@@ -134,11 +134,30 @@ class FastPageFetcher:
             print(f"  [aviso] resposta da página {page_number} não é JSON válido")
             return None
 
+    @staticmethod
+    def _extract_auth(response) -> tuple[dict, dict]:
+        """Extrai (headers, corpo) do PEDIDO que gerou "response" — sem
+        disparar nenhum pedido novo."""
+        req = response.request
+        # Filtra pseudo-headers HTTP/2 (":method", ":authority", ...) e
+        # content-length — o requests recalcula este último sozinho a
+        # partir do corpo, reenviar o valor capturado podia ficar
+        # errado se o corpo mudar de tamanho (não muda aqui, mas não
+        # vale a pena arriscar).
+        headers = {
+            k: v for k, v in response.request.headers.items()
+            if not k.startswith(":") and k.lower() != "content-length"
+        }
+        return headers, req.post_data_json
+
     def _capture_auth(self, watcher: "SearchWatcher", expected_price):
         """Deixa o browser disparar "Ver Resultados" (a fatia de preço
         já está aplicada — quem chama garante isso) e devolve
-        (headers, corpo) do pedido REAL que a app fez, para
-        reutilizar em todas as páginas desta fatia via requests."""
+        (headers, corpo) do pedido REAL que a app fez. Só usado numa
+        repetição (ver fetch_bucket_pages) — na 1ª tentativa reutiliza
+        o pedido que scrape_price_bucket já disparou, para não haver
+        um 2º clique em "Ver Resultados" por fatia (ver docstring da
+        classe)."""
         page = watcher.page
         result = capture_search(
             watcher, lambda: run_search(page),
@@ -147,17 +166,7 @@ class FastPageFetcher:
         if result is None:
             return None
         _data, response = result
-        req = response.request
-        # Filtra pseudo-headers HTTP/2 (":method", ":authority", ...) e
-        # content-length — o requests recalcula este último sozinho a
-        # partir do corpo, reenviar o valor capturado podia ficar
-        # errado se o corpo mudar de tamanho (não muda aqui, mas não
-        # vale a pena arriscar).
-        headers = {
-            k: v for k, v in req.headers.items()
-            if not k.startswith(":") and k.lower() != "content-length"
-        }
-        return headers, req.post_data_json
+        return self._extract_auth(response)
 
     def fetch_bucket_pages(
         self,
@@ -167,28 +176,34 @@ class FastPageFetcher:
         max_price: int,
         expected_price,
         initial_data: dict | None = None,
+        initial_response=None,
     ) -> tuple[list[dict], bool]:
         """Mesma assinatura/contrato de _fetch_bucket_pages (maxwork_to_csv_bulk.py)
         — devolve (linhas, completo) — para poder ser injetada em
         scrape_price_bucket via fetch_leaf, herdando de lá toda a
         lógica de divisão de fatias >10k e retry de fatia incompleta.
-        initial_data (a resposta que scrape_price_bucket já tem da sua
-        própria pesquisa inicial) não é reaproveitado aqui — só serve
-        para confirmar totalCount/decidir a divisão, o pedido real
-        para as páginas via requests é sempre feito de raiz (ver
-        _capture_auth). Numa repetição (initial_data None — a fatia
-        ficou incompleta na tentativa anterior), reaplica o filtro de
-        preço por segurança antes de disparar — a Maxwork já mostrou
-        um caso real em que o painel saiu com o filtro antigo depois
-        de uma pesquisa (ver set_price_range)."""
+
+        Na 1ª tentativa, initial_response é o response BRUTO do pedido
+        que scrape_price_bucket já disparou (com return_response=True)
+        para saber o totalCount desta fatia — reaproveitamo-lo para os
+        headers/corpo, sem clicar outra vez em "Ver Resultados". Um 2º
+        clique por fatia já mostrou, numa corrida real, atropelar o
+        preenchimento do preço da fatia SEGUINTE (a app não tinha
+        tempo de aplicar o novo filtro a tempo desse clique extra).
+
+        Numa repetição (fatia incompleta na tentativa anterior,
+        initial_response é None), reaplica o filtro de preço por
+        segurança e dispara um pedido de raiz (_capture_auth)."""
         page = watcher.page
-        if initial_data is None:
+        if initial_response is not None:
+            headers, body = self._extract_auth(initial_response)
+        else:
             set_price_range(page, min_price, max_price)
-        captured = self._capture_auth(watcher, expected_price)
-        if captured is None:
-            print(f"{label} [aviso] não consegui confirmar o pedido para autenticação")
-            return [], False
-        headers, body = captured
+            captured = self._capture_auth(watcher, expected_price)
+            if captured is None:
+                print(f"{label} [aviso] não consegui confirmar o pedido para autenticação")
+                return [], False
+            headers, body = captured
         self._update_auth(headers, page.context.cookies())
 
         rows: list[dict] = []
