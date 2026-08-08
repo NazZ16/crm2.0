@@ -46,8 +46,14 @@ COMO USAR: igual a maxwork_to_csv_bulk.py (mesmo .env). Escreve para
 maxwork_imoveis_api.csv (nome diferente de propósito, para não pisar o
 resultado já validado de maxwork_to_csv_bulk.py enquanto este não
 estiver confirmado a trazer o mesmo total).
+
+    python3 maxwork_api_fetch.py                # corrida completa (0 até sem máximo)
+    python3 maxwork_api_fetch.py 0 300000        # só a fatia [preço 0-300 000], para
+                                                  # reproduzir mais depressa um problema
+                                                  # visto numa fatia específica
 """
 
+import argparse
 import time
 
 import requests
@@ -62,6 +68,7 @@ from maxwork_to_csv_bulk import (
     ensure_results_loaded,
     set_price_range,
     map_api_item_to_row,
+    price_label,
     scrape_price_bucket,
     write_csv,
 )
@@ -207,11 +214,26 @@ class FastPageFetcher:
         return rows, True
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Maxwork -> CSV via API direta. Sem argumentos, corre a pesquisa "
+        "global completa (0 até sem máximo). Passa min/max para testar só UMA fatia "
+        "de preço isolada — útil para reproduzir mais depressa um problema visto numa "
+        "fatia específica, sem esperar pela divisão recursiva desde o topo."
+    )
+    parser.add_argument("min_price", type=int, nargs="?", default=0, help="preço mínimo da fatia a testar (omite para 0)")
+    parser.add_argument("max_price", type=int, nargs="?", default=NO_MAX_PRICE, help="preço máximo da fatia a testar (omite para sem máximo — corrida completa)")
+    return parser.parse_args()
+
+
 def main():
     if not EMAIL or not PASSWORD:
         raise SystemExit("Falta MAXWORK_EMAIL / MAXWORK_PASSWORD no ficheiro .env")
 
+    args = parse_args()
     print("[maxwork] pesquisa global — via API direta (requests) para as páginas dentro de cada fatia [EXPERIMENTAL]")
+    if (args.min_price, args.max_price) != (0, NO_MAX_PRICE):
+        print(f"[maxwork] a testar só a fatia {price_label(args.min_price, args.max_price)} (não a corrida completa)")
 
     with sync_playwright() as pw:
         browser = launch_browser(pw)
@@ -225,7 +247,7 @@ def main():
 
         watcher = SearchWatcher(page)
         fetcher = FastPageFetcher()
-        rows = scrape_price_bucket(watcher, 0, NO_MAX_PRICE, fetch_leaf=fetcher.fetch_bucket_pages)
+        rows = scrape_price_bucket(watcher, args.min_price, args.max_price, fetch_leaf=fetcher.fetch_bucket_pages)
 
         context.close()
         browser.close()
