@@ -64,24 +64,36 @@ from maxwork_to_csv_bulk import (
     map_api_item_to_row,
     scrape_price_bucket,
     write_csv,
-    SEARCH_PAGE_SIZE_SELECT_SELECTOR,
 )
 from maxwork_to_csv import run_search
 
 OUTPUT_CSV = "maxwork_imoveis_api.csv"
 API_URL = "https://app.maxwork.pt/api/Metadata/multi-match-listing-search"
-PAGE_SIZE = 100
+# maxwork_api_size_test.py confirmou size=100/200/300/400 rápidos e
+# size=500+ a dar timeout (>30s sem resposta) num pedido isolado — 200
+# fica com margem folgada abaixo da parede dos 500, para uma corrida
+# real com centenas de pedidos seguidos sob carga variável do
+# servidor, em vez de colar ao valor mais alto só testado uma vez.
+PAGE_SIZE = 200
 REQUEST_SLEEP_S = 0.3  # pausa entre pedidos diretos — mais curta que SEARCH_PAUSE_MS porque não há UI a re-renderizar, mas ainda assim não dispara pedidos em rajada
 
 
 class FastPageFetcher:
-    """Percorre as páginas de uma fatia via pedidos diretos (requests),
-    depois de a página 1 (tamanho 100) ser pedida pelo browser como
-    sempre — só assim sabemos o corpo exato do pedido e um token de
-    autenticação válido nesse momento. Reautentica sozinho em cada
-    fatia (e em cada retry de fatia incompleta, via
-    scrape_price_bucket), o que também renova o token se tiver
-    expirado entretanto."""
+    """Percorre TODAS as páginas de uma fatia via pedidos diretos
+    (requests) ao nosso PAGE_SIZE — o browser só entra para disparar
+    UM pedido (tamanho de página irrelevante, o corpo do pedido não
+    leva o "size", só a query string ?page=N&size=M leva, e essa
+    construímos nós) e capturar dele os headers de autenticação e o
+    corpo exato a reutilizar. Reautentica sozinho em cada fatia (e em
+    cada retry de fatia incompleta, via scrape_price_bucket), o que
+    também renova o token se tiver expirado entretanto.
+
+    Importante: a página 1 é sempre pedida por NÓS via requests, nunca
+    reaproveitada da resposta que o browser capturou — essa resposta
+    pode ter vindo com um tamanho de página diferente (o que a UI
+    tiver por omissão), e misturar tamanhos diferentes na mesma
+    paginação faria saltar itens (ex.: página 1 com 10 itens do
+    browser + página 2 pedida com size=200 saltava os itens 10-199)."""
 
     def __init__(self):
         self.session = requests.Session()
@@ -115,27 +127,19 @@ class FastPageFetcher:
             print(f"  [aviso] resposta da página {page_number} não é JSON válido")
             return None
 
-    def _capture_page100_request(self, watcher: "SearchWatcher", min_price: int, max_price: int, expected_price):
-        """Igual a set_page_size_100 (maxwork_to_csv_bulk.py), mas com
-        return_response=True — para além do JSON já parseado, também
-        queremos o PEDIDO que gerou essa resposta (headers de
-        autenticação + corpo exato) para reutilizar nas páginas
-        seguintes via requests."""
+    def _capture_auth(self, watcher: "SearchWatcher", expected_price):
+        """Deixa o browser disparar "Ver Resultados" (a fatia de preço
+        já está aplicada — quem chama garante isso) e devolve
+        (headers, corpo) do pedido REAL que a app fez, para
+        reutilizar em todas as páginas desta fatia via requests."""
         page = watcher.page
-        page.wait_for_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, timeout=10000)
-        current = page.eval_on_selector(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "el => el.value")
-        if current == "100":
-            capture_search(
-                watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "50"),
-                expected_page=1, expected_price=expected_price,
-            )
         result = capture_search(
-            watcher, lambda: page.select_option(SEARCH_PAGE_SIZE_SELECT_SELECTOR, "100"),
+            watcher, lambda: run_search(page),
             expected_page=1, expected_price=expected_price, return_response=True,
         )
         if result is None:
             return None
-        data, response = result
+        _data, response = result
         req = response.request
         # Filtra pseudo-headers HTTP/2 (":method", ":authority", ...) e
         # content-length — o requests recalcula este último sozinho a
@@ -146,8 +150,7 @@ class FastPageFetcher:
             k: v for k, v in req.headers.items()
             if not k.startswith(":") and k.lower() != "content-length"
         }
-        body = req.post_data_json
-        return data, headers, body
+        return headers, req.post_data_json
 
     def fetch_bucket_pages(
         self,
@@ -161,27 +164,31 @@ class FastPageFetcher:
         """Mesma assinatura/contrato de _fetch_bucket_pages (maxwork_to_csv_bulk.py)
         — devolve (linhas, completo) — para poder ser injetada em
         scrape_price_bucket via fetch_leaf, herdando de lá toda a
-        lógica de divisão de fatias >10k e retry de fatia incompleta."""
+        lógica de divisão de fatias >10k e retry de fatia incompleta.
+        initial_data (a resposta que scrape_price_bucket já tem da sua
+        própria pesquisa inicial) não é reaproveitado aqui — só serve
+        para confirmar totalCount/decidir a divisão, o pedido real
+        para as páginas via requests é sempre feito de raiz (ver
+        _capture_auth). Numa repetição (initial_data None — a fatia
+        ficou incompleta na tentativa anterior), reaplica o filtro de
+        preço por segurança antes de disparar — a Maxwork já mostrou
+        um caso real em que o painel saiu com o filtro antigo depois
+        de uma pesquisa (ver set_price_range)."""
         page = watcher.page
         if initial_data is None:
             set_price_range(page, min_price, max_price)
-            initial_data = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price)
-            if initial_data is None:
-                print(f"{label} [aviso] sem resposta válida ao repetir a pesquisa desta fatia")
-                return [], False
-
-        captured = self._capture_page100_request(watcher, min_price, max_price, expected_price)
+        captured = self._capture_auth(watcher, expected_price)
         if captured is None:
-            print(f"{label} [aviso] não consegui confirmar o pedido de tamanho de página 100")
+            print(f"{label} [aviso] não consegui confirmar o pedido para autenticação")
             return [], False
-        data, headers, body = captured
+        headers, body = captured
         self._update_auth(headers, page.context.cookies())
 
-        items = data.get("items", [])
-        rows = [map_api_item_to_row(it) for it in items]
-        total_pages = data.get("totalPages") or 1
-
-        for page_num in range(2, total_pages + 1):
+        rows: list[dict] = []
+        total_pages = None
+        page_num = 0
+        while total_pages is None or page_num < total_pages:
+            page_num += 1
             result = self._fetch_page(body, page_num)
             if result == "unauthorized":
                 print(f"{label} [aviso] pedido direto devolveu 401 (token expirou?) na página {page_num} — a parar aqui")
@@ -189,6 +196,8 @@ class FastPageFetcher:
             if result is None:
                 print(f"{label} [aviso] falhou a apanhar a página {page_num} via API direta")
                 return rows, False
+            if total_pages is None:
+                total_pages = result.get("totalPages") or 1
             page_items = result.get("items", [])
             if not page_items:
                 break
