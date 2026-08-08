@@ -219,10 +219,16 @@ def capture_search(
     uma resposta que chegue muito depressa, ainda durante o próprio
     "trigger"."""
     def matcher(response):
-        if expected_page is not None and _response_page_number(response) != expected_page:
-            return False
-        if expected_price is not None and _response_price_bounds(response) != expected_price:
-            return False
+        if expected_page is not None:
+            got_page = _response_page_number(response)
+            if got_page != expected_page:
+                print(f"    [debug] página não bate certo: esperava {expected_page}, veio {got_page}")
+                return False
+        if expected_price is not None:
+            got_price = _response_price_bounds(response)
+            if got_price != expected_price:
+                print(f"    [debug] preço não bate certo: esperava {expected_price}, veio {got_price}")
+                return False
         return True
 
     watcher.page.wait_for_timeout(SEARCH_PAUSE_MS)
