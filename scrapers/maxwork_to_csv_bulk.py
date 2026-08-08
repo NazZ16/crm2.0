@@ -315,14 +315,26 @@ def set_price_range(page, min_price: int, max_price: int):
     (dois intervalos diferentes deram exatamente o mesmo total), sinal
     de que o preenchimento não ficou a valer a tempo do clique
     seguinte. Por isso confirma sempre o valor lido de volta do campo,
-    e volta a preencher se não bater certo."""
+    e volta a preencher se não bater certo.
+
+    Preenche SEMPRE o Máximo antes do Mínimo — as fatias de preço
+    avançam sempre em ordem crescente (min desta fatia > max da
+    fatia anterior), por isso preencher o Mínimo primeiro cria um
+    instante inválido (novo Mínimo > Máximo ainda com o valor antigo,
+    mais baixo) antes de o Máximo ser atualizado a seguir. Uma corrida
+    real mostrou a Maxwork a reagir a esse instante inválido
+    "corrigindo" os dois campos sozinha para valores errados (ex.:
+    Mínimo=31250/Máximo=31251 em vez de 31251/62500) — mesmo com o
+    DOM a confirmar os valores certos depois. Preenchendo o Máximo
+    primeiro, o Mínimo antigo (sempre ≤ o novo Máximo, por construção)
+    nunca cria essa situação."""
     ensure_filters_open(page)
     min_text = str(min_price) if min_price > 0 else ""
     max_text = str(max_price) if max_price < NO_MAX_PRICE else ""
 
     for attempt in range(1, 3):
-        page.locator(PRICE_MIN_SELECTOR).fill(min_text)
         page.locator(PRICE_MAX_SELECTOR).fill(max_text)
+        page.locator(PRICE_MIN_SELECTOR).fill(min_text)
         # O campo mostra o valor formatado ("1 000 000 €"), não o texto em
         # bruto que escrevemos — compara só os dígitos, senão isto dava
         # sempre "diferente" mesmo quando preencheu certo.
