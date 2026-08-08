@@ -186,6 +186,7 @@ def capture_search(
     attempts: int = 3,
     expected_page: int | None = None,
     expected_price: tuple[int | None, int | None] | None = None,
+    return_response: bool = False,
 ):
     """Dispara "trigger" (clicar em "Ver Resultados", mudar de página,
     mudar o tamanho de página...) e devolve o JSON já parseado da
@@ -206,6 +207,11 @@ def capture_search(
     intervalo de preço (biggerThan/smallerThan) realmente enviado no
     PEDIDO que gerou a resposta — só assim uma resposta fica mesmo
     amarrada à fatia certa, independentemente de quando chega.
+
+    return_response devolve o objeto Response da Playwright em vez do
+    JSON já parseado — usado por quem precisa também do PEDIDO que
+    gerou essa resposta (response.request — headers de autenticação e
+    corpo exato), não só da resposta em si (ver maxwork_api_fetch.py).
 
     Uma pequena pausa antes de disparar (SEARCH_PAUSE_MS) evita
     encadear pesquisas depressa demais uma atrás da outra. watcher.clear()
@@ -238,10 +244,11 @@ def capture_search(
             print(f"  [aviso] HTTP {response.status} na pesquisa — corpo: {response.text()[:300]}")
             return None
         try:
-            return response.json()
+            data = response.json()
         except Exception as e:
             print(f"  [aviso] resposta não é JSON válido (tentativa {attempt}/{attempts}): {e}")
             continue
+        return (data, response) if return_response else data
     return None
 
 
@@ -444,11 +451,24 @@ def _fetch_bucket_pages(
     return rows, True
 
 
-def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int, depth: int = 0) -> list[dict]:
+def scrape_price_bucket(
+    watcher: "SearchWatcher",
+    min_price: int,
+    max_price: int,
+    depth: int = 0,
+    fetch_leaf=_fetch_bucket_pages,
+) -> list[dict]:
     """Pesquisa um intervalo de preço via API; se o totalCount passar do
     limite do motor de busca, divide o intervalo a meio e tenta cada
     metade separadamente (recursivo) até cada fatia ficar abaixo do
-    limite."""
+    limite.
+
+    fetch_leaf faz o trabalho de percorrer as páginas de uma fatia já
+    confirmada abaixo do limite — por omissão é _fetch_bucket_pages
+    (via cliques no browser, o caminho comprovado). Parametrizado para
+    o maxwork_api_fetch.py poder injetar uma versão mais rápida (via
+    requests diretos à API) sem duplicar a lógica de divisão/retries
+    desta função, que é a mesma nos dois casos."""
     page = watcher.page
     label = price_label(min_price, max_price)
     print(f"{label} a pesquisar...")
@@ -468,20 +488,20 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
         else:
             mid = split_point(min_price, max_price)
             print(f"{label} {total} resultados (> {MAX_RESULTS_PER_SEARCH}) — a dividir em dois")
-            left = scrape_price_bucket(watcher, min_price, mid, depth + 1)
-            right = scrape_price_bucket(watcher, mid + 1, max_price, depth + 1)
+            left = scrape_price_bucket(watcher, min_price, mid, depth + 1, fetch_leaf=fetch_leaf)
+            right = scrape_price_bucket(watcher, mid + 1, max_price, depth + 1, fetch_leaf=fetch_leaf)
             return left + right
 
     if total == 0:
         print(f"{label} sem resultados")
         return []
 
-    best_rows, complete = _fetch_bucket_pages(watcher, label, min_price, max_price, expected_price, initial_data=data)
+    best_rows, complete = fetch_leaf(watcher, label, min_price, max_price, expected_price, initial_data=data)
     bucket_attempt = 1
     while not complete and bucket_attempt < MAX_BUCKET_ATTEMPTS:
         bucket_attempt += 1
         print(f"{label} [aviso] fatia incompleta ({len(best_rows)}/{total} imóveis) — a tentar a fatia toda outra vez ({bucket_attempt}/{MAX_BUCKET_ATTEMPTS})...")
-        rows, complete = _fetch_bucket_pages(watcher, label, min_price, max_price, expected_price)
+        rows, complete = fetch_leaf(watcher, label, min_price, max_price, expected_price)
         if len(rows) > len(best_rows):
             best_rows = rows
 
@@ -492,17 +512,17 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
     return best_rows
 
 
-def write_csv(rows):
+def write_csv(rows, path: str = OUTPUT_CSV):
     fieldnames = [
         "codigo", "id_interno", "url", "titulo", "tipo", "transacao", "estado",
         "preco", "area_m2", "quartos", "casas_banho", "dias_mercado",
         "morada", "foto_capa", "agente", "telefone_agente", "email_agente", "agencia",
     ]
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"\n{len(rows)} imoveis guardados em {OUTPUT_CSV}")
+    print(f"\n{len(rows)} imoveis guardados em {path}")
 
 
 def main():
