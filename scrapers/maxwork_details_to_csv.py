@@ -88,7 +88,7 @@ from maxwork_common import (
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
-LIMIT = 5  # ex: 5 para testar só os primeiros 5; None = todos
+LIMIT = None  # ex: 5 para testar só os primeiros 5; None = todos (usado pelo run_all.bat)
 CONCURRENCY = int(os.getenv("MAXWORK_DETAILS_CONCURRENCY", "4"))  # nº de abas em paralelo
 DETAIL_ATTEMPTS = 3  # se uma ficha falhar a carregar (ex.: servidor sob carga com
                       # concorrência alta), tenta outra vez antes de desistir de vez
