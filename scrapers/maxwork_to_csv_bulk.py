@@ -186,6 +186,7 @@ def capture_search(
     attempts: int = 3,
     expected_page: int | None = None,
     expected_price: tuple[int | None, int | None] | None = None,
+    return_response: bool = False,
 ):
     """Dispara "trigger" (clicar em "Ver Resultados", mudar de página,
     mudar o tamanho de página...) e devolve o JSON já parseado da
@@ -207,16 +208,27 @@ def capture_search(
     PEDIDO que gerou a resposta — só assim uma resposta fica mesmo
     amarrada à fatia certa, independentemente de quando chega.
 
+    return_response devolve o objeto Response da Playwright em vez do
+    JSON já parseado — usado por quem precisa também do PEDIDO que
+    gerou essa resposta (response.request — headers de autenticação e
+    corpo exato), não só da resposta em si (ver maxwork_api_fetch.py).
+
     Uma pequena pausa antes de disparar (SEARCH_PAUSE_MS) evita
     encadear pesquisas depressa demais uma atrás da outra. watcher.clear()
     é chamado mesmo antes de disparar (não depois) — para não perder
     uma resposta que chegue muito depressa, ainda durante o próprio
     "trigger"."""
     def matcher(response):
-        if expected_page is not None and _response_page_number(response) != expected_page:
-            return False
-        if expected_price is not None and _response_price_bounds(response) != expected_price:
-            return False
+        if expected_page is not None:
+            got_page = _response_page_number(response)
+            if got_page != expected_page:
+                print(f"    [debug] página não bate certo: esperava {expected_page}, veio {got_page}")
+                return False
+        if expected_price is not None:
+            got_price = _response_price_bounds(response)
+            if got_price != expected_price:
+                print(f"    [debug] preço não bate certo: esperava {expected_price}, veio {got_price}")
+                return False
         return True
 
     watcher.page.wait_for_timeout(SEARCH_PAUSE_MS)
@@ -238,10 +250,11 @@ def capture_search(
             print(f"  [aviso] HTTP {response.status} na pesquisa — corpo: {response.text()[:300]}")
             return None
         try:
-            return response.json()
+            data = response.json()
         except Exception as e:
             print(f"  [aviso] resposta não é JSON válido (tentativa {attempt}/{attempts}): {e}")
             continue
+        return (data, response) if return_response else data
     return None
 
 
@@ -302,14 +315,26 @@ def set_price_range(page, min_price: int, max_price: int):
     (dois intervalos diferentes deram exatamente o mesmo total), sinal
     de que o preenchimento não ficou a valer a tempo do clique
     seguinte. Por isso confirma sempre o valor lido de volta do campo,
-    e volta a preencher se não bater certo."""
+    e volta a preencher se não bater certo.
+
+    Preenche SEMPRE o Máximo antes do Mínimo — as fatias de preço
+    avançam sempre em ordem crescente (min desta fatia > max da
+    fatia anterior), por isso preencher o Mínimo primeiro cria um
+    instante inválido (novo Mínimo > Máximo ainda com o valor antigo,
+    mais baixo) antes de o Máximo ser atualizado a seguir. Uma corrida
+    real mostrou a Maxwork a reagir a esse instante inválido
+    "corrigindo" os dois campos sozinha para valores errados (ex.:
+    Mínimo=31250/Máximo=31251 em vez de 31251/62500) — mesmo com o
+    DOM a confirmar os valores certos depois. Preenchendo o Máximo
+    primeiro, o Mínimo antigo (sempre ≤ o novo Máximo, por construção)
+    nunca cria essa situação."""
     ensure_filters_open(page)
     min_text = str(min_price) if min_price > 0 else ""
     max_text = str(max_price) if max_price < NO_MAX_PRICE else ""
 
     for attempt in range(1, 3):
-        page.locator(PRICE_MIN_SELECTOR).fill(min_text)
         page.locator(PRICE_MAX_SELECTOR).fill(max_text)
+        page.locator(PRICE_MIN_SELECTOR).fill(min_text)
         # O campo mostra o valor formatado ("1 000 000 €"), não o texto em
         # bruto que escrevemos — compara só os dígitos, senão isto dava
         # sempre "diferente" mesmo quando preencheu certo.
@@ -398,6 +423,7 @@ def _fetch_bucket_pages(
     max_price: int,
     expected_price: tuple[int | None, int | None],
     initial_data: dict | None = None,
+    initial_response=None,
 ) -> tuple[list[dict], bool]:
     """Uma tentativa completa de percorrer TODAS as páginas de uma fatia
     já confirmada abaixo do limite de 10k. Devolve (linhas, completo) —
@@ -409,7 +435,10 @@ def _fetch_bucket_pages(
     initial_data permite reaproveitar a resposta da página 1 que quem
     chama já tem (evita repetir esse pedido na 1ª tentativa) — em
     repetições seguintes é None, e a pesquisa da página 1 é refeita de
-    raiz."""
+    raiz. initial_response não é usado por esta implementação (via
+    browser) — existe só para bater certo com a assinatura de
+    fetch_leaf, que o maxwork_api_fetch.py usa para evitar um 2º
+    clique em "Ver Resultados" por fatia."""
     page = watcher.page
     if initial_data is None:
         set_price_range(page, min_price, max_price)
@@ -444,22 +473,46 @@ def _fetch_bucket_pages(
     return rows, True
 
 
-def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int, depth: int = 0) -> list[dict]:
+def scrape_price_bucket(
+    watcher: "SearchWatcher",
+    min_price: int,
+    max_price: int,
+    depth: int = 0,
+    fetch_leaf=_fetch_bucket_pages,
+) -> list[dict]:
     """Pesquisa um intervalo de preço via API; se o totalCount passar do
     limite do motor de busca, divide o intervalo a meio e tenta cada
     metade separadamente (recursivo) até cada fatia ficar abaixo do
-    limite."""
+    limite.
+
+    fetch_leaf faz o trabalho de percorrer as páginas de uma fatia já
+    confirmada abaixo do limite — por omissão é _fetch_bucket_pages
+    (via cliques no browser, o caminho comprovado). Parametrizado para
+    o maxwork_api_fetch.py poder injetar uma versão mais rápida (via
+    requests diretos à API) sem duplicar a lógica de divisão/retries
+    desta função, que é a mesma nos dois casos.
+
+    A pesquisa desta função (para saber o totalCount) usa
+    return_response=True e passa o response bruto a fetch_leaf via
+    initial_response — assim quem precisar dos headers/corpo do
+    pedido real (maxwork_api_fetch.py) não tem de disparar um 2º
+    clique em "Ver Resultados" só para os apanhar. Um 2º clique por
+    fatia já mostrou, numa corrida real, atropelar o preenchimento do
+    preço da fatia SEGUINTE — a app não tinha tempo de aplicar o novo
+    filtro antes desse clique extra, e a fatia seguinte saía sempre
+    com respostas presas ao preço antigo."""
     page = watcher.page
     label = price_label(min_price, max_price)
     print(f"{label} a pesquisar...")
 
     expected_price = _expected_price_bounds(min_price, max_price)
     set_price_range(page, min_price, max_price)
-    data = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price)
+    result = capture_search(watcher, lambda: run_search(page), expected_page=1, expected_price=expected_price, return_response=True)
 
-    if data is None:
+    if result is None:
         print(f"{label} sem resposta válida da pesquisa depois de várias tentativas — a saltar esta fatia (podem faltar imóveis deste intervalo)")
         return []
+    data, response = result
 
     total = data.get("totalCount", 0)
     if total > MAX_RESULTS_PER_SEARCH:
@@ -468,20 +521,20 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
         else:
             mid = split_point(min_price, max_price)
             print(f"{label} {total} resultados (> {MAX_RESULTS_PER_SEARCH}) — a dividir em dois")
-            left = scrape_price_bucket(watcher, min_price, mid, depth + 1)
-            right = scrape_price_bucket(watcher, mid + 1, max_price, depth + 1)
+            left = scrape_price_bucket(watcher, min_price, mid, depth + 1, fetch_leaf=fetch_leaf)
+            right = scrape_price_bucket(watcher, mid + 1, max_price, depth + 1, fetch_leaf=fetch_leaf)
             return left + right
 
     if total == 0:
         print(f"{label} sem resultados")
         return []
 
-    best_rows, complete = _fetch_bucket_pages(watcher, label, min_price, max_price, expected_price, initial_data=data)
+    best_rows, complete = fetch_leaf(watcher, label, min_price, max_price, expected_price, initial_data=data, initial_response=response)
     bucket_attempt = 1
     while not complete and bucket_attempt < MAX_BUCKET_ATTEMPTS:
         bucket_attempt += 1
         print(f"{label} [aviso] fatia incompleta ({len(best_rows)}/{total} imóveis) — a tentar a fatia toda outra vez ({bucket_attempt}/{MAX_BUCKET_ATTEMPTS})...")
-        rows, complete = _fetch_bucket_pages(watcher, label, min_price, max_price, expected_price)
+        rows, complete = fetch_leaf(watcher, label, min_price, max_price, expected_price)
         if len(rows) > len(best_rows):
             best_rows = rows
 
@@ -492,17 +545,17 @@ def scrape_price_bucket(watcher: "SearchWatcher", min_price: int, max_price: int
     return best_rows
 
 
-def write_csv(rows):
+def write_csv(rows, path: str = OUTPUT_CSV):
     fieldnames = [
         "codigo", "id_interno", "url", "titulo", "tipo", "transacao", "estado",
         "preco", "area_m2", "quartos", "casas_banho", "dias_mercado",
         "morada", "foto_capa", "agente", "telefone_agente", "email_agente", "agencia",
     ]
-    with open(OUTPUT_CSV, "w", newline="", encoding="utf-8-sig") as f:
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"\n{len(rows)} imoveis guardados em {OUTPUT_CSV}")
+    print(f"\n{len(rows)} imoveis guardados em {path}")
 
 
 def main():
