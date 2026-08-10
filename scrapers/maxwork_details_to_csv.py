@@ -2,10 +2,13 @@
 """
 Maxwork -> CSV (detalhe de cada imóvel)
 
-Lê "maxwork_imoveis.csv" (gerado pelo maxwork_to_csv.py) e, para cada
-imóvel com "url" preenchido, entra na ficha e recolhe: descrição
-completa, título curto, badges (Ativo/Publicado), morada completa,
-localização (concelho/freguesia/distrito/lat/long), áreas, e fotos.
+Lê um CSV de listagens (por omissão "maxwork_imoveis.csv", gerado por
+maxwork_to_csv.py ou maxwork_to_csv_bulk.py — mesmo nome, mesmas
+colunas; passa outro caminho como argumento para usar o resultado do
+maxwork_api_fetch.py, "maxwork_imoveis_api.csv") e, para cada imóvel
+com "url" preenchido, entra na ficha e recolhe: descrição completa,
+título curto, badges (Ativo/Publicado), morada completa, localização
+(concelho/freguesia/distrito/lat/long), áreas, e fotos.
 
 A maior parte dos campos usa atributos data-id (ex: dd[data-id="totalArea"])
 que a própria app usa internamente — muito mais fiável do que depender
@@ -24,10 +27,13 @@ False) este script só lê os URLs, não descarrega nada — muda para True só
 se quiseres mesmo uma cópia local em fotos/.
 
 COMO USAR:
-    1. Corre primeiro o maxwork_to_csv.py (produz maxwork_imoveis.csv)
+    1. Corre primeiro o maxwork_to_csv.py, maxwork_to_csv_bulk.py, ou
+       maxwork_api_fetch.py (qualquer um produz um CSV de listagens
+       com as mesmas colunas)
     2. Garante que tens o mesmo .env (MAXWORK_EMAIL, MAXWORK_PASSWORD,
        CRM_API_URL, SCRAPER_API_KEY)
-    3. python maxwork_details_to_csv.py
+    3. python maxwork_details_to_csv.py                    # lê maxwork_imoveis.csv
+       python maxwork_details_to_csv.py maxwork_imoveis_api.csv   # ou outro caminho
     4. Resultado: maxwork_imoveis_detalhado.csv nesta pasta
 
 Também recolhe 3 sinais úteis para triar possíveis negócios (imóvel há
@@ -52,6 +58,7 @@ Começa por confirmar com um LIMIT pequeno que corre bem antes de correr
 para a lista toda.
 """
 
+import argparse
 import csv
 import os
 import queue
@@ -488,13 +495,27 @@ def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: i
         print(f"{label} [erro fatal] {e}")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "input_csv", nargs="?", default=INPUT_CSV,
+        help=f"CSV de listagens a detalhar (omite para {INPUT_CSV} — o produzido por "
+        "maxwork_to_csv.py/maxwork_to_csv_bulk.py; passa maxwork_imoveis_api.csv para "
+        "usar o resultado do maxwork_api_fetch.py)",
+    )
+    return parser.parse_args()
+
+
 def main():
     if not EMAIL or not PASSWORD:
         raise SystemExit("Falta MAXWORK_EMAIL / MAXWORK_PASSWORD no ficheiro .env")
-    if not os.path.exists(INPUT_CSV):
-        raise SystemExit(f"Não encontrei {INPUT_CSV} — corre primeiro o maxwork_to_csv.py")
 
-    with open(INPUT_CSV, newline="", encoding="utf-8-sig") as f:
+    args = parse_args()
+    input_csv = args.input_csv
+    if not os.path.exists(input_csv):
+        raise SystemExit(f"Não encontrei {input_csv} — corre primeiro o maxwork_to_csv.py, maxwork_to_csv_bulk.py ou maxwork_api_fetch.py")
+
+    with open(input_csv, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
 
     if LIMIT:
