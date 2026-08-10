@@ -2,14 +2,16 @@
 """
 Maxwork -> volta a ler fotos em falta
 
-Alguns imóveis ficaram sem fotos numa corrida anterior do
-maxwork_details_to_csv.py, por causa de um modal do Bootstrap que
-bloqueava o separador "Media e Documentos" (já corrigido em
-maxwork_details_to_csv.py). Este script lê o CSV detalhado, encontra as
-linhas que deviam ter tido extração completa mas ficaram com 0 fotos, e
-volta a visitar só essas — sem depender do "já existe no CRM" (que as
-marcaria para atualização leve e nunca voltaria a ler fotos, mesmo já
-com a correção).
+Alguns imóveis ficam sem fotos numa corrida do maxwork_details_to_csv.py
+mesmo com o retry por imóvel (DETAIL_ATTEMPTS): o pedido de fotos
+(GetListingPicturesList, apanhado via goto_and_capture_pictures) pode
+não chegar dentro do timeout de 15s em TODAS as tentativas, sobretudo
+sob carga (concorrência alta, servidor mais lento nesse momento) — sem
+ser um erro na ficha em si, que fica com o resto dos campos certo. Este
+script lê o CSV detalhado, encontra as linhas que deviam ter tido
+extração completa mas ficaram com 0 fotos, e volta a visitar só essas
+— sem depender do "já existe no CRM" (que as marcaria para atualização
+leve e nunca voltaria a ler fotos).
 
 COMO USAR:
     1. Corre isto depois do maxwork_details_to_csv.py ter terminado
@@ -29,7 +31,13 @@ import shutil
 from playwright.sync_api import sync_playwright
 
 from maxwork_common import EMAIL, PASSWORD, open_session, launch_browser
-from maxwork_details_to_csv import dismiss_blocking_modal, extract_detail, format_row_for_csv
+from maxwork_details_to_csv import (
+    DETAIL_ATTEMPTS,
+    dismiss_blocking_modal,
+    extract_detail,
+    format_row_for_csv,
+    goto_and_capture_pictures,
+)
 
 INPUT_CSV = "maxwork_imoveis_detalhado.csv"
 
@@ -73,15 +81,25 @@ def main():
             url = row["url"]
             codigo = row.get("codigo")
             print(f"[{i}/{len(targets)}] {codigo} -> {url}")
-            try:
-                page.goto(url)
-                page.wait_for_selector(".badge-detail", timeout=15000)
-                page.wait_for_timeout(300)
-                dismiss_blocking_modal(page)
-                row.update(extract_detail(page, codigo))
-                print(f"     {row.get('num_fotos', 0)} fotos lidas")
-            except Exception as e:
-                print(f"     [erro] {e}")
+            for attempt in range(1, DETAIL_ATTEMPTS + 1):
+                try:
+                    # goto_and_capture_pictures intercepta a resposta que a
+                    # própria app dispara para GetListingPicturesList — um
+                    # page.goto() simples não tem acesso ao token de
+                    # autenticação que só o pedido da app carrega (ver
+                    # maxwork_details_to_csv.py).
+                    pictures_response = goto_and_capture_pictures(page, url)
+                    page.wait_for_selector(".badge-detail", timeout=15000)
+                    page.wait_for_timeout(300)
+                    dismiss_blocking_modal(page)
+                    row.update(extract_detail(page, pictures_response, codigo))
+                    print(f"     {row.get('num_fotos', 0)} fotos lidas")
+                    break
+                except Exception as e:
+                    if attempt < DETAIL_ATTEMPTS:
+                        print(f"     [aviso] falhou (tentativa {attempt}/{DETAIL_ATTEMPTS}): {e} — a tentar outra vez")
+                    else:
+                        print(f"     [erro] esgotadas {DETAIL_ATTEMPTS} tentativas: {e}")
 
         context.close()
         browser.close()
