@@ -95,8 +95,7 @@ DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM
                           # diretamente os URLs do Maxwork (confirmado públicos,
                           # não exigem login), por isso não precisa dos ficheiros
 PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel (só se DOWNLOAD_PHOTOS=True)
-LISTING_PICTURES_API = "https://app.maxwork.pt/api/ListingPicture/GetListingPicturesList"
-LISTING_ID_RE = re.compile(r"/details/(\d+)")
+LISTING_PICTURES_API_FRAGMENT = "GetListingPicturesList"
 
 
 # Lê TODOS os campos da ficha de uma só vez dentro do browser (1 chamada
@@ -241,24 +240,44 @@ def download_photo(page, url, dest_path):
         return False
 
 
-def extract_photos(page, listing_id: str, codigo: str):
-    """Lê os URLs das fotos via a API interna da Maxwork
-    (GetListingPicturesList) em vez de clicar no separador "Media e
-    Documentos" e esperar a grelha renderizar (até 8s + 500ms fixos por
-    imóvel). Confirmado (maxwork_details_api_test.py) que a app já pede
-    estes dados no carregamento inicial da ficha, mesmo sem clicar em
-    nada — o resultado é o mesmo, só mais rápido. page.request partilha
-    a sessão autenticada da própria página, não precisa de token à
-    parte. Só se DOWNLOAD_PHOTOS=True descarrega cada uma para
-    fotos/<codigo>/NN.jpg. Devolve (urls, caminhos_locais)."""
+def goto_and_capture_pictures(page, url: str):
+    """Navega para a ficha do imóvel e, ao mesmo tempo, apanha a
+    resposta que a PRÓPRIA app dispara para GetListingPicturesList —
+    confirmado (maxwork_details_api_test.py) que isto acontece sozinho
+    no carregamento, sem clicar em "Media e Documentos".
+
+    Não dá para pedir esta API nós próprios via page.request: esse
+    pedido só reutiliza os COOKIES do contexto do browser, nunca o
+    header Authorization Bearer (token MSAL) que a app injeta via JS
+    nos SEUS próprios pedidos — dava sempre 401, a mesma causa já vista
+    com a API de pesquisa (ver maxwork_to_csv_api_test.py). Intercetar
+    a resposta que a app já ia fazer de qualquer forma resolve isso
+    sem precisar de replicar nenhum token.
+
+    Devolve o Response, ou None se não aparecer a tempo (ex.: imóvel
+    sem fotos, ou pedido anormalmente lento)."""
     try:
-        resp = page.request.get(f"{LISTING_PICTURES_API}?listingID={listing_id}")
-        if not resp.ok:
-            print(f"     [aviso] HTTP {resp.status} a listar fotos (listingID={listing_id})")
-            return [], []
-        pictures = resp.json()
+        with page.expect_response(lambda r: LISTING_PICTURES_API_FRAGMENT in r.url, timeout=15000) as resp_info:
+            page.goto(url)
+        return resp_info.value
     except Exception as e:
-        print(f"     [aviso] não consegui listar fotos via API: {e}")
+        print(f"     [aviso] não apanhei a lista de fotos a tempo: {e}")
+        return None
+
+
+def extract_photos(pictures_response, page, codigo: str):
+    """Lê os URLs das fotos a partir da resposta já capturada por
+    goto_and_capture_pictures — nenhum pedido novo é feito aqui. Só se
+    DOWNLOAD_PHOTOS=True descarrega cada uma para fotos/<codigo>/NN.jpg
+    (isso sim usa page.request, mas as imagens em si são públicas —
+    confirmado, carregam sem sessão — por isso não precisam do token).
+    Devolve (urls, caminhos_locais)."""
+    if pictures_response is None or not pictures_response.ok:
+        return [], []
+    try:
+        pictures = pictures_response.json()
+    except Exception as e:
+        print(f"     [aviso] lista de fotos não é JSON válido: {e}")
         return [], []
 
     urls = [p["pictureURL"] for p in pictures if p.get("pictureURL")]
@@ -323,7 +342,7 @@ def extract_status_only(page):
     return result
 
 
-def extract_detail(page, listing_id, codigo):
+def extract_detail(page, pictures_response, codigo):
     # Descrição/título completos: o separador "Resumo" (#listing-summary-description)
     # mostra só um excerto curto (termina em "..." no próprio HTML, não é truncagem
     # CSS). O texto completo vive em #listing-description, no separador "Principal"
@@ -367,7 +386,7 @@ def extract_detail(page, listing_id, codigo):
     if preco is not None:
         detail["preco"] = preco
 
-    urls, local_paths = extract_photos(page, listing_id, codigo)
+    urls, local_paths = extract_photos(pictures_response, page, codigo)
     detail["fotos"] = ";".join(urls)
     detail["fotos_local"] = ";".join(local_paths)
     detail["num_fotos"] = len(urls)
@@ -453,22 +472,25 @@ def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: st
 
     mode = "atualização leve" if already_known else "completo"
     print(f"{label} [{i}/{total}] {codigo} -> {url} ({mode})")
-    id_match = LISTING_ID_RE.search(url)
-    listing_id = id_match.group(1) if id_match else None
     try:
-        page.goto(url)
-        page.wait_for_selector(".badge-detail", timeout=15000)
-        page.wait_for_timeout(300)
-        dismiss_blocking_modal(page)
         if already_known:
+            # Atualização leve não precisa de fotos — navegação normal chega.
+            page.goto(url)
+            page.wait_for_selector(".badge-detail", timeout=15000)
+            page.wait_for_timeout(300)
+            dismiss_blocking_modal(page)
             for k in DETAIL_FIELDNAMES:
                 row.setdefault(k, None)
             row.update(extract_status_only(page))
-        elif listing_id is None:
-            print(f"{label}     [aviso] não consegui extrair o ID de {url} — a saltar fotos")
-            row.update(extract_detail(page, listing_id="", codigo=codigo))
         else:
-            row.update(extract_detail(page, listing_id, codigo))
+            # goto_and_capture_pictures já faz a navegação — substitui o
+            # page.goto(url) simples para poder apanhar, ao mesmo tempo,
+            # a resposta de fotos que a app dispara sozinha.
+            pictures_response = goto_and_capture_pictures(page, url)
+            page.wait_for_selector(".badge-detail", timeout=15000)
+            page.wait_for_timeout(300)
+            dismiss_blocking_modal(page)
+            row.update(extract_detail(page, pictures_response, codigo))
     except Exception as e:
         print(f"{label}     [erro] {codigo}: {e}")
         for k in DETAIL_FIELDNAMES:
