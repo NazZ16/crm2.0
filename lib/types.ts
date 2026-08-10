@@ -2,6 +2,8 @@
 
 export type LeadStatus = 'new' | 'qualified' | 'meeting' | 'active' | 'cpcv' | 'escriturado' | 'won' | 'lost'
 export type InteractionType = 'call' | 'whatsapp' | 'email' | 'meeting' | 'note' | 'audio'
+export type InteractionOutcome = 'sugerido' | 'visitado' | 'proposta' | 'rejeitado'
+export type RejectionReason = 'preco' | 'localizacao' | 'estado_imovel' | 'timing' | 'tipologia' | 'outro'
 export type TaskStatus = 'open' | 'done'
 export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 export type TeamRole = 'admin' | 'agent' | 'viewer'
@@ -215,6 +217,26 @@ export interface Interaction {
   summary: string | null
   occurred_at: string
   created_at: string
+  // Feedback de match lead↔imóvel (migration 031)
+  listing_id: string | null
+  outcome: InteractionOutcome | null
+  rejection_reason: RejectionReason | null
+}
+
+export const INTERACTION_OUTCOME_LABELS: Record<InteractionOutcome, string> = {
+  sugerido: 'Sugerido',
+  visitado: 'Visitado',
+  proposta: 'Proposta feita',
+  rejeitado: 'Rejeitado',
+}
+
+export const REJECTION_REASON_LABELS: Record<RejectionReason, string> = {
+  preco: 'Preço',
+  localizacao: 'Localização',
+  estado_imovel: 'Estado do imóvel',
+  timing: 'Timing',
+  tipologia: 'Tipologia',
+  outro: 'Outro',
 }
 
 export interface Task {
