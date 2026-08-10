@@ -204,6 +204,9 @@ export interface LeadProfile {
   summary: string | null
   confidence_score: number | null
   updated_at: string
+  // Camada semântica de matching (migration 032)
+  embedding?: number[] | string | null
+  embedding_updated_at?: string | null
 }
 
 // ─── Interactions & Tasks ──────────────────────────────────────────────────────
@@ -808,6 +811,10 @@ export interface Listing {
   days_on_market: number | null
   visit_count: number | null
   proposal_count: number | null
+
+  // Camada semântica de matching (migration 032)
+  embedding?: number[] | string | null
+  embedding_updated_at?: string | null
 
   created_at: string
   updated_at: string
