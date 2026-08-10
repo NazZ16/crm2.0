@@ -7,6 +7,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { applyAutoTaskOnStatusChange } from '@/lib/auto-tasks'
+import { buildLeadPreferenceEmbeddingText, regenerateLeadProfileEmbedding } from '@/lib/embeddings'
 import type { LeadProfile, AgentExtractionResult, AgentAction, LeadType, LeadStatus } from '@/lib/types'
 
 export function mergeProfileField<T>(
@@ -124,17 +125,18 @@ export async function applyExtraction(
 
   const [{ data: existingProfile }, { data: leadRow }] = await Promise.all([
     supabase.from('lead_profiles').select('*').eq('lead_id', leadId).maybeSingle() as unknown as Promise<{ data: LeadProfile | null }>,
-    supabase.from('leads').select('status, lead_type, assigned_to').eq('id', leadId).single(),
+    supabase.from('leads').select('status, lead_type, assigned_to, notes').eq('id', leadId).single(),
   ])
 
   const now = new Date().toISOString()
 
   const sellerProfileFromAgent = (ex as { seller_profile?: unknown }).seller_profile
+  const mergedHomePreferences = mergeProfileField(existingProfile?.home_preferences, ex.home_preferences)
 
   await supabase.from('lead_profiles').upsert(
     {
       lead_id: leadId,
-      home_preferences: mergeProfileField(existingProfile?.home_preferences, ex.home_preferences),
+      home_preferences: mergedHomePreferences,
       financial_profile: mergeProfileField(existingProfile?.financial_profile, ex.financial_profile),
       personality_traits: mergeProfileField(existingProfile?.personality_traits, ex.personality_traits),
       family_context: mergeProfileField(existingProfile?.family_context, ex.family_context),
@@ -150,6 +152,26 @@ export async function applyExtraction(
     },
     { onConflict: 'lead_id' }
   )
+
+  // Regenerar embedding semântico do perfil — best-effort, nunca bloqueia a
+  // aplicação da extração. await directo (não after()) porque esta função
+  // já corre por vezes dentro de um after() do pipeline automático
+  // (Telegram/ingest), e encadear after() dentro de after() não vale o risco
+  // por uma chamada que já é barata.
+  const hasPreferenceContent = mergedHomePreferences
+    ? Object.values(mergedHomePreferences).some((v) => v != null && (Array.isArray(v) ? v.length > 0 : true))
+    : false
+  if (hasPreferenceContent) {
+    try {
+      await regenerateLeadProfileEmbedding(
+        supabase,
+        leadId,
+        buildLeadPreferenceEmbeddingText(mergedHomePreferences, (leadRow?.notes as string | null) ?? null)
+      )
+    } catch (err) {
+      console.warn('[apply-extraction] regenerar embedding falhou:', err)
+    }
+  }
 
   await supabase
     .from('leads')
