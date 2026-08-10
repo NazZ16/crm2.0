@@ -12,7 +12,20 @@ título curto, badges (Ativo/Publicado), morada completa, localização
 
 A maior parte dos campos usa atributos data-id (ex: dd[data-id="totalArea"])
 que a própria app usa internamente — muito mais fiável do que depender
-de classes CSS genéricas.
+de classes CSS genéricas. Os campos "principais" (áreas, ano de
+construção, eficiência energética, morada, coordenadas, ...) só estão
+disponíveis assim: a API interna que os devolve (GET /api/Listing/{id})
+vem CIFRADA no corpo da resposta — decididamente feito para impedir
+scraping direto — por isso continuamos a lê-los do DOM já renderizado
+pela app, não há forma de os pedir diretamente.
+
+As FOTOS já não são lidas do DOM: confirmámos (ver
+maxwork_details_api_test.py) que a app pede a lista de fotos via API
+interna (GetListingPicturesList) logo no carregamento da ficha, sem
+ser preciso clicar em "Media e Documentos" nem esperar a grelha
+renderizar — por isso passámos a pedir essa API diretamente
+(page.request, que já usa a sessão autenticada da própria página),
+poupando o clique + espera mais lenta de todo o processo por imóvel.
 
 Antes de começar, consulta o CRM (CRM_API_URL/SCRAPER_API_KEY) para saber
 que imóveis já lá existem (por source_url). Para esses, só entra na ficha
@@ -81,8 +94,9 @@ CONCURRENCY = int(os.getenv("MAXWORK_DETAILS_CONCURRENCY", "4"))  # nº de abas 
 DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM usa
                           # diretamente os URLs do Maxwork (confirmado públicos,
                           # não exigem login), por isso não precisa dos ficheiros
-PHOTOS_TAB_TEXT = "Media e Documentos"
 PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel (só se DOWNLOAD_PHOTOS=True)
+LISTING_PICTURES_API = "https://app.maxwork.pt/api/ListingPicture/GetListingPicturesList"
+LISTING_ID_RE = re.compile(r"/details/(\d+)")
 
 
 # Lê TODOS os campos da ficha de uma só vez dentro do browser (1 chamada
@@ -227,38 +241,27 @@ def download_photo(page, url, dest_path):
         return False
 
 
-def extract_photos(page, codigo):
-    """Lê os URLs das fotos (sempre — é o que o CRM guarda) e, só se
-    DOWNLOAD_PHOTOS=True, descarrega cada uma para fotos/<codigo>/NN.jpg.
-    Devolve (urls, caminhos_locais)."""
-    dismiss_blocking_modal(page)
+def extract_photos(page, listing_id: str, codigo: str):
+    """Lê os URLs das fotos via a API interna da Maxwork
+    (GetListingPicturesList) em vez de clicar no separador "Media e
+    Documentos" e esperar a grelha renderizar (até 8s + 500ms fixos por
+    imóvel). Confirmado (maxwork_details_api_test.py) que a app já pede
+    estes dados no carregamento inicial da ficha, mesmo sem clicar em
+    nada — o resultado é o mesmo, só mais rápido. page.request partilha
+    a sessão autenticada da própria página, não precisa de token à
+    parte. Só se DOWNLOAD_PHOTOS=True descarrega cada uma para
+    fotos/<codigo>/NN.jpg. Devolve (urls, caminhos_locais)."""
     try:
-        page.get_by_text(PHOTOS_TAB_TEXT, exact=True).click()
-        page.wait_for_selector("#listing-pictures", timeout=8000)
-        page.wait_for_timeout(500)
-        # 1 chamada JS a ler todos os <img src> em vez de um get_attribute
-        # por foto (podem ser 20-30 por imóvel).
-        urls = page.evaluate(
-            """() => {
-                let imgs = Array.from(document.querySelectorAll('#listing-pictures .big-swipper img'));
-                if (imgs.length === 0) {
-                    imgs = Array.from(document.querySelectorAll('#listing-pictures .swiper-slide img'));
-                }
-                const seen = new Set();
-                const urls = [];
-                for (const img of imgs) {
-                    const src = img.getAttribute('src');
-                    if (src && !seen.has(src)) {
-                        seen.add(src);
-                        urls.push(src);
-                    }
-                }
-                return urls;
-            }"""
-        )
+        resp = page.request.get(f"{LISTING_PICTURES_API}?listingID={listing_id}")
+        if not resp.ok:
+            print(f"     [aviso] HTTP {resp.status} a listar fotos (listingID={listing_id})")
+            return [], []
+        pictures = resp.json()
     except Exception as e:
-        print(f"     [aviso] não consegui ler fotos: {e}")
+        print(f"     [aviso] não consegui listar fotos via API: {e}")
         return [], []
+
+    urls = [p["pictureURL"] for p in pictures if p.get("pictureURL")]
 
     if not DOWNLOAD_PHOTOS:
         return urls, []
@@ -320,7 +323,7 @@ def extract_status_only(page):
     return result
 
 
-def extract_detail(page, codigo):
+def extract_detail(page, listing_id, codigo):
     # Descrição/título completos: o separador "Resumo" (#listing-summary-description)
     # mostra só um excerto curto (termina em "..." no próprio HTML, não é truncagem
     # CSS). O texto completo vive em #listing-description, no separador "Principal"
@@ -364,7 +367,7 @@ def extract_detail(page, codigo):
     if preco is not None:
         detail["preco"] = preco
 
-    urls, local_paths = extract_photos(page, codigo)
+    urls, local_paths = extract_photos(page, listing_id, codigo)
     detail["fotos"] = ";".join(urls)
     detail["fotos_local"] = ";".join(local_paths)
     detail["num_fotos"] = len(urls)
@@ -450,6 +453,8 @@ def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: st
 
     mode = "atualização leve" if already_known else "completo"
     print(f"{label} [{i}/{total}] {codigo} -> {url} ({mode})")
+    id_match = LISTING_ID_RE.search(url)
+    listing_id = id_match.group(1) if id_match else None
     try:
         page.goto(url)
         page.wait_for_selector(".badge-detail", timeout=15000)
@@ -459,8 +464,11 @@ def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: st
             for k in DETAIL_FIELDNAMES:
                 row.setdefault(k, None)
             row.update(extract_status_only(page))
+        elif listing_id is None:
+            print(f"{label}     [aviso] não consegui extrair o ID de {url} — a saltar fotos")
+            row.update(extract_detail(page, listing_id="", codigo=codigo))
         else:
-            row.update(extract_detail(page, codigo))
+            row.update(extract_detail(page, listing_id, codigo))
     except Exception as e:
         print(f"{label}     [erro] {codigo}: {e}")
         for k in DETAIL_FIELDNAMES:
