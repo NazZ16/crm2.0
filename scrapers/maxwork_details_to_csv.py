@@ -90,6 +90,10 @@ INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
 LIMIT = 5  # ex: 5 para testar só os primeiros 5; None = todos
 CONCURRENCY = int(os.getenv("MAXWORK_DETAILS_CONCURRENCY", "4"))  # nº de abas em paralelo
+DETAIL_ATTEMPTS = 3  # se uma ficha falhar a carregar (ex.: servidor sob carga com
+                      # concorrência alta), tenta outra vez antes de desistir de vez
+                      # — sem isto, uma falha isolada apagava a linha toda para
+                      # sempre, sem nenhuma tentativa de recuperação
 
 DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM usa
                           # diretamente os URLs do Maxwork (confirmado públicos,
@@ -472,29 +476,35 @@ def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: st
 
     mode = "atualização leve" if already_known else "completo"
     print(f"{label} [{i}/{total}] {codigo} -> {url} ({mode})")
-    try:
-        if already_known:
-            # Atualização leve não precisa de fotos — navegação normal chega.
-            page.goto(url)
-            page.wait_for_selector(".badge-detail", timeout=15000)
-            page.wait_for_timeout(300)
-            dismiss_blocking_modal(page)
-            for k in DETAIL_FIELDNAMES:
-                row.setdefault(k, None)
-            row.update(extract_status_only(page))
-        else:
-            # goto_and_capture_pictures já faz a navegação — substitui o
-            # page.goto(url) simples para poder apanhar, ao mesmo tempo,
-            # a resposta de fotos que a app dispara sozinha.
-            pictures_response = goto_and_capture_pictures(page, url)
-            page.wait_for_selector(".badge-detail", timeout=15000)
-            page.wait_for_timeout(300)
-            dismiss_blocking_modal(page)
-            row.update(extract_detail(page, pictures_response, codigo))
-    except Exception as e:
-        print(f"{label}     [erro] {codigo}: {e}")
-        for k in DETAIL_FIELDNAMES:
-            row[k] = None
+
+    for attempt in range(1, DETAIL_ATTEMPTS + 1):
+        try:
+            if already_known:
+                # Atualização leve não precisa de fotos — navegação normal chega.
+                page.goto(url)
+                page.wait_for_selector(".badge-detail", timeout=15000)
+                page.wait_for_timeout(300)
+                dismiss_blocking_modal(page)
+                for k in DETAIL_FIELDNAMES:
+                    row.setdefault(k, None)
+                row.update(extract_status_only(page))
+            else:
+                # goto_and_capture_pictures já faz a navegação — substitui o
+                # page.goto(url) simples para poder apanhar, ao mesmo tempo,
+                # a resposta de fotos que a app dispara sozinha.
+                pictures_response = goto_and_capture_pictures(page, url)
+                page.wait_for_selector(".badge-detail", timeout=15000)
+                page.wait_for_timeout(300)
+                dismiss_blocking_modal(page)
+                row.update(extract_detail(page, pictures_response, codigo))
+            return
+        except Exception as e:
+            if attempt < DETAIL_ATTEMPTS:
+                print(f"{label}     [aviso] falhou {codigo} (tentativa {attempt}/{DETAIL_ATTEMPTS}): {e} — a tentar outra vez")
+            else:
+                print(f"{label}     [erro] {codigo} (esgotadas {DETAIL_ATTEMPTS} tentativas): {e}")
+                for k in DETAIL_FIELDNAMES:
+                    row[k] = None
 
 
 def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: int,
