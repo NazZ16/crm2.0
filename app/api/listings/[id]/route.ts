@@ -1,6 +1,12 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { z } from 'zod'
+import { buildListingEmbeddingText, regenerateListingEmbedding } from '@/lib/embeddings'
+
+const LISTING_EMBEDDING_TRIGGER_FIELDS = new Set([
+  'title', 'description', 'zone', 'municipality', 'parish', 'district',
+  'typology', 'property_type', 'business_type', 'features',
+])
 
 const updateListingSchema = z.object({
   reference: z.string().max(100).nullable().optional(),
@@ -111,6 +117,15 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'Imóvel não encontrado' }, { status: 404 })
+
+  const changedFields = Object.keys(parsed.data)
+  if (changedFields.some((k) => LISTING_EMBEDDING_TRIGGER_FIELDS.has(k))) {
+    after(
+      regenerateListingEmbedding(service, data.id, buildListingEmbeddingText(data)).catch((err) =>
+        console.warn('[embeddings] listing patch', data.id, err)
+      )
+    )
+  }
 
   return NextResponse.json(data)
 }

@@ -1,6 +1,17 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { listingSchema } from '@/lib/schemas/listing'
+import { buildListingEmbeddingText, regenerateListingEmbedding } from '@/lib/embeddings'
+
+// Campos cujo conteúdo entra no texto do embedding semântico. "price" fica
+// de fora: já é coberto de forma determinística pelo hard-filter de
+// orçamento em lib/listing-matching-engine.ts, e é o campo que mais muda em
+// cada re-scrape — regenerar o embedding a cada alteração de preço seria
+// uma chamada OpenAI desperdiçada sem ganho semântico real.
+const LISTING_EMBEDDING_TRIGGER_FIELDS = new Set([
+  'title', 'description', 'zone', 'municipality', 'parish', 'district',
+  'typology', 'property_type', 'business_type', 'features',
+])
 
 export async function GET(request: Request) {
   const supabase = await createClient()
@@ -144,6 +155,14 @@ export async function POST(request: Request) {
         .select()
         .single()
       if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
+
+      if (Object.keys(updatePayload).some((k) => LISTING_EMBEDDING_TRIGGER_FIELDS.has(k))) {
+        after(
+          regenerateListingEmbedding(service, updated.id, buildListingEmbeddingText(updated)).catch((err) =>
+            console.warn('[embeddings] listing update', updated.id, err)
+          )
+        )
+      }
       return NextResponse.json(updated, { status: 200 })
     }
   }
@@ -155,6 +174,12 @@ export async function POST(request: Request) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  after(
+    regenerateListingEmbedding(service, data.id, buildListingEmbeddingText(data)).catch((err) =>
+      console.warn('[embeddings] listing insert', data.id, err)
+    )
+  )
 
   return NextResponse.json(data, { status: 201 })
 }
