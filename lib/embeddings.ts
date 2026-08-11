@@ -109,19 +109,35 @@ export function buildLeadPreferenceEmbeddingText(
   return parts.filter((p): p is string => !!p && p.trim().length > 0).join('. ')
 }
 
-/** Gera e persiste o embedding de um listing. Best-effort — nunca lanca. */
+export interface RegenerateEmbeddingResult {
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Gera e persiste o embedding de um listing. Best-effort — nunca lanca.
+ * Devolve {ok:false, error} em vez de engolir a falha, para quem chama
+ * (ex.: o endpoint de backfill) poder reportar a causa real em vez de
+ * repetir a mesma tentativa às cegas.
+ */
 export async function regenerateListingEmbedding(
   supabase: SupabaseClient,
   listingId: string,
   text: string
-): Promise<void> {
+): Promise<RegenerateEmbeddingResult> {
   const embedding = await generateEmbedding(text)
-  if (!embedding) return
+  if (!embedding) {
+    return { ok: false, error: 'generateEmbedding devolveu null — ver aviso [embeddings] nos logs do servidor' }
+  }
   const { error } = await supabase
     .from('listings')
     .update({ embedding, embedding_updated_at: new Date().toISOString() })
     .eq('id', listingId)
-  if (error) console.warn(`[embeddings] falha ao gravar embedding do listing ${listingId}: ${error.message}`)
+  if (error) {
+    console.warn(`[embeddings] falha ao gravar embedding do listing ${listingId}: ${error.message}`)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true }
 }
 
 /** Gera e persiste o embedding do perfil de preferencias de uma lead. Best-effort. */
@@ -129,12 +145,18 @@ export async function regenerateLeadProfileEmbedding(
   supabase: SupabaseClient,
   leadId: string,
   text: string
-): Promise<void> {
+): Promise<RegenerateEmbeddingResult> {
   const embedding = await generateEmbedding(text)
-  if (!embedding) return
+  if (!embedding) {
+    return { ok: false, error: 'generateEmbedding devolveu null — ver aviso [embeddings] nos logs do servidor' }
+  }
   const { error } = await supabase
     .from('lead_profiles')
     .update({ embedding, embedding_updated_at: new Date().toISOString() })
     .eq('lead_id', leadId)
-  if (error) console.warn(`[embeddings] falha ao gravar embedding da lead ${leadId}: ${error.message}`)
+  if (error) {
+    console.warn(`[embeddings] falha ao gravar embedding da lead ${leadId}: ${error.message}`)
+    return { ok: false, error: error.message }
+  }
+  return { ok: true }
 }

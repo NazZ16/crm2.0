@@ -39,8 +39,17 @@ export async function POST(request: Request) {
     .is('embedding', null)
     .limit(limit)
 
+  let listingsOk = 0
+  let listingsFailed = 0
+  let sampleError: string | undefined
+
   for (const l of listings ?? []) {
-    await regenerateListingEmbedding(service, l.id, buildListingEmbeddingText(l))
+    const result = await regenerateListingEmbedding(service, l.id, buildListingEmbeddingText(l))
+    if (result.ok) listingsOk++
+    else {
+      listingsFailed++
+      sampleError ??= `listing ${l.id}: ${result.error}`
+    }
   }
 
   const { data: teamLeads } = await service.from('leads').select('id, notes').eq('team_id', teamId)
@@ -56,20 +65,37 @@ export async function POST(request: Request) {
         .limit(limit)
     : { data: [] }
 
+  let leadsOk = 0
+  let leadsFailed = 0
+
   for (const p of profiles ?? []) {
-    await regenerateLeadProfileEmbedding(
+    const result = await regenerateLeadProfileEmbedding(
       service,
       p.lead_id,
       buildLeadPreferenceEmbeddingText(p.home_preferences, notesByLeadId.get(p.lead_id) ?? null)
     )
+    if (result.ok) leadsOk++
+    else {
+      leadsFailed++
+      sampleError ??= `lead ${p.lead_id}: ${result.error}`
+    }
   }
 
-  const listingsDone = listings?.length ?? 0
-  const leadsDone = profiles?.length ?? 0
+  const listingsAttempted = listings?.length ?? 0
+  const leadsAttempted = profiles?.length ?? 0
+
+  // Só reporta hasMore se algo progrediu de facto — evita um ciclo infinito
+  // no cliente quando a geração está a falhar sistematicamente (chave OpenAI
+  // inválida, quota esgotada, etc.) em vez de mascarar isso como progresso.
+  const madeProgress = listingsOk > 0 || leadsOk > 0
+  const hasMore = madeProgress && (listingsAttempted === limit || leadsAttempted === limit)
 
   return NextResponse.json({
-    listingsDone,
-    leadsDone,
-    hasMore: listingsDone === limit || leadsDone === limit,
+    listingsOk,
+    listingsFailed,
+    leadsOk,
+    leadsFailed,
+    hasMore,
+    sampleError,
   })
 }
