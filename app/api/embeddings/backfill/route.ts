@@ -32,19 +32,32 @@ export async function POST(request: Request) {
   const service = createServiceClient()
   const teamId = member.team_id
 
+  // .is('embedding_updated_at', null) exclui registos já "vistos" numa
+  // corrida anterior — sem isto, uma lead/listing sem texto nenhum para
+  // embutir (sem home_preferences/notas, ex.) ficaria para sempre com
+  // embedding NULL e seria reselecionada em todas as chamadas seguintes,
+  // nunca deixando o backfill convergir.
   const { data: listings } = await service
     .from('listings')
     .select('id, title, description, zone, municipality, parish, district, typology, property_type, business_type, features, price')
     .eq('team_id', teamId)
     .is('embedding', null)
+    .is('embedding_updated_at', null)
     .limit(limit)
 
   let listingsOk = 0
   let listingsFailed = 0
+  let listingsSkipped = 0
   let sampleError: string | undefined
 
   for (const l of listings ?? []) {
-    const result = await regenerateListingEmbedding(service, l.id, buildListingEmbeddingText(l))
+    const text = buildListingEmbeddingText(l)
+    if (!text.trim()) {
+      listingsSkipped++
+      await service.from('listings').update({ embedding_updated_at: new Date().toISOString() }).eq('id', l.id)
+      continue
+    }
+    const result = await regenerateListingEmbedding(service, l.id, text)
     if (result.ok) listingsOk++
     else {
       listingsFailed++
@@ -62,18 +75,22 @@ export async function POST(request: Request) {
         .select('lead_id, home_preferences')
         .in('lead_id', leadIds)
         .is('embedding', null)
+        .is('embedding_updated_at', null)
         .limit(limit)
     : { data: [] }
 
   let leadsOk = 0
   let leadsFailed = 0
+  let leadsSkipped = 0
 
   for (const p of profiles ?? []) {
-    const result = await regenerateLeadProfileEmbedding(
-      service,
-      p.lead_id,
-      buildLeadPreferenceEmbeddingText(p.home_preferences, notesByLeadId.get(p.lead_id) ?? null)
-    )
+    const text = buildLeadPreferenceEmbeddingText(p.home_preferences, notesByLeadId.get(p.lead_id) ?? null)
+    if (!text.trim()) {
+      leadsSkipped++
+      await service.from('lead_profiles').update({ embedding_updated_at: new Date().toISOString() }).eq('lead_id', p.lead_id)
+      continue
+    }
+    const result = await regenerateLeadProfileEmbedding(service, p.lead_id, text)
     if (result.ok) leadsOk++
     else {
       leadsFailed++
@@ -84,17 +101,21 @@ export async function POST(request: Request) {
   const listingsAttempted = listings?.length ?? 0
   const leadsAttempted = profiles?.length ?? 0
 
-  // Só reporta hasMore se algo progrediu de facto — evita um ciclo infinito
-  // no cliente quando a geração está a falhar sistematicamente (chave OpenAI
-  // inválida, quota esgotada, etc.) em vez de mascarar isso como progresso.
-  const madeProgress = listingsOk > 0 || leadsOk > 0
+  // Só reporta hasMore se algo progrediu de facto (sucesso OU skip conta
+  // como progresso — ambos removem o registo do conjunto "por processar").
+  // Evita ciclo infinito no cliente quando a geração falha sistematicamente
+  // (chave OpenAI inválida, quota esgotada) em vez de mascarar isso como
+  // progresso.
+  const madeProgress = listingsOk > 0 || leadsOk > 0 || listingsSkipped > 0 || leadsSkipped > 0
   const hasMore = madeProgress && (listingsAttempted === limit || leadsAttempted === limit)
 
   return NextResponse.json({
     listingsOk,
     listingsFailed,
+    listingsSkipped,
     leadsOk,
     leadsFailed,
+    leadsSkipped,
     hasMore,
     sampleError,
   })
