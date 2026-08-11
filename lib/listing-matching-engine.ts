@@ -4,6 +4,14 @@
 // e financial_profile. Espelha o estilo de lib/matching-engine.ts (investidores).
 
 import type { Listing, LeadWithProfile, ListingMatchResult, LeadListingMatchResult } from './types'
+import { parseEmbedding, cosineSimilarity } from './embeddings'
+
+// Bónus semântico (camada adicional, não substitui as regras acima): captura
+// nuance textual (descrição do imóvel vs. notas/preferências da lead) que os
+// campos estruturados não veem. Sem embedding de um dos lados, não entra em
+// jogo — comportamento idêntico ao motor 100% determinístico.
+const SEMANTIC_MAX_BONUS = 10
+const SEMANTIC_SIMILARITY_FLOOR = 0.5
 
 function norm(s: string): string {
   return s
@@ -116,6 +124,22 @@ function computeMatch(lead: LeadWithProfile, listing: Listing): MatchComputation
     }
   } else {
     score += 3
+  }
+
+  // Semântica (bónus até 10 pts) — ver comentário no topo do ficheiro.
+  const listingEmbedding = parseEmbedding(listing.embedding)
+  const leadEmbedding = parseEmbedding(lead.lead_profiles?.embedding)
+  if (listingEmbedding && leadEmbedding) {
+    const similarity = cosineSimilarity(listingEmbedding, leadEmbedding)
+    if (similarity > SEMANTIC_SIMILARITY_FLOOR) {
+      const bonus = Math.round(
+        SEMANTIC_MAX_BONUS * ((similarity - SEMANTIC_SIMILARITY_FLOOR) / (1 - SEMANTIC_SIMILARITY_FLOOR))
+      )
+      if (bonus > 0) {
+        score += bonus
+        reasons.push({ reason: 'Descrição alinha-se com o que o cliente procura', positive: true })
+      }
+    }
   }
 
   return {

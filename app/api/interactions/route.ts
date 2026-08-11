@@ -6,13 +6,26 @@ import { z } from 'zod'
 // 'note' e 'audio' (raw upload pre-processamento) NAO contam.
 const CONTACT_TYPES = new Set(['call', 'whatsapp', 'email', 'meeting'])
 
-const createInteractionSchema = z.object({
-  lead_id: z.string().uuid(),
-  type: z.enum(['call', 'whatsapp', 'email', 'meeting', 'note', 'audio']),
-  raw_text: z.string().max(50000).optional(),
-  summary: z.string().max(2000).optional(),
-  occurred_at: z.string().datetime().optional(),
-})
+const createInteractionSchema = z
+  .object({
+    lead_id: z.string().uuid(),
+    type: z.enum(['call', 'whatsapp', 'email', 'meeting', 'note', 'audio']),
+    raw_text: z.string().max(50000).optional(),
+    summary: z.string().max(2000).optional(),
+    occurred_at: z.string().datetime().optional(),
+    // Feedback de match lead↔imóvel (migration 031)
+    listing_id: z.string().uuid().optional(),
+    outcome: z.enum(['sugerido', 'visitado', 'proposta', 'rejeitado']).optional(),
+    rejection_reason: z.enum(['preco', 'localizacao', 'estado_imovel', 'timing', 'tipologia', 'outro']).optional(),
+  })
+  .refine((v) => !v.rejection_reason || v.outcome === 'rejeitado', {
+    message: 'rejection_reason só é válido com outcome=rejeitado',
+    path: ['rejection_reason'],
+  })
+  .refine((v) => !v.outcome || !!v.listing_id, {
+    message: 'outcome requer listing_id',
+    path: ['listing_id'],
+  })
 
 export async function GET(request: Request) {
   const supabase = await createClient()
