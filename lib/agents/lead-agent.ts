@@ -17,6 +17,11 @@ CLASSIFICACAO DE TIPO DE LEAD (campo "lead_type"):
 - "both": pessoa quer vender o imovel actual E comprar um novo (caso comum em mudancas/upgrade). Preencher ambos os blocos
 - "unknown": nao da para decidir pela conversa
 
+CAMPO "tipo_negocio" (dentro de "home_preferences"): distingue se a lead procura COMPRAR ou ARRENDAR — sao imoveis completamente diferentes, nunca misturar.
+- "venda": a lead disse que quer comprar ("procuro comprar", "quero um apartamento para comprar")
+- "arrendamento": a lead disse que quer arrendar ("procuro para arrendar", "quero alugar")
+- null: nao ficou claro pela conversa se e compra ou arrendamento
+
 FORMATO JSON OBRIGATORIO (respeita exatamente esta estrutura):
 {
   "lead_updates": {
@@ -29,6 +34,7 @@ FORMATO JSON OBRIGATORIO (respeita exatamente esta estrutura):
     "home_preferences": {
       "zonas": [],
       "tipologia": null,
+      "tipo_negocio": null,
       "garagem": null,
       "elevador": null,
       "luz": null,

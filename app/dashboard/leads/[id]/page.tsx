@@ -313,6 +313,14 @@ export default async function LeadDetailPage({ params }: Props) {
                 {profile.summary && (
                   <p className="text-gray-600 leading-relaxed">{profile.summary}</p>
                 )}
+                {profile.home_preferences?.tipo_negocio && (
+                  <div>
+                    <span className="font-medium text-gray-700">Procura: </span>
+                    <span className="text-gray-600">
+                      {profile.home_preferences.tipo_negocio === 'venda' ? 'Comprar' : 'Arrendar'}
+                    </span>
+                  </div>
+                )}
                 {profile.home_preferences?.zonas && profile.home_preferences.zonas.length > 0 && (
                   <div>
                     <span className="font-medium text-gray-700">Zonas: </span>

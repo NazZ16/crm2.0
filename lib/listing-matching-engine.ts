@@ -56,6 +56,18 @@ function computeMatch(
   const financial = lead.lead_profiles?.financial_profile ?? null
   const price = listing.price
 
+  // Hard filter: comprar vs arrendar — imóveis completamente diferentes,
+  // nunca sugerir arrendamento a quem procura comprar (e vice-versa).
+  if (prefs?.tipo_negocio && prefs.tipo_negocio !== listing.business_type) {
+    return {
+      score: 0,
+      reasons: [{
+        reason: `Lead procura ${prefs.tipo_negocio === 'venda' ? 'comprar' : 'arrendar'}, este imóvel é para ${listing.business_type}`,
+        positive: false,
+      }],
+    }
+  }
+
   // Hard filter: a lead já rejeitou este imóvel exato anteriormente
   if (rejectionHistory?.rejectedListingIds.has(listing.id)) {
     return {

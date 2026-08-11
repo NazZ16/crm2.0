@@ -70,6 +70,7 @@ export interface Lead {
 export interface HomePreferences {
   zonas: string[]
   tipologia: string | null
+  tipo_negocio: ListingBusinessType | null
   garagem: boolean | null
   elevador: boolean | null
   luz: string | null
