@@ -25,6 +25,7 @@ export function ListingMatchesCard({ leadId }: { leadId: string }) {
   const [loading, setLoading] = useState(false)
   const [registered, setRegistered] = useState<Record<string, InteractionOutcome>>({})
   const [pendingRejection, setPendingRejection] = useState<Record<string, boolean>>({})
+  const [pendingReason, setPendingReason] = useState<Record<string, RejectionReason | undefined>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
 
   const loadMatches = useCallback(async () => {
@@ -63,10 +64,23 @@ export function ListingMatchesCard({ leadId }: { leadId: string }) {
   function handleOutcomeChange(listingId: string, value: string) {
     const outcome = value as InteractionOutcome
     if (outcome === 'rejeitado') {
+      // Rejeitar pede confirmação (motivo opcional) em vez de gravar logo —
+      // mas nada é persistido até o utilizador clicar "Confirmar". Sem esse
+      // clique claro aqui, era fácil pensar que já tinha ficado registado.
       setPendingRejection((p) => ({ ...p, [listingId]: true }))
+      setPendingReason((p) => ({ ...p, [listingId]: undefined }))
       return
     }
     registerOutcome(listingId, outcome)
+  }
+
+  function cancelRejection(listingId: string) {
+    setPendingRejection((p) => ({ ...p, [listingId]: false }))
+    setPendingReason((p) => ({ ...p, [listingId]: undefined }))
+  }
+
+  function confirmRejection(listingId: string) {
+    registerOutcome(listingId, 'rejeitado', pendingReason[listingId])
   }
 
   return (
@@ -109,7 +123,7 @@ export function ListingMatchesCard({ leadId }: { leadId: string }) {
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   <Select
-                    value={registered[m.listing_id] ?? undefined}
+                    value={registered[m.listing_id] ?? (pendingRejection[m.listing_id] ? 'rejeitado' : undefined)}
                     onValueChange={(v) => handleOutcomeChange(m.listing_id, v)}
                     disabled={saving[m.listing_id]}
                   >
@@ -122,19 +136,47 @@ export function ListingMatchesCard({ leadId }: { leadId: string }) {
                       ))}
                     </SelectContent>
                   </Select>
-                  {pendingRejection[m.listing_id] && (
-                    <Select onValueChange={(v) => registerOutcome(m.listing_id, 'rejeitado', v as RejectionReason)}>
-                      <SelectTrigger className="h-7 text-xs w-[140px]">
-                        <SelectValue placeholder="Motivo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(Object.keys(REJECTION_REASON_LABELS) as RejectionReason[]).map((r) => (
-                          <SelectItem key={r} value={r}>{REJECTION_REASON_LABELS[r]}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
                 </div>
+                {pendingRejection[m.listing_id] && (
+                  <div className="mt-2 p-2 rounded border border-orange-200 bg-orange-50 space-y-2">
+                    <p className="text-[11px] text-orange-700">
+                      Só fica registado depois de clicares em Confirmar. Motivo e opcional.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={pendingReason[m.listing_id]}
+                        onValueChange={(v) => setPendingReason((p) => ({ ...p, [m.listing_id]: v as RejectionReason }))}
+                        disabled={saving[m.listing_id]}
+                      >
+                        <SelectTrigger className="h-7 text-xs w-[140px]">
+                          <SelectValue placeholder="Motivo (opcional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(REJECTION_REASON_LABELS) as RejectionReason[]).map((r) => (
+                            <SelectItem key={r} value={r}>{REJECTION_REASON_LABELS[r]}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs px-2"
+                        disabled={saving[m.listing_id]}
+                        onClick={() => confirmRejection(m.listing_id)}
+                      >
+                        Confirmar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs px-2"
+                        disabled={saving[m.listing_id]}
+                        onClick={() => cancelRejection(m.listing_id)}
+                      >
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
