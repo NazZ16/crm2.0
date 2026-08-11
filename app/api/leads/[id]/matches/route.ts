@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { scoreListingsForLead, DEFAULT_LISTING_MATCH_THRESHOLD } from '@/lib/listing-matching-engine'
+import { fetchRejectionHistoryByLead } from '@/lib/listing-rejection-history'
 import type { LeadWithProfile, Listing } from '@/lib/types'
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,9 +26,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     .from('listings').select('*').eq('team_id', member.team_id).eq('status', 'active')
   if (listingsError) return NextResponse.json({ error: listingsError.message }, { status: 500 })
 
+  const rejectionHistoryByLead = await fetchRejectionHistoryByLead(supabase, [id])
+
   const matches = scoreListingsForLead(
     normalizedLead as unknown as LeadWithProfile,
     (listings ?? []) as unknown as Listing[],
+    rejectionHistoryByLead.get(id),
     DEFAULT_LISTING_MATCH_THRESHOLD,
   )
   return NextResponse.json(matches)

@@ -1,7 +1,9 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { listingSchema } from '@/lib/schemas/listing'
+import { notifyBuyersForNewListingsBatch } from '@/lib/agents/listing-matching-agent'
+import type { Listing } from '@/lib/types'
 
 export const maxDuration = 60
 
@@ -130,23 +132,26 @@ export async function POST(request: Request) {
 
   let inserted = 0
   let updated = 0
+  const insertedListings: Listing[] = []
 
   // Insert em chunks. Se um chunk falhar por violação da constraint única
   // (corrida entre o prefetch e o insert, ou source_url repetido dentro do
   // próprio lote), refaz esse chunk linha-a-linha e trata cada colisão
   // como update em vez de erro.
   for (const insertChunk of chunk(toInsert, INSERT_CHUNK_SIZE)) {
-    const { error } = await service.from('listings').insert(insertChunk.map(r => r.payload)).select('id')
+    const { data: insertedRows, error } = await service.from('listings').insert(insertChunk.map(r => r.payload)).select('*')
     if (!error) {
       inserted += insertChunk.length
+      if (insertedRows) insertedListings.push(...(insertedRows as unknown as Listing[]))
       continue
     }
 
     if (error.code === '23505') {
       for (const row of insertChunk) {
-        const { error: rowError } = await service.from('listings').insert(row.payload).select('id').single()
+        const { data: insertedRow, error: rowError } = await service.from('listings').insert(row.payload).select('*').single()
         if (!rowError) {
           inserted++
+          if (insertedRow) insertedListings.push(insertedRow as unknown as Listing)
           continue
         }
         if (rowError.code === '23505' && row.source_url) {
@@ -191,6 +196,15 @@ export async function POST(request: Request) {
   }
 
   const skipped = rawRows.length - inserted - updated
+
+  if (insertedListings.length > 0 && teamId) {
+    const notifyTeamId = teamId
+    after(
+      notifyBuyersForNewListingsBatch(service, notifyTeamId, insertedListings).catch((err) =>
+        console.warn('[listing-matching] notify buyers batch', err)
+      )
+    )
+  }
 
   return NextResponse.json({ inserted, updated, skipped, errors })
 }
