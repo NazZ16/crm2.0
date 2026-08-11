@@ -25,8 +25,13 @@ class _Tee:
         self.streams = streams
 
     def write(self, data):
+        # flush já aqui (não só quando algo chama .flush()) — o ficheiro de
+        # log é aberto com buffer de bloco por omissão, por isso sem isto as
+        # últimas linhas ficam presas no buffer e perdem-se exatamente num
+        # crash/hang/kill, que é o cenário em que o log mais faz falta.
         for s in self.streams:
             s.write(data)
+            s.flush()
         return len(data)
 
     def flush(self):

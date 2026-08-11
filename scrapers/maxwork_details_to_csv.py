@@ -2,14 +2,30 @@
 """
 Maxwork -> CSV (detalhe de cada imóvel)
 
-Lê "maxwork_imoveis.csv" (gerado pelo maxwork_to_csv.py) e, para cada
-imóvel com "url" preenchido, entra na ficha e recolhe: descrição
-completa, título curto, badges (Ativo/Publicado), morada completa,
-localização (concelho/freguesia/distrito/lat/long), áreas, e fotos.
+Lê um CSV de listagens (por omissão "maxwork_imoveis.csv", gerado por
+maxwork_to_csv.py ou maxwork_to_csv_bulk.py — mesmo nome, mesmas
+colunas; passa outro caminho como argumento para usar o resultado do
+maxwork_api_fetch.py, "maxwork_imoveis_api.csv") e, para cada imóvel
+com "url" preenchido, entra na ficha e recolhe: descrição completa,
+título curto, badges (Ativo/Publicado), morada completa, localização
+(concelho/freguesia/distrito/lat/long), áreas, e fotos.
 
 A maior parte dos campos usa atributos data-id (ex: dd[data-id="totalArea"])
 que a própria app usa internamente — muito mais fiável do que depender
-de classes CSS genéricas.
+de classes CSS genéricas. Os campos "principais" (áreas, ano de
+construção, eficiência energética, morada, coordenadas, ...) só estão
+disponíveis assim: a API interna que os devolve (GET /api/Listing/{id})
+vem CIFRADA no corpo da resposta — decididamente feito para impedir
+scraping direto — por isso continuamos a lê-los do DOM já renderizado
+pela app, não há forma de os pedir diretamente.
+
+As FOTOS já não são lidas do DOM: confirmámos (ver
+maxwork_details_api_test.py) que a app pede a lista de fotos via API
+interna (GetListingPicturesList) logo no carregamento da ficha, sem
+ser preciso clicar em "Media e Documentos" nem esperar a grelha
+renderizar — por isso passámos a pedir essa API diretamente
+(page.request, que já usa a sessão autenticada da própria página),
+poupando o clique + espera mais lenta de todo o processo por imóvel.
 
 Antes de começar, consulta o CRM (CRM_API_URL/SCRAPER_API_KEY) para saber
 que imóveis já lá existem (por source_url). Para esses, só entra na ficha
@@ -24,10 +40,13 @@ False) este script só lê os URLs, não descarrega nada — muda para True só
 se quiseres mesmo uma cópia local em fotos/.
 
 COMO USAR:
-    1. Corre primeiro o maxwork_to_csv.py (produz maxwork_imoveis.csv)
+    1. Corre primeiro o maxwork_to_csv.py, maxwork_to_csv_bulk.py, ou
+       maxwork_api_fetch.py (qualquer um produz um CSV de listagens
+       com as mesmas colunas)
     2. Garante que tens o mesmo .env (MAXWORK_EMAIL, MAXWORK_PASSWORD,
        CRM_API_URL, SCRAPER_API_KEY)
-    3. python maxwork_details_to_csv.py
+    3. python maxwork_details_to_csv.py                    # lê maxwork_imoveis.csv
+       python maxwork_details_to_csv.py maxwork_imoveis_api.csv   # ou outro caminho
     4. Resultado: maxwork_imoveis_detalhado.csv nesta pasta
 
 Também recolhe 3 sinais úteis para triar possíveis negócios (imóvel há
@@ -52,6 +71,7 @@ Começa por confirmar com um LIMIT pequeno que corre bem antes de correr
 para a lista toda.
 """
 
+import argparse
 import csv
 import os
 import queue
@@ -68,14 +88,18 @@ from maxwork_common import (
 
 INPUT_CSV = "maxwork_imoveis.csv"
 OUTPUT_CSV = "maxwork_imoveis_detalhado.csv"
-LIMIT = 5  # ex: 5 para testar só os primeiros 5; None = todos
+LIMIT = None  # ex: 5 para testar só os primeiros 5; None = todos (usado pelo run_all.bat)
 CONCURRENCY = int(os.getenv("MAXWORK_DETAILS_CONCURRENCY", "4"))  # nº de abas em paralelo
+DETAIL_ATTEMPTS = 3  # se uma ficha falhar a carregar (ex.: servidor sob carga com
+                      # concorrência alta), tenta outra vez antes de desistir de vez
+                      # — sem isto, uma falha isolada apagava a linha toda para
+                      # sempre, sem nenhuma tentativa de recuperação
 
 DOWNLOAD_PHOTOS = False  # True só se quiseres cópia local em fotos/ — o CRM usa
                           # diretamente os URLs do Maxwork (confirmado públicos,
                           # não exigem login), por isso não precisa dos ficheiros
-PHOTOS_TAB_TEXT = "Media e Documentos"
 PHOTOS_DIR = "fotos"  # pasta onde ficam as imagens descarregadas, uma subpasta por imóvel (só se DOWNLOAD_PHOTOS=True)
+LISTING_PICTURES_API_FRAGMENT = "GetListingPicturesList"
 
 
 # Lê TODOS os campos da ficha de uma só vez dentro do browser (1 chamada
@@ -220,38 +244,47 @@ def download_photo(page, url, dest_path):
         return False
 
 
-def extract_photos(page, codigo):
-    """Lê os URLs das fotos (sempre — é o que o CRM guarda) e, só se
-    DOWNLOAD_PHOTOS=True, descarrega cada uma para fotos/<codigo>/NN.jpg.
-    Devolve (urls, caminhos_locais)."""
-    dismiss_blocking_modal(page)
+def goto_and_capture_pictures(page, url: str):
+    """Navega para a ficha do imóvel e, ao mesmo tempo, apanha a
+    resposta que a PRÓPRIA app dispara para GetListingPicturesList —
+    confirmado (maxwork_details_api_test.py) que isto acontece sozinho
+    no carregamento, sem clicar em "Media e Documentos".
+
+    Não dá para pedir esta API nós próprios via page.request: esse
+    pedido só reutiliza os COOKIES do contexto do browser, nunca o
+    header Authorization Bearer (token MSAL) que a app injeta via JS
+    nos SEUS próprios pedidos — dava sempre 401, a mesma causa já vista
+    com a API de pesquisa (ver maxwork_to_csv_api_test.py). Intercetar
+    a resposta que a app já ia fazer de qualquer forma resolve isso
+    sem precisar de replicar nenhum token.
+
+    Devolve o Response, ou None se não aparecer a tempo (ex.: imóvel
+    sem fotos, ou pedido anormalmente lento)."""
     try:
-        page.get_by_text(PHOTOS_TAB_TEXT, exact=True).click()
-        page.wait_for_selector("#listing-pictures", timeout=8000)
-        page.wait_for_timeout(500)
-        # 1 chamada JS a ler todos os <img src> em vez de um get_attribute
-        # por foto (podem ser 20-30 por imóvel).
-        urls = page.evaluate(
-            """() => {
-                let imgs = Array.from(document.querySelectorAll('#listing-pictures .big-swipper img'));
-                if (imgs.length === 0) {
-                    imgs = Array.from(document.querySelectorAll('#listing-pictures .swiper-slide img'));
-                }
-                const seen = new Set();
-                const urls = [];
-                for (const img of imgs) {
-                    const src = img.getAttribute('src');
-                    if (src && !seen.has(src)) {
-                        seen.add(src);
-                        urls.push(src);
-                    }
-                }
-                return urls;
-            }"""
-        )
+        with page.expect_response(lambda r: LISTING_PICTURES_API_FRAGMENT in r.url, timeout=15000) as resp_info:
+            page.goto(url)
+        return resp_info.value
     except Exception as e:
-        print(f"     [aviso] não consegui ler fotos: {e}")
+        print(f"     [aviso] não apanhei a lista de fotos a tempo: {e}")
+        return None
+
+
+def extract_photos(pictures_response, page, codigo: str):
+    """Lê os URLs das fotos a partir da resposta já capturada por
+    goto_and_capture_pictures — nenhum pedido novo é feito aqui. Só se
+    DOWNLOAD_PHOTOS=True descarrega cada uma para fotos/<codigo>/NN.jpg
+    (isso sim usa page.request, mas as imagens em si são públicas —
+    confirmado, carregam sem sessão — por isso não precisam do token).
+    Devolve (urls, caminhos_locais)."""
+    if pictures_response is None or not pictures_response.ok:
         return [], []
+    try:
+        pictures = pictures_response.json()
+    except Exception as e:
+        print(f"     [aviso] lista de fotos não é JSON válido: {e}")
+        return [], []
+
+    urls = [p["pictureURL"] for p in pictures if p.get("pictureURL")]
 
     if not DOWNLOAD_PHOTOS:
         return urls, []
@@ -313,7 +346,7 @@ def extract_status_only(page):
     return result
 
 
-def extract_detail(page, codigo):
+def extract_detail(page, pictures_response, codigo):
     # Descrição/título completos: o separador "Resumo" (#listing-summary-description)
     # mostra só um excerto curto (termina em "..." no próprio HTML, não é truncagem
     # CSS). O texto completo vive em #listing-description, no separador "Principal"
@@ -357,7 +390,7 @@ def extract_detail(page, codigo):
     if preco is not None:
         detail["preco"] = preco
 
-    urls, local_paths = extract_photos(page, codigo)
+    urls, local_paths = extract_photos(pictures_response, page, codigo)
     detail["fotos"] = ";".join(urls)
     detail["fotos_local"] = ";".join(local_paths)
     detail["num_fotos"] = len(urls)
@@ -443,21 +476,35 @@ def _process_row(page, i: int, total: int, row: dict, known_urls: set, label: st
 
     mode = "atualização leve" if already_known else "completo"
     print(f"{label} [{i}/{total}] {codigo} -> {url} ({mode})")
-    try:
-        page.goto(url)
-        page.wait_for_selector(".badge-detail", timeout=15000)
-        page.wait_for_timeout(300)
-        dismiss_blocking_modal(page)
-        if already_known:
-            for k in DETAIL_FIELDNAMES:
-                row.setdefault(k, None)
-            row.update(extract_status_only(page))
-        else:
-            row.update(extract_detail(page, codigo))
-    except Exception as e:
-        print(f"{label}     [erro] {codigo}: {e}")
-        for k in DETAIL_FIELDNAMES:
-            row[k] = None
+
+    for attempt in range(1, DETAIL_ATTEMPTS + 1):
+        try:
+            if already_known:
+                # Atualização leve não precisa de fotos — navegação normal chega.
+                page.goto(url)
+                page.wait_for_selector(".badge-detail", timeout=15000)
+                page.wait_for_timeout(300)
+                dismiss_blocking_modal(page)
+                for k in DETAIL_FIELDNAMES:
+                    row.setdefault(k, None)
+                row.update(extract_status_only(page))
+            else:
+                # goto_and_capture_pictures já faz a navegação — substitui o
+                # page.goto(url) simples para poder apanhar, ao mesmo tempo,
+                # a resposta de fotos que a app dispara sozinha.
+                pictures_response = goto_and_capture_pictures(page, url)
+                page.wait_for_selector(".badge-detail", timeout=15000)
+                page.wait_for_timeout(300)
+                dismiss_blocking_modal(page)
+                row.update(extract_detail(page, pictures_response, codigo))
+            return
+        except Exception as e:
+            if attempt < DETAIL_ATTEMPTS:
+                print(f"{label}     [aviso] falhou {codigo} (tentativa {attempt}/{DETAIL_ATTEMPTS}): {e} — a tentar outra vez")
+            else:
+                print(f"{label}     [erro] {codigo} (esgotadas {DETAIL_ATTEMPTS} tentativas): {e}")
+                for k in DETAIL_FIELDNAMES:
+                    row[k] = None
 
 
 def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: int,
@@ -488,13 +535,27 @@ def _worker(worker_id: int, work_queue: "queue.Queue", known_urls: set, total: i
         print(f"{label} [erro fatal] {e}")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument(
+        "input_csv", nargs="?", default=INPUT_CSV,
+        help=f"CSV de listagens a detalhar (omite para {INPUT_CSV} — o produzido por "
+        "maxwork_to_csv.py/maxwork_to_csv_bulk.py; passa maxwork_imoveis_api.csv para "
+        "usar o resultado do maxwork_api_fetch.py)",
+    )
+    return parser.parse_args()
+
+
 def main():
     if not EMAIL or not PASSWORD:
         raise SystemExit("Falta MAXWORK_EMAIL / MAXWORK_PASSWORD no ficheiro .env")
-    if not os.path.exists(INPUT_CSV):
-        raise SystemExit(f"Não encontrei {INPUT_CSV} — corre primeiro o maxwork_to_csv.py")
 
-    with open(INPUT_CSV, newline="", encoding="utf-8-sig") as f:
+    args = parse_args()
+    input_csv = args.input_csv
+    if not os.path.exists(input_csv):
+        raise SystemExit(f"Não encontrei {input_csv} — corre primeiro o maxwork_to_csv.py, maxwork_to_csv_bulk.py ou maxwork_api_fetch.py")
+
+    with open(input_csv, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
 
     if LIMIT:
