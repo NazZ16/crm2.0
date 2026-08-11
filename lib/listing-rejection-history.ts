@@ -29,7 +29,11 @@ export async function fetchRejectionHistoryByLead(
     .in('lead_id', leadIds)
     .eq('outcome', 'rejeitado')
 
-  if (error || !data) return result
+  if (error) {
+    console.error('[listing-rejection-history] falha ao buscar histórico de rejeições:', error)
+    return result
+  }
+  if (!data) return result
 
   for (const row of data as unknown as Array<{
     lead_id: string
