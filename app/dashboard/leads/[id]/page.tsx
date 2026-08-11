@@ -10,6 +10,7 @@ import { TaskList } from './TaskList'
 import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
+import { EditLeadProfileButton } from './EditLeadProfileButton'
 import { DraftSendButtons } from './DraftSendButtons'
 import { QuickActionFab } from './QuickActionFab'
 import { NewTaskButton } from '@/app/dashboard/tasks/NewTaskButton'
@@ -297,55 +298,73 @@ export default async function LeadDetailPage({ params }: Props) {
           {/* Imovel a vender (angariacao) — so para seller / both */}
           {isSellerLead && sellerProfile && <SellerProfileCard profile={sellerProfile} />}
 
-          {profile && isBuyerLead && (
+          {isBuyerLead && (
             <Card>
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between gap-2">
                 <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                  Perfil IA
-                  {profile.confidence_score != null && (
+                  Perfil de compra
+                  {profile?.confidence_score != null && (
                     <span className="ml-2 font-normal text-gray-400 normal-case">
                       ({profile.confidence_score}% confianca)
                     </span>
                   )}
                 </CardTitle>
+                {member.role !== 'viewer' && (
+                  <EditLeadProfileButton
+                    leadId={lead.id}
+                    initialZonas={profile?.home_preferences?.zonas ?? []}
+                    initialTipologia={profile?.home_preferences?.tipologia ?? null}
+                    initialTipoNegocio={profile?.home_preferences?.tipo_negocio ?? null}
+                    initialAreaMin={profile?.home_preferences?.area_min ?? null}
+                    initialAreaMax={profile?.home_preferences?.area_max ?? null}
+                    initialGaragem={profile?.home_preferences?.garagem ?? null}
+                    initialElevador={profile?.home_preferences?.elevador ?? null}
+                    initialOrcamentoMax={profile?.financial_profile?.orcamento_max ?? null}
+                  />
+                )}
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
-                {profile.summary && (
+                {!profile && (
+                  <p className="text-xs text-gray-500">
+                    Ainda nao foram extraidos dados desta lead. Faz uma chamada ou preenche manualmente.
+                  </p>
+                )}
+                {profile?.summary && (
                   <p className="text-gray-600 leading-relaxed">{profile.summary}</p>
                 )}
-                {profile.home_preferences?.tipo_negocio && (
+                {profile?.home_preferences?.tipo_negocio && (
                   <div>
                     <span className="font-medium text-gray-700">Procura: </span>
                     <span className="text-gray-600">
-                      {profile.home_preferences.tipo_negocio === 'venda' ? 'Comprar' : 'Arrendar'}
+                      {profile?.home_preferences?.tipo_negocio === 'venda' ? 'Comprar' : 'Arrendar'}
                     </span>
                   </div>
                 )}
-                {profile.home_preferences?.zonas && profile.home_preferences.zonas.length > 0 && (
+                {profile?.home_preferences?.zonas && profile.home_preferences.zonas.length > 0 && (
                   <div>
                     <span className="font-medium text-gray-700">Zonas: </span>
                     <span className="text-gray-600">{profile.home_preferences.zonas.join(', ')}</span>
                   </div>
                 )}
-                {profile.home_preferences?.tipologia && (
+                {profile?.home_preferences?.tipologia && (
                   <div>
                     <span className="font-medium text-gray-700">Tipologia: </span>
                     <span className="text-gray-600">{profile.home_preferences.tipologia}</span>
                   </div>
                 )}
-                {profile.financial_profile?.orcamento_max && (
+                {profile?.financial_profile?.orcamento_max && (
                   <div>
                     <span className="font-medium text-gray-700">Orcamento: </span>
                     <span className="text-gray-600">{formatCurrency(profile.financial_profile.orcamento_max)}</span>
                   </div>
                 )}
-                {profile.family_context?.prazo_mudanca && (
+                {profile?.family_context?.prazo_mudanca && (
                   <div>
                     <span className="font-medium text-gray-700">Prazo: </span>
                     <span className="text-gray-600">{profile.family_context.prazo_mudanca}</span>
                   </div>
                 )}
-                {profile.fears_objections?.lista && profile.fears_objections.lista.length > 0 && (
+                {profile?.fears_objections?.lista && profile.fears_objections.lista.length > 0 && (
                   <div>
                     <div className="font-medium text-gray-700 mb-1 flex items-center gap-1">
                       <AlertTriangle size={12} className="text-orange-400" />
