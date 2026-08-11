@@ -1,7 +1,8 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { extractListingFromHtml } from '@/lib/listing-extractor'
+import { notifyBuyersForNewListing } from '@/lib/agents/listing-matching-agent'
 
 // Endpoint usado pelo bookmarklet "Importar para o CRM" — o utilizador clica
 // enquanto está numa página de imóvel (ex.: Maxwork) e o browser faz POST do
@@ -111,6 +112,12 @@ export async function POST(request: Request) {
 
   const { data, error } = await service.from('listings').insert(insertPayload).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: CORS_HEADERS })
+
+  after(
+    notifyBuyersForNewListing(service, data).catch((err) =>
+      console.warn('[listing-matching] notify buyers', data.id, err)
+    )
+  )
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'
   const editUrl = `${siteUrl}/dashboard/listings/${data.id}`

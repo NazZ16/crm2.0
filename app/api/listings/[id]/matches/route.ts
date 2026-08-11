@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { scoreLeadsForListing, DEFAULT_LISTING_MATCH_THRESHOLD } from '@/lib/listing-matching-engine'
+import { fetchRejectionHistoryByLead } from '@/lib/listing-rejection-history'
 import type { LeadWithProfile, Listing } from '@/lib/types'
 
 // Matching determinístico (zero custo) entre um imóvel e as leads compradoras
@@ -46,9 +47,15 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return { ...lead, lead_profiles: profile }
   })
 
+  const rejectionHistoryByLead = await fetchRejectionHistoryByLead(
+    supabase,
+    normalizedLeads.map((lead) => (lead as { id: string }).id),
+  )
+
   const matches = scoreLeadsForListing(
     normalizedLeads as unknown as LeadWithProfile[],
     listing as unknown as Listing,
+    rejectionHistoryByLead,
     DEFAULT_LISTING_MATCH_THRESHOLD,
   )
 

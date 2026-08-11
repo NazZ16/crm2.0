@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse, after } from 'next/server'
 import { listingSchema } from '@/lib/schemas/listing'
 import { buildListingEmbeddingText, regenerateListingEmbedding } from '@/lib/embeddings'
+import { notifyBuyersForNewListing } from '@/lib/agents/listing-matching-agent'
 
 // Campos cujo conteúdo entra no texto do embedding semântico. "price" fica
 // de fora: já é coberto de forma determinística pelo hard-filter de
@@ -178,6 +179,12 @@ export async function POST(request: Request) {
   after(
     regenerateListingEmbedding(service, data.id, buildListingEmbeddingText(data)).catch((err) =>
       console.warn('[embeddings] listing insert', data.id, err)
+    )
+  )
+
+  after(
+    notifyBuyersForNewListing(service, data).catch((err) =>
+      console.warn('[listing-matching] notify buyers', data.id, err)
     )
   )
 

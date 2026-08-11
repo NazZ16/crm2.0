@@ -5,6 +5,14 @@
 
 import type { Listing, LeadWithProfile, ListingMatchResult, LeadListingMatchResult } from './types'
 import { parseEmbedding, cosineSimilarity } from './embeddings'
+import type { RejectionHistory } from './listing-rejection-history'
+
+// Penalizações por histórico de rejeição (ver lib/listing-rejection-history.ts).
+// Mais pequenas que os bónus positivos equivalentes — é um sinal de que a
+// lead já disse não a algo parecido, não uma certeza de que vai voltar a
+// dizer não.
+const REJECTED_ZONE_PENALTY = 15
+const REJECTED_TIPOLOGIA_PENALTY = 10
 
 // Bónus semântico (camada adicional, não substitui as regras acima): captura
 // nuance textual (descrição do imóvel vs. notas/preferências da lead) que os
@@ -13,7 +21,7 @@ import { parseEmbedding, cosineSimilarity } from './embeddings'
 const SEMANTIC_MAX_BONUS = 10
 const SEMANTIC_SIMILARITY_FLOOR = 0.5
 
-function norm(s: string): string {
+export function norm(s: string): string {
   return s
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
@@ -36,13 +44,37 @@ interface MatchComputation {
   reasons: Array<{ reason: string; positive: boolean }>
 }
 
-function computeMatch(lead: LeadWithProfile, listing: Listing): MatchComputation {
+function computeMatch(
+  lead: LeadWithProfile,
+  listing: Listing,
+  rejectionHistory?: RejectionHistory,
+): MatchComputation {
   const reasons: Array<{ reason: string; positive: boolean }> = []
   let score = 0
 
   const prefs = lead.lead_profiles?.home_preferences ?? null
   const financial = lead.lead_profiles?.financial_profile ?? null
   const price = listing.price
+
+  // Hard filter: comprar vs arrendar — imóveis completamente diferentes,
+  // nunca sugerir arrendamento a quem procura comprar (e vice-versa).
+  if (prefs?.tipo_negocio && prefs.tipo_negocio !== listing.business_type) {
+    return {
+      score: 0,
+      reasons: [{
+        reason: `Lead procura ${prefs.tipo_negocio === 'venda' ? 'comprar' : 'arrendar'}, este imóvel é para ${listing.business_type}`,
+        positive: false,
+      }],
+    }
+  }
+
+  // Hard filter: a lead já rejeitou este imóvel exato anteriormente
+  if (rejectionHistory?.rejectedListingIds.has(listing.id)) {
+    return {
+      score: 0,
+      reasons: [{ reason: 'Lead já rejeitou este imóvel anteriormente', positive: false }],
+    }
+  }
 
   // Hard filter: orçamento (10% de margem)
   if (financial?.orcamento_max && price) {
@@ -75,6 +107,12 @@ function computeMatch(lead: LeadWithProfile, listing: Listing): MatchComputation
     score += 10
   }
 
+  // Penalização: lead já rejeitou um imóvel nesta zona por motivo de localização
+  if (rejectionHistory?.rejectedZones.size && zoneMatches([...rejectionHistory.rejectedZones], listing)) {
+    score -= REJECTED_ZONE_PENALTY
+    reasons.push({ reason: 'Lead rejeitou anteriormente um imóvel nesta zona por localização', positive: false })
+  }
+
   // Tipologia (20 pts)
   if (prefs?.tipologia && listing.typology) {
     if (norm(prefs.tipologia) === norm(listing.typology)) {
@@ -85,6 +123,12 @@ function computeMatch(lead: LeadWithProfile, listing: Listing): MatchComputation
     }
   } else {
     score += 8
+  }
+
+  // Penalização: lead já rejeitou um imóvel desta tipologia por motivo de tipologia
+  if (listing.typology && rejectionHistory?.rejectedTipologias.has(norm(listing.typology))) {
+    score -= REJECTED_TIPOLOGIA_PENALTY
+    reasons.push({ reason: 'Lead rejeitou anteriormente esta tipologia', positive: false })
   }
 
   // Área (15 pts)
@@ -143,23 +187,28 @@ function computeMatch(lead: LeadWithProfile, listing: Listing): MatchComputation
   }
 
   return {
-    score: Math.min(Math.round(score), 100),
+    score: Math.max(0, Math.min(Math.round(score), 100)),
     reasons,
   }
 }
 
-export function scoreListingForLead(lead: LeadWithProfile, listing: Listing): ListingMatchResult {
-  const { score, reasons } = computeMatch(lead, listing)
+export function scoreListingForLead(
+  lead: LeadWithProfile,
+  listing: Listing,
+  rejectionHistory?: RejectionHistory,
+): ListingMatchResult {
+  const { score, reasons } = computeMatch(lead, listing, rejectionHistory)
   return { lead_id: lead.id, lead_name: lead.full_name, score, reasons }
 }
 
 export function scoreLeadsForListing(
   leads: LeadWithProfile[],
   listing: Listing,
+  rejectionHistoryByLead?: Map<string, RejectionHistory>,
   threshold = 40,
 ): ListingMatchResult[] {
   return leads
-    .map((lead) => scoreListingForLead(lead, listing))
+    .map((lead) => scoreListingForLead(lead, listing, rejectionHistoryByLead?.get(lead.id)))
     .filter((r) => r.score >= threshold)
     .sort((a, b) => b.score - a.score)
 }
@@ -167,11 +216,12 @@ export function scoreLeadsForListing(
 export function scoreListingsForLead(
   lead: LeadWithProfile,
   listings: Listing[],
+  rejectionHistory?: RejectionHistory,
   threshold = 40,
 ): LeadListingMatchResult[] {
   return listings
     .map((listing) => {
-      const { score, reasons } = computeMatch(lead, listing)
+      const { score, reasons } = computeMatch(lead, listing, rejectionHistory)
       return {
         listing_id: listing.id,
         listing_title: listing.title,
