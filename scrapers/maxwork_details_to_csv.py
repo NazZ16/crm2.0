@@ -432,6 +432,28 @@ CHECKPOINT_EVERY = 200  # grava progresso a cada N imóveis processados — uma
                          # PC reiniciado, janela fechada) perdia tudo.
 
 
+def load_resume_checkpoint() -> dict:
+    """Se já existir um OUTPUT_CSV de uma corrida anterior (mesmo que
+    interrompida a meio — kill, PC desligado, janela fechada), lê-o e
+    devolve {chave: linha} só dos imóveis já processados com sucesso
+    (estado_badge preenchido — o único campo que fica sempre vazio nos
+    que ainda não foram tocados ou que esgotaram as tentativas). main()
+    usa isto para não reprocessar do zero o que já está feito. Para
+    forçar uma corrida do zero, apaga ou move o OUTPUT_CSV antes."""
+    if not os.path.exists(OUTPUT_CSV):
+        return {}
+    with open(OUTPUT_CSV, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f, delimiter=";")
+        done = {}
+        for row in reader:
+            if not row.get("estado_badge"):
+                continue
+            key = row.get("id_interno") or row.get("codigo")
+            if key:
+                done[key] = row
+    return done
+
+
 def write_csv_snapshot(rows, fieldnames):
     """Escreve o estado atual de "rows" no CSV — usado tanto para a
     gravação final como para os checkpoints a meio da corrida. Linhas
@@ -587,9 +609,21 @@ def main():
     base_fieldnames = list(rows[0].keys()) if rows else []
     fieldnames = base_fieldnames + ["already_in_crm"] + DETAIL_FIELDNAMES
 
+    resume = load_resume_checkpoint()
     work_queue: "queue.Queue" = queue.Queue()
+    pending = 0
     for i, row in enumerate(rows, start=1):
-        work_queue.put((i, row))
+        key = row.get("id_interno") or row.get("codigo")
+        cached = resume.get(key) if key else None
+        if cached:
+            row.update(cached)  # já processado numa corrida anterior — mantém
+        else:
+            work_queue.put((i, row))
+            pending += 1
+
+    if resume:
+        print(f"[maxwork] a retomar de {OUTPUT_CSV}: {len(rows) - pending}/{len(rows)} já feitos numa corrida "
+              f"anterior, faltam {pending}")
 
     progress = _Progress(total=len(rows))
     threads = [
