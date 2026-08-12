@@ -10,6 +10,7 @@ import datetime
 import os
 import re
 import sys
+import threading
 
 from dotenv import load_dotenv
 
@@ -23,15 +24,21 @@ class _Tee:
 
     def __init__(self, *streams):
         self.streams = streams
+        self._lock = threading.Lock()
 
     def write(self, data):
+        # Lock porque print() faz várias chamadas write() por linha (texto e
+        # depois "\n" à parte) — sem isto, workers concorrentes intercalam
+        # escritas a meio e corrompem linhas do log (visto numa corrida
+        # real: duas linhas de workers diferentes coladas sem quebra).
         # flush já aqui (não só quando algo chama .flush()) — o ficheiro de
         # log é aberto com buffer de bloco por omissão, por isso sem isto as
         # últimas linhas ficam presas no buffer e perdem-se exatamente num
         # crash/hang/kill, que é o cenário em que o log mais faz falta.
-        for s in self.streams:
-            s.write(data)
-            s.flush()
+        with self._lock:
+            for s in self.streams:
+                s.write(data)
+                s.flush()
         return len(data)
 
     def flush(self):
