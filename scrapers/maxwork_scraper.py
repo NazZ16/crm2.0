@@ -219,13 +219,37 @@ def click_card_button_and_confirm(page, detail_href, button_text, cfg):
         print(f"     AVISO: modal de confirmação não apareceu (href={detail_href})")
         return False
 
-    page.wait_for_load_state("networkidle")
-    time.sleep(cfg["wait_seconds"] + 2)  # margem extra para a lista recarregar
+    # Espera o PRÓPRIO cartão marcado desaparecer da lista — sinal real de
+    # que a lista já recarregou, em vez de networkidle (a página tem
+    # widgets de fundo com pedidos periódicos, ver login() em
+    # maxwork_common.py — networkidle pode nunca disparar) + sleep fixo
+    # de +2s (mais lento do que precisa quando o servidor responde depressa,
+    # e ainda pode não chegar quando está mais lento).
+    if not wait_for_card_removed(page, cfg, detail_href):
+        print(f"     AVISO: cartão ainda visível depois de marcar (href={detail_href}) — a continuar mesmo assim")
     return True
 
 
 def mark_card_as_contacted(page, detail_href, cfg):
     return click_card_button_and_confirm(page, detail_href, cfg["contacted_button_text"], cfg)
+
+
+def wait_for_card_removed(page, cfg, detail_href, timeout_ms: int = 10000, poll_ms: int = 300) -> bool:
+    """Espera por polling curto que um cartão específico (pelo seu href
+    único) deixe de existir no DOM — marcar como Contactado remove-o da
+    lista 'Novos' (é nisto que scrape_listing_with_marking já confia para
+    detetar progresso). Devolve False se continuar visível depois do
+    timeout, sem levantar exceção — quem chama decide o que fazer."""
+    if not detail_href:
+        return True
+    card_selector = f"{cfg['card_selector']}:has(a[href='{detail_href}'])"
+    elapsed = 0
+    while elapsed < timeout_ms:
+        if page.query_selector(card_selector) is None:
+            return True
+        page.wait_for_timeout(poll_ms)
+        elapsed += poll_ms
+    return False
 
 
 def has_next_page(page, cfg):
@@ -235,6 +259,48 @@ def has_next_page(page, cfg):
         return False
     next_btn = page.query_selector(cfg["next_page_selector"])
     return next_btn is not None
+
+
+def first_card_key(page, cfg) -> str | None:
+    """Href (único por cartão) do 1º cartão da página atual — usado para
+    confirmar que a grelha mudou mesmo depois de clicar em "seguinte", em
+    vez de confiar num sleep fixo. Mesma razão do wait_for_new_first_card
+    em maxwork_to_csv.py: a grelha pode continuar visualmente "com
+    cartões" a meio da transição, ainda com os da página anterior."""
+    card = page.query_selector(cfg["card_selector"])
+    if not card:
+        return None
+    code_el = card.query_selector(cfg["selectors"]["code"])
+    return code_el.get_attribute("href") if code_el else None
+
+
+def wait_for_new_first_card(page, cfg, previous_first: str | None, timeout_ms: int = 10000, poll_ms: int = 300) -> bool:
+    """Espera (por polling curto) que o 1º cartão mude a sério depois de
+    paginar. Devolve False se nunca mudar dentro do timeout — sinal de
+    que já não há página seguinte a sério, mesmo que o botão "seguinte"
+    continue visualmente ativo."""
+    elapsed = 0
+    while elapsed < timeout_ms:
+        page.wait_for_timeout(poll_ms)
+        elapsed += poll_ms
+        current = first_card_key(page, cfg)
+        if current is not None and current != previous_first:
+            return True
+    return False
+
+
+def advance_to_next_page(page, cfg, previous_first: str | None, attempts: int = 3) -> bool:
+    """Clica em "seguinte" e espera que o 1º cartão mude a sério — antes
+    de assumir que já não há mais páginas, tenta clicar outra vez em vez
+    de desistir logo à primeira espera falhada (a página seguinte pode só
+    ter demorado mais do que o normal nesse momento)."""
+    for attempt in range(1, attempts + 1):
+        page.click(cfg["next_page_selector"])
+        if wait_for_new_first_card(page, cfg, previous_first):
+            return True
+        if attempt < attempts:
+            print(f"     [aviso] a página seguinte ainda não chegou (tentativa {attempt}/{attempts}) — a tentar outra vez...")
+    return False
 
 
 def get_all_card_hrefs(page, cfg):
@@ -304,9 +370,10 @@ def scrape_listing_readonly(page, cfg, listing_url):
         if not has_next_page(page, cfg):
             break
 
-        page.click(cfg["next_page_selector"])
-        page.wait_for_load_state("networkidle")
-        time.sleep(cfg["wait_seconds"])
+        previous_first = first_card_key(page, cfg)
+        if not advance_to_next_page(page, cfg, previous_first):
+            print("     [aviso] botão 'seguinte' continua ativo mas a página não mudou — a considerar concluído")
+            break
         page_num += 1
 
     return all_rows
