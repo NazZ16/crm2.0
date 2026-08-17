@@ -92,7 +92,9 @@ function computeMatch(
       reasons.push({ reason: 'Ligeiramente acima do orçamento (dentro de margem de negociação)', positive: true })
     }
   } else {
-    score += 10
+    // Sem orçamento definido no perfil: crédito neutro baixo — não há sinal
+    // real de match, não deve empurrar o score para cima do threshold sozinho.
+    score += 4
   }
 
   // Zona (25 pts)
@@ -104,7 +106,7 @@ function computeMatch(
       reasons.push({ reason: 'Zona fora das preferências indicadas', positive: false })
     }
   } else {
-    score += 10
+    score += 4
   }
 
   // Penalização: lead já rejeitou um imóvel nesta zona por motivo de localização
@@ -122,7 +124,7 @@ function computeMatch(
       reasons.push({ reason: `Tipologia ${listing.typology} diferente da procurada (${prefs.tipologia})`, positive: false })
     }
   } else {
-    score += 8
+    score += 3
   }
 
   // Penalização: lead já rejeitou um imóvel desta tipologia por motivo de tipologia
@@ -143,7 +145,7 @@ function computeMatch(
       reasons.push({ reason: `Área (${area}m²) fora do intervalo pretendido`, positive: false })
     }
   } else {
-    score += 7
+    score += 2
   }
 
   // Garagem (8 pts)
@@ -155,7 +157,7 @@ function computeMatch(
       reasons.push({ reason: 'Sem garagem/estacionamento (era pretendido)', positive: false })
     }
   } else {
-    score += 4
+    score += 1
   }
 
   // Elevador (7 pts)
@@ -167,7 +169,7 @@ function computeMatch(
       reasons.push({ reason: 'Sem elevador (era pretendido)', positive: false })
     }
   } else {
-    score += 3
+    score += 1
   }
 
   // Semântica (bónus até 10 pts) — ver comentário no topo do ficheiro.
@@ -205,7 +207,7 @@ export function scoreLeadsForListing(
   leads: LeadWithProfile[],
   listing: Listing,
   rejectionHistoryByLead?: Map<string, RejectionHistory>,
-  threshold = 40,
+  threshold = DEFAULT_LISTING_MATCH_THRESHOLD,
 ): ListingMatchResult[] {
   return leads
     .map((lead) => scoreListingForLead(lead, listing, rejectionHistoryByLead?.get(lead.id)))
@@ -217,7 +219,7 @@ export function scoreListingsForLead(
   lead: LeadWithProfile,
   listings: Listing[],
   rejectionHistory?: RejectionHistory,
-  threshold = 40,
+  threshold = DEFAULT_LISTING_MATCH_THRESHOLD,
 ): LeadListingMatchResult[] {
   return listings
     .map((listing) => {
@@ -236,4 +238,7 @@ export function scoreListingsForLead(
     .sort((a, b) => b.score - a.score)
 }
 
-export const DEFAULT_LISTING_MATCH_THRESHOLD = 40
+// 55: perfis de lead incompletos (sem zona/tipologia/orçamento) já não
+// acumulam pontos "neutros" suficientes para passar sozinhos — só passam
+// leads com sinal real de match, e o threshold reflete isso.
+export const DEFAULT_LISTING_MATCH_THRESHOLD = 55
