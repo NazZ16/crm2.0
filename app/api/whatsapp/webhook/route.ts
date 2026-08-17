@@ -183,15 +183,17 @@ async function processMessage(
     leadId = newLead.id
   }
 
+  const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text
+
   await supabase.from('interactions').insert({
     lead_id: leadId,
     team_id: DEFAULT_TEAM_ID,
     type: 'whatsapp',
     raw_text: text,
+    summary: preview,
     occurred_at: occurredAt,
   })
 
-  const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text
   await supabase.from('notifications').insert({
     team_id: DEFAULT_TEAM_ID,
     type: 'whatsapp_message',
