@@ -29,8 +29,12 @@ export function norm(s: string): string {
     .trim()
 }
 
+// Nota: propositadamente sem `district` — um distrito português cobre
+// dezenas de km (ex.: distrito do Porto vai da cidade até Amarante/Baião),
+// pelo que contar como match de zona dava falsos positivos a imóveis longe
+// do que a lead pediu.
 function zoneMatches(zonas: string[], listing: Listing): boolean {
-  const listingPlaces = [listing.zone, listing.municipality, listing.parish, listing.district, listing.address]
+  const listingPlaces = [listing.zone, listing.municipality, listing.parish, listing.address]
     .filter((v): v is string => !!v)
     .map(norm)
   return zonas.some((z) => {
