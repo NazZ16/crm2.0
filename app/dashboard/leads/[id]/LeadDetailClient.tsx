@@ -41,6 +41,8 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
   const [agentOutput, setAgentOutput] = useState<AgentFullOutput | null>(null)
   const [extractionId, setExtractionId] = useState<string | null>(null)
 
+  const [analyzingAll, setAnalyzingAll] = useState(false)
+
   async function handleStatusChange(newStatus: LeadStatus) {
     setUpdatingStatus(true)
     const res = await fetch(`/api/leads/${leadId}`, {
@@ -100,6 +102,26 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
     }
   }
 
+  async function handleAnalyzeAll() {
+    setAnalyzingAll(true)
+    try {
+      const res = await fetch(`/api/leads/${leadId}/analyze-all`, { method: 'POST' })
+      const data = await res.json()
+
+      if (!res.ok) {
+        toast.error(data.error || 'Erro na análise')
+        return
+      }
+
+      toast.success('Análise concluída — revê no topo da página')
+      router.refresh()
+    } catch {
+      toast.error('Erro de conexão')
+    } finally {
+      setAnalyzingAll(false)
+    }
+  }
+
   async function handleDelete() {
     setDeleting(true)
     try {
@@ -155,6 +177,11 @@ export function LeadDetailClient({ leadId, leadName, leadPhone, leadEmail, curre
         <Button onClick={() => setModalOpen(true)} className="gap-2">
           <MessageSquarePlus size={16} />
           Analisar Conversa
+        </Button>
+
+        <Button onClick={handleAnalyzeAll} disabled={analyzingAll} variant="outline" className="gap-2">
+          {analyzingAll ? <Loader2 size={16} className="animate-spin" /> : <Bot size={16} />}
+          Analisar Histórico
         </Button>
 
         <MergeLeadsButton leadId={leadId} leadName={leadName} isAdmin={isAdmin} />
