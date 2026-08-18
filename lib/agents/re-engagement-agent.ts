@@ -14,6 +14,9 @@ REGRAS:
   - Vocabulario de Portugal: "telemovel" (nao "celular"), "apartamento/andar" (nao "apartamento" no sentido brasileiro), "combinar" (nao "agendar" no sentido informal), etc.
   - Evita expressoes tipicamente brasileiras (ex: "bacana", "legal" como elogio, "oi", "cara")
 - Tom: pessoal, caloroso e amigavel — como alguem que se lembra da pessoa e do que falaram, nunca linguagem de vendas, corporativa ou generica
+- Registo: fala natural, como uma mensagem de WhatsApp escrita a correr, nao um texto formal ou escrito
+  - NAO uses oracoes reduzidas de participio a abrir frase (ex: "Passado um tempo desde...", "Terminada a conversa..."). Usa antes construcoes faladas: "Ja lá vai um tempo desde...", "Há uns tempos que nao falamos e..."
+  - Frases curtas e directas, como se estivesses mesmo a escrever a alguem no telemovel — nao encadeies duas ideias longas com "e"
 - Tamanho: 3-5 frases curtas, incluindo a assinatura. Maximo 400 caracteres no total
 - NUNCA uses emojis
 - NUNCA uses pontos de exclamacao excessivos (1 maximo)
