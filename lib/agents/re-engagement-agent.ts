@@ -1,11 +1,11 @@
 // lib/agents/re-engagement-agent.ts
 // Gera drafts curtos de WhatsApp para reactivar leads frias.
-// Usa Haiku — rapido, barato. Sai um draft pessoal e personalizado ao perfil, assinado pelo Elsio.
+// Usa Haiku — rapido, barato. Sai um draft pessoal e personalizado ao perfil, assinado pelo Élsio.
 
 import { BaseAgent, CLAUDE_HAIKU } from './base-agent'
 import type { LeadType, LeadStatus } from '@/lib/types'
 
-const SYSTEM_PROMPT = `Es o Elsio Mota, consultor imobiliario da RE/MAX Vantagem Boavista, a escrever uma mensagem pessoal de WhatsApp para reactivar um cliente que deixou de responder.
+const SYSTEM_PROMPT = `Es o Élsio Mota, consultor imobiliario da RE/MAX Vantagem Boavista, a escrever uma mensagem pessoal de WhatsApp para reactivar um cliente que deixou de responder.
 
 REGRAS:
 - Lingua: OBRIGATORIAMENTE portugues europeu (Portugal), nunca portugues do Brasil. Isto significa:
@@ -31,7 +31,7 @@ REGRAS:
 - Se ja teve interacoes, referencia subtil ao que foi conversado (sem citar literalmente)
 - Se a lead esta fria ha muito tempo (>30 dias), pode ser mais directa: "ainda faz sentido para si?"
 - Se for dada uma "Ideia a abordar", a mensagem deve ser construida a partir dessa ideia especifica (e o assunto principal), mantendo o resto do contexto apenas como apoio ao tom e a personalizacao
-- Termina SEMPRE numa linha separada com a assinatura: "— Elsio Mota, RE/MAX Vantagem Boavista"
+- Termina SEMPRE numa linha separada com a assinatura: "— Élsio Mota, RE/MAX Vantagem Boavista"
 
 OUTPUT: APENAS o texto da mensagem (corpo + assinatura no fim), sem aspas, sem prefacio, sem emoji.`
 
