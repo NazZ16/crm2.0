@@ -58,6 +58,7 @@ const STATUS_FILTERS: Array<{ value: 'all' | LeadStatus; label: string }> = [
 export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
   const router = useRouter()
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [ideas, setIdeas] = useState<Record<string, string>>({})
   const [generating, setGenerating] = useState<Set<string>>(new Set())
   const [sentSet, setSentSet] = useState<Set<string>>(new Set())
   const [marking, setMarking] = useState<Set<string>>(new Set())
@@ -78,7 +79,7 @@ export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
       const res = await fetch('/api/cold-leads/draft', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead_id: leadId }),
+        body: JSON.stringify({ lead_id: leadId, idea: ideas[leadId]?.trim() || undefined }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -227,6 +228,16 @@ export function ColdLeadsClient({ leads, minDays, statusFilter }: Props) {
                     Ver lead <ChevronRight size={12} />
                   </Link>
                 </div>
+
+                {/* Ideia para a mensagem */}
+                <input
+                  type="text"
+                  value={ideas[lead.id] ?? ''}
+                  onChange={(e) => setIdeas((d) => ({ ...d, [lead.id]: e.target.value }))}
+                  placeholder="Ideia para a mensagem (opcional) — ex: novo imovel na zona X"
+                  maxLength={500}
+                  className="w-full text-sm border border-gray-200 rounded-md px-2.5 py-1.5 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
 
                 {/* Draft area */}
                 {draft ? (

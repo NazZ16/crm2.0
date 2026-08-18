@@ -21,6 +21,7 @@ REGRAS:
   - "both": equilibra ambos
 - Se ja teve interacoes, referencia subtil ao que foi conversado (sem citar literalmente)
 - Se a lead esta fria ha muito tempo (>30 dias), pode ser mais directa: "ainda faz sentido para si?"
+- Se for dada uma "Ideia a abordar", a mensagem deve ser construida a partir dessa ideia especifica (é o assunto principal), mantendo o resto do contexto apenas como apoio ao tom
 
 OUTPUT: APENAS o texto da mensagem, sem aspas, sem prefacio, sem emoji, sem assinatura. Apenas o body do WhatsApp.`
 
@@ -35,6 +36,7 @@ export interface ReEngagementInput {
   lastInteractionSummary: string | null
   homePreferencesNote?: string | null
   sellerImovelNote?: string | null
+  idea?: string | null
 }
 
 export class ReEngagementAgent extends BaseAgent {
@@ -50,6 +52,7 @@ export class ReEngagementAgent extends BaseAgent {
     if (input.homePreferencesNote) lines.push(`Procura: ${input.homePreferencesNote}`)
     if (input.sellerImovelNote) lines.push(`Imovel a vender: ${input.sellerImovelNote}`)
     if (input.lastInteractionSummary) lines.push(`Ultima interaccao: ${input.lastInteractionSummary}`)
+    if (input.idea) lines.push(`Ideia a abordar: ${input.idea}`)
 
     const userMessage = lines.join('\n') + '\n\nRedige a mensagem WhatsApp.'
 

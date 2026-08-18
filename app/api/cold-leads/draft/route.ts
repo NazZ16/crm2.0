@@ -10,6 +10,7 @@ import type { LeadStatus, LeadType } from '@/lib/types'
 
 const schema = z.object({
   lead_id: z.string().uuid(),
+  idea: z.string().trim().max(500).optional(),
 })
 
 export const maxDuration = 30
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
       lastInteractionSummary: (lastInter?.summary as string | null) ?? null,
       homePreferencesNote: homeNote,
       sellerImovelNote: sellerNote,
+      idea: parsed.data.idea || null,
     })
 
     return NextResponse.json({ body: result.body, tokens: result.tokensUsed })
