@@ -1,8 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { CallsHistoryClient, type CallRow } from './CallsHistoryClient'
+import { CallsHistoryClient, type CallRow, type ProspectingRow } from './CallsHistoryClient'
 
 export const dynamic = 'force-dynamic'
+
+const PROSPECTING_WINDOW_DAYS = 14
 
 export default async function CallsHistoryPage() {
   const supabase = await createClient()
@@ -17,23 +19,37 @@ export default async function CallsHistoryPage() {
 
   if (!member) redirect('/login')
 
-  const { data: rawCalls } = await supabase
-    .from('call_uploads')
-    .select(`
-      id,
-      audio_duration_s,
-      coach_feedback,
-      transcript_formatted,
-      transcript_text,
-      created_at,
-      status,
-      lead_id,
-      leads(id, full_name, phone)
-    `)
-    .eq('team_id', member.team_id)
-    .eq('status', 'done')
-    .order('created_at', { ascending: false })
-    .limit(50)
+  const since = new Date()
+  since.setDate(since.getDate() - (PROSPECTING_WINDOW_DAYS - 1))
+  since.setHours(0, 0, 0, 0)
+
+  const [{ data: rawCalls }, { data: rawProspecting }] = await Promise.all([
+    supabase
+      .from('call_uploads')
+      .select(`
+        id,
+        audio_duration_s,
+        coach_feedback,
+        transcript_formatted,
+        transcript_text,
+        created_at,
+        status,
+        lead_id,
+        leads(id, full_name, phone)
+      `)
+      .eq('team_id', member.team_id)
+      .eq('status', 'done')
+      .order('created_at', { ascending: false })
+      .limit(50),
+    // Janela dedicada (sem o limite de 50) para contar pessoas distintas contactadas por dia
+    supabase
+      .from('call_uploads')
+      .select('id, lead_id, created_at, leads(phone)')
+      .eq('team_id', member.team_id)
+      .eq('status', 'done')
+      .gte('created_at', since.toISOString())
+      .order('created_at', { ascending: true }),
+  ])
 
   type LeadJoin = { id: string; full_name: string; phone: string | null } | null
   const calls: CallRow[] = (rawCalls ?? []).map((c) => {
@@ -51,5 +67,16 @@ export default async function CallsHistoryPage() {
     }
   })
 
-  return <CallsHistoryClient calls={calls} />
+  type ProspLeadJoin = { phone: string | null } | null
+  const prospecting: ProspectingRow[] = (rawProspecting ?? []).map((r) => {
+    const leadObj = (Array.isArray(r.leads) ? r.leads[0] : r.leads) as ProspLeadJoin
+    // Identifica a "pessoa" pelo lead, depois pelo telefone; sem nenhum dos dois, a chamada conta como pessoa própria
+    const personKey = (r.lead_id as string | null) ?? leadObj?.phone ?? `call:${r.id}`
+    return {
+      created_at: r.created_at as string,
+      person_key: personKey,
+    }
+  })
+
+  return <CallsHistoryClient calls={calls} prospecting={prospecting} />
 }
