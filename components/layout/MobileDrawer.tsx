@@ -20,6 +20,8 @@ import {
   X,
   PenSquare,
   Contact,
+  Snowflake,
+  Phone,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
@@ -30,6 +32,7 @@ const ALL_NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
+  { href: '/dashboard/cold-leads', label: 'Leads frias', icon: Snowflake },
   { href: '/dashboard/partners', label: 'Parceiros', icon: Contact },
   { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
   { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },
@@ -39,6 +42,7 @@ const ALL_NAV = [
   { href: '/dashboard/content', label: 'Conteúdo', icon: PenSquare },
   { href: '/dashboard/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/dashboard/agents', label: 'Agentes IA', icon: Bot },
+  { href: '/dashboard/calls/history', label: 'Chamadas', icon: Phone },
   { href: '/dashboard/team', label: 'Equipa', icon: UsersRound },
   { href: '/dashboard/settings', label: 'Definições', icon: Settings },
 ]
