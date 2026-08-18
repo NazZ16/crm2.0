@@ -40,14 +40,18 @@ let connectionState = 'connecting' // connecting | qr_pending | connected | disc
 
 // A Meta tem vindo a substituir o JID do telefone por um "LID" (Local ID, ex.
 // 151088510574694@lid) em cada vez mais conversas, por privacidade — não é um número de
-// telefone. Nesses casos o Baileys expõe o JID do telefone real em `remoteJidAlt`. Se não
-// vier, não há forma fiável de descobrir o número — ignora-se a mensagem em vez de guardar
-// lixo como se fosse um telefone.
+// telefone. Nesses casos o Baileys pode expor o JID do telefone real em `remoteJidAlt` ou em
+// `senderPn` (confirmado em produção — inclui o indicativo do país, útil para contactos
+// estrangeiros). Se nenhum vier, não há forma fiável de descobrir o número — ignora-se a
+// mensagem em vez de guardar lixo como se fosse um telefone.
 function resolvePhoneJid(msg) {
   const remoteJid = msg.key.remoteJid
   if (remoteJid && remoteJid.endsWith('@s.whatsapp.net')) return remoteJid
   if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
     return msg.key.remoteJidAlt
+  }
+  if (msg.key.senderPn && msg.key.senderPn.endsWith('@s.whatsapp.net')) {
+    return msg.key.senderPn
   }
   return null
 }
