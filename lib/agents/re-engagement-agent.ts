@@ -17,13 +17,13 @@ REGRAS:
 - Registo: fala natural, como uma mensagem de WhatsApp escrita a correr, nao um texto formal ou escrito
   - NAO uses oracoes reduzidas de participio a abrir frase (ex: "Passado um tempo desde...", "Terminada a conversa..."). Usa antes construcoes faladas: "Ja lá vai um tempo desde...", "Há uns tempos que nao falamos e..."
   - Frases curtas e directas, como se estivesses mesmo a escrever a alguem no telemovel — nao encadeies duas ideias longas com "e"
-- Tamanho: 3-5 frases curtas, incluindo a assinatura. Maximo 400 caracteres no total
+- Tamanho: 3-5 frases curtas, incluindo a assinatura. Maximo 500 caracteres no total
 - NUNCA uses emojis
 - NUNCA uses pontos de exclamacao excessivos (1 maximo)
 - NAO comeces com "Olá!" generico — usa o nome
 - NAO inventes factos sobre a lead que nao estejam nos dados fornecidos
 - PERSONALIZA ao maximo: usa toda a informacao disponivel (perfil financeiro, contexto familiar, preferencias, receios, historico de venda, interaccoes anteriores, notas) para tornar a mensagem especifica aquela pessoa, sem soar a copy-paste generico
-- O objectivo e que respondam: faz uma pergunta concreta no fim do corpo da mensagem
+- CTA: termina sempre o corpo da mensagem com uma pergunta ou convite directo e concreto (call-to-action) que facilite responder — nunca deixes a mensagem sem pedir uma accao clara (responder, confirmar disponibilidade, marcar uma chamada, etc.)
 - Adapta o tom ao tipo:
   - "buyer" (procura imovel): pergunta sobre mudanca de circunstancias, novos imoveis disponiveis, prazo
   - "seller" (vende imovel): pergunta sobre se o preco/prazo continua o mesmo, novidades do mercado
@@ -31,7 +31,9 @@ REGRAS:
 - Se ja teve interacoes, referencia subtil ao que foi conversado (sem citar literalmente)
 - Se a lead esta fria ha muito tempo (>30 dias), pode ser mais directa: "ainda faz sentido para si?"
 - Se for dada uma "Ideia a abordar", a mensagem deve ser construida a partir dessa ideia especifica (e o assunto principal), mantendo o resto do contexto apenas como apoio ao tom e a personalizacao
-- Termina SEMPRE numa linha separada com a assinatura, SEM traço nem travessão a abrir: "Élsio Mota, RE/MAX Vantagem Boavista"
+- Termina SEMPRE com a assinatura em duas linhas separadas, SEM traço nem travessão a abrir:
+  "Élsio Mota, RE/MAX Vantagem Boavista
+  Instagram: https://www.instagram.com/elsiomota_investimento/"
 
 OUTPUT: APENAS o texto da mensagem (corpo + assinatura no fim), sem aspas, sem prefacio, sem emoji.`
 
@@ -82,7 +84,7 @@ export class ReEngagementAgent extends BaseAgent {
 
     const userMessage = lines.join('\n') + '\n\nRedige a mensagem WhatsApp.'
 
-    const response = await this.callClaude(SYSTEM_PROMPT, userMessage, 500, CLAUDE_HAIKU)
+    const response = await this.callClaude(SYSTEM_PROMPT, userMessage, 600, CLAUDE_HAIKU)
 
     // Limpeza: remove aspas exteriores se vierem, remove leading/trailing whitespace
     let body = response.text.trim()
