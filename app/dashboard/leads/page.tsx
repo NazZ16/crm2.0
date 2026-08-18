@@ -53,6 +53,7 @@ export default async function LeadsPage({ searchParams }: Props) {
       lead_profiles(summary, confidence_score)
     `)
     .eq('team_id', memberData.team_id)
+    .order('last_contact_at', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
 
   if (status && LEAD_PIPELINE_ORDER.includes(status as LeadStatus)) {
