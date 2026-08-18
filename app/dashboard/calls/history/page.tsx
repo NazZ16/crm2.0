@@ -41,14 +41,15 @@ export default async function CallsHistoryPage() {
       .eq('status', 'done')
       .order('created_at', { ascending: false })
       .limit(50),
-    // Janela dedicada (sem o limite de 50) para contar pessoas distintas contactadas por dia
+    // Pessoas distintas contactadas por dia: chamadas, WhatsApp e email, via interactions
+    // (fonte única de historico de contacto — lead_id e sempre preenchido aqui)
     supabase
-      .from('call_uploads')
-      .select('id, lead_id, created_at, leads(phone)')
+      .from('interactions')
+      .select('lead_id, occurred_at')
       .eq('team_id', member.team_id)
-      .eq('status', 'done')
-      .gte('created_at', since.toISOString())
-      .order('created_at', { ascending: true }),
+      .in('type', ['call', 'whatsapp', 'email'])
+      .gte('occurred_at', since.toISOString())
+      .order('occurred_at', { ascending: true }),
   ])
 
   type LeadJoin = { id: string; full_name: string; phone: string | null } | null
@@ -67,16 +68,10 @@ export default async function CallsHistoryPage() {
     }
   })
 
-  type ProspLeadJoin = { phone: string | null } | null
-  const prospecting: ProspectingRow[] = (rawProspecting ?? []).map((r) => {
-    const leadObj = (Array.isArray(r.leads) ? r.leads[0] : r.leads) as ProspLeadJoin
-    // Identifica a "pessoa" pelo lead, depois pelo telefone; sem nenhum dos dois, a chamada conta como pessoa própria
-    const personKey = (r.lead_id as string | null) ?? leadObj?.phone ?? `call:${r.id}`
-    return {
-      created_at: r.created_at as string,
-      person_key: personKey,
-    }
-  })
+  const prospecting: ProspectingRow[] = (rawProspecting ?? []).map((r) => ({
+    occurred_at: r.occurred_at as string,
+    person_key: r.lead_id as string,
+  }))
 
   return <CallsHistoryClient calls={calls} prospecting={prospecting} />
 }

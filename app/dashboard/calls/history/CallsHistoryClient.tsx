@@ -30,7 +30,7 @@ export interface CallRow {
 }
 
 export interface ProspectingRow {
-  created_at: string
+  occurred_at: string
   person_key: string
 }
 
@@ -102,7 +102,7 @@ const PROSPECTING_WINDOW_DAYS = 14
 function buildDailyProspecting(prospecting: ProspectingRow[]) {
   const peopleByDay = new Map<string, Set<string>>()
   for (const row of prospecting) {
-    const key = dayKey(row.created_at)
+    const key = dayKey(row.occurred_at)
     if (!peopleByDay.has(key)) peopleByDay.set(key, new Set())
     peopleByDay.get(key)!.add(row.person_key)
   }
@@ -309,6 +309,7 @@ export function CallsHistoryClient({ calls, prospecting }: { calls: CallRow[]; p
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Pessoas contactadas por dia (últimos {PROSPECTING_WINDOW_DAYS} dias)</CardTitle>
+          <p className="text-xs text-gray-400">Chamadas, WhatsApp e email</p>
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
