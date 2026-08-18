@@ -144,9 +144,13 @@ async function startSock() {
 
         const phoneJid = resolvePhoneJid(msg)
         if (!phoneJid) {
-          console.warn('[worker] JID sem número de telefone real (LID sem remoteJidAlt), a ignorar', {
-            remoteJid,
-          })
+          console.warn(
+            '[worker] JID sem número de telefone real (LID sem remoteJidAlt), a ignorar — ' +
+              'key completa: ' + JSON.stringify(msg.key) +
+              ' | campos da mensagem: ' + JSON.stringify(Object.keys(msg)) +
+              ' | pushName: ' + JSON.stringify(msg.pushName ?? null) +
+              ' | verifiedBizName: ' + JSON.stringify(msg.verifiedBizName ?? null)
+          )
           continue
         }
         const phone = phoneJid.replace('@s.whatsapp.net', '')
