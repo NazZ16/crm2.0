@@ -5,7 +5,7 @@
   "description": "Worker Baileys (não-oficial) que liga ao WhatsApp e encaminha mensagens recebidas para o CRM.",
   "type": "commonjs",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "start": "node index.js"
