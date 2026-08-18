@@ -7,13 +7,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { ChevronDown, ChevronUp, Phone, MicOff, Smile, Meh, Frown, User } from 'lucide-react'
+import { ChevronDown, ChevronUp, Phone, MicOff, Smile, Meh, Frown, User, Users } from 'lucide-react'
 
 export interface CallRow {
   id: string
@@ -25,6 +27,11 @@ export interface CallRow {
   lead_id: string | null
   lead_name: string
   lead_phone: string | null
+}
+
+export interface ProspectingRow {
+  created_at: string
+  person_key: string
 }
 
 const SENTIMENT_LABEL: Record<string, string> = {
@@ -85,6 +92,37 @@ function formatDateShort(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })
 }
 
+function dayKey(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const PROSPECTING_WINDOW_DAYS = 14
+
+function buildDailyProspecting(prospecting: ProspectingRow[]) {
+  const peopleByDay = new Map<string, Set<string>>()
+  for (const row of prospecting) {
+    const key = dayKey(row.created_at)
+    if (!peopleByDay.has(key)) peopleByDay.set(key, new Set())
+    peopleByDay.get(key)!.add(row.person_key)
+  }
+
+  const days = Array.from({ length: PROSPECTING_WINDOW_DAYS }, (_, i) => {
+    const d = new Date()
+    d.setDate(d.getDate() - (PROSPECTING_WINDOW_DAYS - 1 - i))
+    const key = dayKey(d.toISOString())
+    return {
+      dia: formatDateShort(d.toISOString()),
+      pessoas: peopleByDay.get(key)?.size ?? 0,
+    }
+  })
+
+  const todayKey = dayKey(new Date().toISOString())
+  const todayCount = peopleByDay.get(todayKey)?.size ?? 0
+
+  return { days, todayCount }
+}
+
 function SentimentIcon({ sentiment }: { sentiment: string | null }) {
   if (!sentiment) return null
   if (sentiment === 'muito_positivo' || sentiment === 'positivo') {
@@ -143,8 +181,9 @@ function CoachPanel({ feedback }: { feedback: Record<string, unknown> | null }) 
   )
 }
 
-export function CallsHistoryClient({ calls }: { calls: CallRow[] }) {
+export function CallsHistoryClient({ calls, prospecting }: { calls: CallRow[]; prospecting: ProspectingRow[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const { days: dailyProspecting, todayCount: todayPeopleCount } = buildDailyProspecting(prospecting)
 
   if (calls.length === 0) {
     return (
@@ -199,7 +238,20 @@ export function CallsHistoryClient({ calls }: { calls: CallRow[] }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <Card>
+          <CardContent className="pt-5 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-teal-50 rounded-lg">
+                <Users size={18} className="text-teal-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-teal-700">{todayPeopleCount}</div>
+                <div className="text-xs text-gray-500">Pessoas hoje</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
         <Card>
           <CardContent className="pt-5 pb-4">
             <div className="flex items-center gap-3">
@@ -253,6 +305,41 @@ export function CallsHistoryClient({ calls }: { calls: CallRow[] }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Pessoas contactadas por dia (últimos {PROSPECTING_WINDOW_DAYS} dias)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={dailyProspecting} margin={{ top: 4, right: 16, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="dia" tick={{ fontSize: 12, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+              <YAxis
+                allowDecimals={false}
+                tick={{ fontSize: 12, fill: '#9ca3af' }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null
+                  const d = payload[0].payload as (typeof dailyProspecting)[0]
+                  return (
+                    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-3 text-sm">
+                      <p className="font-medium text-gray-700">{d.dia}</p>
+                      <p className="mt-1 font-bold text-gray-800">
+                        {d.pessoas} pessoa{d.pessoas !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                  )
+                }}
+              />
+              <Bar dataKey="pessoas" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
 
       {chartData.length >= 2 && (
         <Card>
