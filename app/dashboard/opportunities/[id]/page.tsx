@@ -83,14 +83,16 @@ export default function OpportunityDetailPage() {
 
   async function runMatchingAgent() {
     setMatchLoading(true)
-    const res = await fetch('/api/agents/investor', {
+    const res = await fetch('/api/agents/matching', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ opportunity_id: id }),
     })
     const data = await res.json()
     if (!res.ok) { toast.error(data.error || 'Erro no agente'); setMatchLoading(false); return }
-    toast.success(`${data.matches_count} investidores encontrados!`)
+    toast.success(data.matches_created > 0
+      ? `${data.matches_created} investidores encontrados!`
+      : data.message ?? 'Nenhum investidor compatível')
     await loadOpportunity()
     setMatchLoading(false)
   }
