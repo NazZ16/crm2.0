@@ -38,6 +38,20 @@ const logger = pino({ level: 'warn' })
 let latestQr = null
 let connectionState = 'connecting' // connecting | qr_pending | connected | disconnected
 
+// A Meta tem vindo a substituir o JID do telefone por um "LID" (Local ID, ex.
+// 151088510574694@lid) em cada vez mais conversas, por privacidade — não é um número de
+// telefone. Nesses casos o Baileys expõe o JID do telefone real em `remoteJidAlt`. Se não
+// vier, não há forma fiável de descobrir o número — ignora-se a mensagem em vez de guardar
+// lixo como se fosse um telefone.
+function resolvePhoneJid(msg) {
+  const remoteJid = msg.key.remoteJid
+  if (remoteJid && remoteJid.endsWith('@s.whatsapp.net')) return remoteJid
+  if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
+    return msg.key.remoteJidAlt
+  }
+  return null
+}
+
 function extractText(message) {
   if (!message) return null
   if (message.conversation) return message.conversation
@@ -128,7 +142,14 @@ async function startSock() {
         const text = extractText(msg.message)
         if (!text) continue
 
-        const phone = remoteJid.replace('@s.whatsapp.net', '')
+        const phoneJid = resolvePhoneJid(msg)
+        if (!phoneJid) {
+          console.warn('[worker] JID sem número de telefone real (LID sem remoteJidAlt), a ignorar', {
+            remoteJid,
+          })
+          continue
+        }
+        const phone = phoneJid.replace('@s.whatsapp.net', '')
         const occurredAt = msg.messageTimestamp
           ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
           : new Date().toISOString()
