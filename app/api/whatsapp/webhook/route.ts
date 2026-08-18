@@ -13,13 +13,12 @@ import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhone } from '@/lib/phone'
+import { resolveLeadAndLogMessage } from '@/lib/whatsapp-ingest'
 
 const APP_SECRET = process.env.WHATSAPP_APP_SECRET ?? ''
 const VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN ?? ''
 const DEFAULT_TEAM_ID = process.env.WHATSAPP_DEFAULT_TEAM_ID ?? ''
 const DEFAULT_USER_ID = process.env.WHATSAPP_DEFAULT_USER_ID ?? ''
-
-const PLACEHOLDER_NAME = 'Lead (WhatsApp)'
 
 interface WhatsAppMessage {
   from: string
@@ -139,66 +138,12 @@ async function processMessage(
   const occurredAt = new Date(Number(message.timestamp) * 1000).toISOString()
   const profileName = contacts?.find((c) => c.wa_id === message.from)?.profile?.name?.trim()
 
-  const { data: existingLead } = await supabase
-    .from('leads')
-    .select('id, full_name')
-    .eq('team_id', DEFAULT_TEAM_ID)
-    .eq('phone', phone)
-    .maybeSingle()
-
-  let leadId: string
-  let leadName: string
-
-  if (existingLead) {
-    leadId = existingLead.id
-    leadName = existingLead.full_name ?? PLACEHOLDER_NAME
-
-    const isPlaceholder = !existingLead.full_name || existingLead.full_name === PLACEHOLDER_NAME
-    const leadUpdate: Record<string, unknown> = { last_contact_at: occurredAt }
-    if (profileName && isPlaceholder) {
-      leadUpdate.full_name = profileName
-      leadName = profileName
-    }
-
-    await supabase.from('leads').update(leadUpdate).eq('id', leadId)
-  } else {
-    leadName = profileName ?? PLACEHOLDER_NAME
-    const { data: newLead, error } = await supabase
-      .from('leads')
-      .insert({
-        team_id: DEFAULT_TEAM_ID,
-        assigned_to: DEFAULT_USER_ID,
-        full_name: leadName,
-        phone,
-        status: 'new',
-        source: 'whatsapp',
-        last_contact_at: occurredAt,
-      })
-      .select('id')
-      .single()
-
-    if (error || !newLead) {
-      throw new Error(`Falhou a criar lead: ${error?.message ?? 'sem linha devolvida'}`)
-    }
-    leadId = newLead.id
-  }
-
-  const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text
-
-  await supabase.from('interactions').insert({
-    lead_id: leadId,
-    team_id: DEFAULT_TEAM_ID,
-    type: 'whatsapp',
-    raw_text: text,
-    summary: preview,
-    occurred_at: occurredAt,
-  })
-
-  await supabase.from('notifications').insert({
-    team_id: DEFAULT_TEAM_ID,
-    type: 'whatsapp_message',
-    title: '💬 Nova mensagem WhatsApp',
-    body: `${leadName}: ${preview}`,
-    link: `/dashboard/leads/${leadId}`,
+  await resolveLeadAndLogMessage(supabase, {
+    teamId: DEFAULT_TEAM_ID,
+    userId: DEFAULT_USER_ID,
+    phone,
+    text,
+    profileName,
+    occurredAt,
   })
 }
