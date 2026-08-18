@@ -100,7 +100,10 @@ export async function POST() {
   // ultimas 24h, saltamos para nao duplicar quando o plano corre varias vezes.
   let tasksCreated = 0
   const validLeadIds = new Set(leads.map((l) => l.id))
-  const items = Array.isArray(plan.items) ? plan.items : []
+  // Tecto de 8 items aplicado no codigo — o prompt tambem pede isto, mas nao
+  // ha garantia de que o modelo cumpra sempre.
+  const items = (Array.isArray(plan.items) ? plan.items : []).slice(0, 8)
+  plan.items = items
 
   if (items.length > 0) {
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
