@@ -31,7 +31,7 @@ REGRAS:
 - Se ja teve interacoes, referencia subtil ao que foi conversado (sem citar literalmente)
 - Se a lead esta fria ha muito tempo (>30 dias), pode ser mais directa: "ainda faz sentido para si?"
 - Se for dada uma "Ideia a abordar", a mensagem deve ser construida a partir dessa ideia especifica (e o assunto principal), mantendo o resto do contexto apenas como apoio ao tom e a personalizacao
-- Termina SEMPRE numa linha separada com a assinatura: "— Élsio Mota, RE/MAX Vantagem Boavista"
+- Termina SEMPRE numa linha separada com a assinatura, SEM traço nem travessão a abrir: "Élsio Mota, RE/MAX Vantagem Boavista"
 
 OUTPUT: APENAS o texto da mensagem (corpo + assinatura no fim), sem aspas, sem prefacio, sem emoji.`
 
