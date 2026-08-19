@@ -13,11 +13,14 @@ export interface IncomingWhatsAppMessage {
   text: string
   profileName?: string
   occurredAt: string
+  /** true quando a mensagem foi enviada por nós (não pelo lead) — regista-se na timeline
+   *  para dar contexto às análises de IA, mas não gera notificação nem atualiza o nome/perfil. */
+  fromMe?: boolean
 }
 
 export async function resolveLeadAndLogMessage(
   supabase: ReturnType<typeof createServiceClient>,
-  { teamId, userId, phone, text, profileName, occurredAt }: IncomingWhatsAppMessage
+  { teamId, userId, phone, text, profileName, occurredAt, fromMe }: IncomingWhatsAppMessage
 ): Promise<{ leadId: string }> {
   const { data: existingLead } = await supabase
     .from('leads')
@@ -63,24 +66,31 @@ export async function resolveLeadAndLogMessage(
     leadId = newLead.id
   }
 
-  const preview = text.length > 80 ? `${text.slice(0, 80)}…` : text
+  // Prefixo "Eu:" nas mensagens que nós enviámos — sem isto a timeline (e as análises de IA
+  // que a leem, ex. "Analisar Histórico") não tem forma de distinguir quem disse o quê.
+  const displayText = fromMe ? `Eu: ${text}` : text
+  const preview = displayText.length > 80 ? `${displayText.slice(0, 80)}…` : displayText
 
   await supabase.from('interactions').insert({
     lead_id: leadId,
     team_id: teamId,
     type: 'whatsapp',
-    raw_text: text,
+    raw_text: displayText,
     summary: preview,
     occurred_at: occurredAt,
   })
 
-  await supabase.from('notifications').insert({
-    team_id: teamId,
-    type: 'whatsapp_message',
-    title: '💬 Nova mensagem WhatsApp',
-    body: `${leadName}: ${preview}`,
-    link: `/dashboard/leads/${leadId}`,
-  })
+  // Notificação só faz sentido para mensagens recebidas — não avisar de mensagens que
+  // nós próprios acabámos de enviar.
+  if (!fromMe) {
+    await supabase.from('notifications').insert({
+      team_id: teamId,
+      type: 'whatsapp_message',
+      title: '💬 Nova mensagem WhatsApp',
+      body: `${leadName}: ${preview}`,
+      link: `/dashboard/leads/${leadId}`,
+    })
+  }
 
   return { leadId }
 }

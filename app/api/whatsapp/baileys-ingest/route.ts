@@ -20,6 +20,7 @@ interface BaileysIngestPayload {
   text?: string
   profileName?: string
   occurredAt?: string
+  fromMe?: boolean
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -62,6 +63,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       text: payload.text,
       profileName: payload.profileName,
       occurredAt,
+      fromMe: payload.fromMe === true,
     })
     return NextResponse.json({ received: true, leadId })
   } catch (err) {
