@@ -135,7 +135,11 @@ async function startSock() {
   })
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return
+    // 'notify' = mensagem nova em tempo real (normalmente as que a lead envia).
+    // 'append' = sincronização vinda de outro dispositivo — é assim que chegam as mensagens
+    // que TU envias pelo telemóvel (o worker não é a origem, só está a ser posto a par).
+    // Ignoramos outros tipos (ex. sync inicial de histórico) para não trazer conversas antigas.
+    if (type !== 'notify' && type !== 'append') return
 
     for (const msg of messages) {
       try {
