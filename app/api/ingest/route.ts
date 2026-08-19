@@ -13,7 +13,9 @@
  *       source: 'telegram-elsio-hub',
  *       telegramUpdateId: number,
  *       classification: { intent, confidence, reasoning },
- *       receivedAt: string
+ *       receivedAt: string,
+ *       knownContactName?: string,  // se já sabes quem é (ex: app de gravação de chamadas),
+ *       knownPhone?: string         // tem prioridade sobre a extração por IA da transcrição
  *     }
  *   }
  *
@@ -75,6 +77,8 @@ type IngestMetadata = {
   telegramUpdateId?: number
   classification?: { intent?: string; confidence?: number; reasoning?: string }
   receivedAt?: string
+  knownContactName?: string
+  knownPhone?: string
 }
 
 type IngestPayload = {
@@ -212,8 +216,18 @@ export async function POST(request: Request): Promise<NextResponse> {
       ? payload.chatId
       : undefined
 
+  const knownContactName = payload.metadata?.knownContactName?.trim() || undefined
+  const knownPhone = payload.metadata?.knownPhone?.trim() || undefined
+
   after(
-    runCallPipeline(uploadRow.id, DEFAULT_TEAM_ID, audioBuffer, filename, DEFAULT_USER_ID).then(
+    runCallPipeline(
+      uploadRow.id,
+      DEFAULT_TEAM_ID,
+      audioBuffer,
+      filename,
+      DEFAULT_USER_ID,
+      { knownContactName, knownPhone },
+    ).then(
       async () => {
         const successText = dashboardUrl
           ? '\u2705 <b>\u00c1udio processado com sucesso!</b>\n\nVer lead e transcri\u00e7\u00e3o:\n' + dashboardUrl

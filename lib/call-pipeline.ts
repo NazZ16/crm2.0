@@ -25,7 +25,8 @@ export async function runCallPipeline(
   teamId: string,
   audioBuffer: Buffer,
   filename: string,
-  userId: string
+  userId: string,
+  known?: { knownContactName?: string; knownPhone?: string }
 ): Promise<void> {
   const supabase = createServiceClient()
 
@@ -121,9 +122,15 @@ export async function runCallPipeline(
     delete (agentOutput as AgentFullOutput & { _meta?: unknown })._meta
 
     const ex = agentOutput.lead_updates
-    const extractedPhone = normalizePhone(ex.phone ?? undefined)
+    const knownPhoneNormalized = known?.knownPhone ? normalizePhone(known.knownPhone) : undefined
+    const extractedPhone = knownPhoneNormalized ?? normalizePhone(ex.phone ?? undefined)
+    const knownNameTrimmed = known?.knownContactName?.trim()
     const extractedFullName =
-      ex.full_name && ex.full_name.trim().length > 0 ? ex.full_name.trim() : null
+      knownNameTrimmed && knownNameTrimmed.length > 0
+        ? knownNameTrimmed
+        : ex.full_name && ex.full_name.trim().length > 0
+          ? ex.full_name.trim()
+          : null
     const extractedEmail =
       ex.email && ex.email.trim().length > 0 ? ex.email.trim() : null
     const extractedScore = ex.score ?? null
