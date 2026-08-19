@@ -4,6 +4,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { LeadStatus, TaskPriority } from '@/lib/types'
+import { cancelObsoleteAutoTasks, triggerStage } from '@/lib/auto-tasks'
 
 // Quantos dias podem passar sem contacto antes de a lead ser considerada stale, por status.
 // new = nao aplica (auto-bump trata). won/lost = terminal, nao aplica.
@@ -122,6 +123,15 @@ export async function processStaleLeads(svc: SupabaseClient): Promise<
 
       created.push({ leadId: lead.id, leadName: lead.full_name, daysIdle, status: lead.status })
       console.log(`[stale-leads] task criada para ${lead.full_name} (${lead.status}, ${daysIdle}d)`)
+
+      // Lead ficou fria: tasks de progressao (ex.: "apresentar shortlist", "preparar
+      // CPCV") assumiam engagement activo que ja nao existe. Cancela-as, deixando
+      // so o "Recontactar" como proxima accao.
+      await cancelObsoleteAutoTasks(svc, {
+        leadId: lead.id,
+        teamId: lead.team_id,
+        matches: (key) => key !== 'stale' && triggerStage(key) !== null,
+      })
     }
   }
 

@@ -1,6 +1,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { cancelObsoleteAutoTasks } from '@/lib/auto-tasks'
 
 // Tipos de interaccao que contam como contacto real (e por isso bumpam new -> qualified).
 // 'note' e 'audio' (raw upload pre-processamento) NAO contam.
@@ -115,6 +116,13 @@ export async function POST(request: Request) {
   if (isFirstContact) {
     console.log(`[interactions] auto-bump lead ${parsed.data.lead_id} new -> qualified (interaction ${parsed.data.type})`)
   }
+
+  // Contacto retomado: fecha a task de recontacto [auto:stale], se existir.
+  await cancelObsoleteAutoTasks(svc, {
+    leadId: parsed.data.lead_id,
+    teamId: member.team_id,
+    matches: (key) => key === 'stale',
+  })
 
   return NextResponse.json({ ...data, _auto_bumped: isFirstContact ? 'qualified' : null }, { status: 201 })
 }

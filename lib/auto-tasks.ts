@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { LeadStatus, LeadType, TaskPriority } from '@/lib/types'
+import { LEAD_PIPELINE_ORDER } from '@/lib/types'
 
 interface AutoTaskRule {
   /** Identificador unico do trigger (usado para dedup). Ex: "new->qualified", "won-6m", "won-anniv-1y" */
@@ -232,8 +233,69 @@ function tag(triggerKey: string): string {
 }
 
 /**
+ * Extrai a fase de pipeline associada a um trigger key, quando aplicavel.
+ * "new->qualified" -> "qualified". "won-6m" / "won-anniv-2y" -> "won".
+ * "stale" (lib/stale-leads.ts) -> null, nao esta ligado a uma fase do pipeline.
+ */
+export function triggerStage(triggerKey: string): LeadStatus | null {
+  if (triggerKey.startsWith('won-')) return 'won'
+  const [, target] = triggerKey.split('->')
+  return target ? (target as LeadStatus) : null
+}
+
+/**
+ * Cancela (apaga) auto-tasks abertas de uma lead cujo trigger key corresponda a
+ * `matches`. So afecta tasks criadas pelo agente (created_by: 'agent') com a tag
+ * [auto:*] na description — tasks manuais do utilizador nunca sao tocadas.
+ *
+ * @returns lista de titulos das tasks canceladas
+ */
+export async function cancelObsoleteAutoTasks(
+  supabase: SupabaseClient,
+  params: { leadId: string; teamId: string; matches: (triggerKey: string) => boolean }
+): Promise<string[]> {
+  const { leadId, teamId, matches } = params
+
+  const { data: openTasks, error } = await supabase
+    .from('tasks')
+    .select('id, title, description')
+    .eq('lead_id', leadId)
+    .eq('team_id', teamId)
+    .eq('status', 'open')
+    .eq('created_by', 'agent')
+
+  if (error || !openTasks?.length) return []
+
+  const toDeleteIds: string[] = []
+  const toDeleteTitles: string[] = []
+  for (const task of openTasks as Array<{ id: string; title: string; description: string | null }>) {
+    const match = task.description?.match(/\[auto:([^\]]+)\]/)
+    if (!match) continue
+    if (matches(match[1])) {
+      toDeleteIds.push(task.id)
+      toDeleteTitles.push(task.title)
+    }
+  }
+
+  if (toDeleteIds.length === 0) return []
+
+  const { error: deleteError } = await supabase.from('tasks').delete().in('id', toDeleteIds)
+  if (deleteError) {
+    console.warn(`[auto-tasks] cancelamento falhou para ${leadId}: ${deleteError.message}`)
+    return []
+  }
+
+  console.log(`[auto-tasks] canceladas ${toDeleteTitles.length} tasks obsoletas para ${leadId}: ${toDeleteTitles.join(', ')}`)
+  return toDeleteTitles
+}
+
+/**
  * Aplica auto-tasks para a transicao. Pode criar 0, 1 ou multiplas tasks.
  * Idempotente: se ja existe task aberta com o mesmo trigger tag, salta.
+ *
+ * Depois de criar as tasks da transicao actual, cancela auto-tasks obsoletas:
+ * tasks ligadas a fases anteriores a newStatus (ja ultrapassadas), e a task de
+ * recontacto [auto:stale] se existir (mudar de estado e evidencia de engagement).
  *
  * @returns lista de titulos das tasks criadas
  */
@@ -256,8 +318,7 @@ export async function applyAutoTaskOnStatusChange(
 
   const transition = `${oldStatus}->${newStatus}` as TransitionKey
   const rules = pickRules(leadType)
-  const ruleList = rules[transition]
-  if (!ruleList || ruleList.length === 0) return []
+  const ruleList = rules[transition] ?? []
 
   // Para tasks pos-won, o due_at conta a partir de closed_at (data de fecho real),
   // nao de hoje — porque um closed_at antigo a ser actualizado deve ainda criar
@@ -302,6 +363,23 @@ export async function applyAutoTaskOnStatusChange(
     created.push(rule.title)
     console.log(`[auto-tasks] criada "${rule.title}" para ${leadId} (${rule.triggerKey}, ${leadType})`)
   }
+
+  // Cancela auto-tasks ligadas a fases ja ultrapassadas (indice < newStatus na
+  // pipeline — isto tambem apanha "lost", que fica no fim da ordem, cancelando
+  // tudo incluindo tasks won-*), e a task de recontacto [auto:stale] se existir
+  // (mudar de estado e evidencia de que a lead voltou a ter engagement).
+  const newStatusIndex = LEAD_PIPELINE_ORDER.indexOf(newStatus)
+  await cancelObsoleteAutoTasks(supabase, {
+    leadId,
+    teamId,
+    matches: (key) => {
+      if (key === 'stale') return true
+      const stage = triggerStage(key)
+      if (!stage) return false
+      const stageIndex = LEAD_PIPELINE_ORDER.indexOf(stage)
+      return stageIndex !== -1 && stageIndex < newStatusIndex
+    },
+  })
 
   return created
 }

@@ -6,6 +6,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
+import { cancelObsoleteAutoTasks } from '@/lib/auto-tasks'
 
 const schema = z.object({
   lead_id: z.string().uuid(),
@@ -66,6 +67,13 @@ export async function POST(request: Request) {
     })
     .eq('id', lead.id)
     .eq('team_id', member.team_id)
+
+  // Contacto retomado: fecha a task de recontacto [auto:stale], se existir.
+  await cancelObsoleteAutoTasks(svc, {
+    leadId: lead.id,
+    teamId: member.team_id,
+    matches: (key) => key === 'stale',
+  })
 
   return NextResponse.json({
     ok: true,
