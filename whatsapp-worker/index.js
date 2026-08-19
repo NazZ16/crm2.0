@@ -12,6 +12,8 @@
 //              persistente aqui, senão perdes a sessão e tens de re-scanear o QR a cada deploy)
 //   PORT     — porta do servidor HTTP (/qr e /health), default 3000
 
+const fs = require('fs')
+const path = require('path')
 const express = require('express')
 const qrcode = require('qrcode')
 const pino = require('pino')
@@ -27,6 +29,8 @@ const CRM_INGEST_URL = process.env.CRM_INGEST_URL
 const CRM_INGEST_SECRET = process.env.CRM_INGEST_SECRET
 const PORT = process.env.PORT || 3000
 const RECONNECT_DELAY_MS = 5000
+// Guardado dentro do volume persistente (mesmo pai de AUTH_DIR), para sobreviver a reinícios.
+const LID_MAP_PATH = path.join(AUTH_DIR, '..', 'lid-map.json')
 
 if (!CRM_INGEST_URL || !CRM_INGEST_SECRET) {
   console.error('[worker] CRM_INGEST_URL e CRM_INGEST_SECRET são obrigatórios')
@@ -38,21 +42,61 @@ const logger = pino({ level: 'warn' })
 let latestQr = null
 let connectionState = 'connecting' // connecting | qr_pending | connected | disconnected
 
+// Cache LID→telefone: quando uma mensagem traz `remoteJidAlt`/`senderPn`, guardamos a
+// correspondência para reutilizar em mensagens futuras do mesmo LID que não os tragam — ex.
+// mensagens que TU envias (fromMe), que na prática não vêm com esses campos preenchidos,
+// mas o LID do chat é sempre o mesmo, e já o vimos resolvido numa mensagem recebida antes.
+let lidToPhoneJid = new Map()
+
+function loadLidMap() {
+  try {
+    const raw = fs.readFileSync(LID_MAP_PATH, 'utf8')
+    lidToPhoneJid = new Map(Object.entries(JSON.parse(raw)))
+    console.log(`[worker] carregado mapa LID→telefone (${lidToPhoneJid.size} entradas)`)
+  } catch {
+    lidToPhoneJid = new Map()
+  }
+}
+
+function saveLidMap() {
+  try {
+    fs.mkdirSync(path.dirname(LID_MAP_PATH), { recursive: true })
+    fs.writeFileSync(LID_MAP_PATH, JSON.stringify(Object.fromEntries(lidToPhoneJid)))
+  } catch (err) {
+    console.error('[worker] falhou a guardar mapa LID→telefone:', err.message)
+  }
+}
+
 // A Meta tem vindo a substituir o JID do telefone por um "LID" (Local ID, ex.
 // 151088510574694@lid) em cada vez mais conversas, por privacidade — não é um número de
 // telefone. Nesses casos o Baileys pode expor o JID do telefone real em `remoteJidAlt` ou em
 // `senderPn` (confirmado em produção — inclui o indicativo do país, útil para contactos
-// estrangeiros). Se nenhum vier, não há forma fiável de descobrir o número — ignora-se a
-// mensagem em vez de guardar lixo como se fosse um telefone.
+// estrangeiros). Nenhum dos dois costuma vir em mensagens `fromMe`, por isso guarda-se a
+// correspondência assim que é vista (normalmente numa mensagem recebida) e reutiliza-se depois.
 function resolvePhoneJid(msg) {
   const remoteJid = msg.key.remoteJid
-  if (remoteJid && remoteJid.endsWith('@s.whatsapp.net')) return remoteJid
-  if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
-    return msg.key.remoteJidAlt
+  let resolved = null
+
+  if (remoteJid && remoteJid.endsWith('@s.whatsapp.net')) {
+    resolved = remoteJid
+  } else if (msg.key.remoteJidAlt && msg.key.remoteJidAlt.endsWith('@s.whatsapp.net')) {
+    resolved = msg.key.remoteJidAlt
+  } else if (msg.key.senderPn && msg.key.senderPn.endsWith('@s.whatsapp.net')) {
+    resolved = msg.key.senderPn
   }
-  if (msg.key.senderPn && msg.key.senderPn.endsWith('@s.whatsapp.net')) {
-    return msg.key.senderPn
+
+  if (resolved) {
+    if (remoteJid && remoteJid.endsWith('@lid') && lidToPhoneJid.get(remoteJid) !== resolved) {
+      lidToPhoneJid.set(remoteJid, resolved)
+      saveLidMap()
+    }
+    return resolved
   }
+
+  if (remoteJid && lidToPhoneJid.has(remoteJid)) {
+    return lidToPhoneJid.get(remoteJid)
+  }
+
   return null
 }
 
@@ -211,6 +255,8 @@ app.get('/qr', async (req, res) => {
 })
 
 app.listen(PORT, () => console.log(`[worker] servidor HTTP na porta ${PORT}`))
+
+loadLidMap()
 
 startSock().catch((err) => {
   console.error('[worker] falhou a arrancar:', err)
