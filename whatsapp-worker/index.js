@@ -66,12 +66,12 @@ function extractText(message) {
   return type ? `[mensagem: ${type}]` : null
 }
 
-async function forwardMessage({ phone, text, profileName, occurredAt }) {
+async function forwardMessage({ phone, text, profileName, occurredAt, fromMe }) {
   try {
     const res = await fetch(CRM_INGEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-ingest-secret': CRM_INGEST_SECRET },
-      body: JSON.stringify({ phone, text, profileName, occurredAt }),
+      body: JSON.stringify({ phone, text, profileName, occurredAt, fromMe }),
     })
     if (!res.ok) {
       const body = await res.text()
@@ -139,7 +139,7 @@ async function startSock() {
 
     for (const msg of messages) {
       try {
-        if (msg.key.fromMe) continue
+        const fromMe = Boolean(msg.key.fromMe)
         const remoteJid = msg.key.remoteJid
         if (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid === 'status@broadcast') continue
 
@@ -165,10 +165,13 @@ async function startSock() {
         await forwardMessage({
           phone,
           text,
-          profileName: msg.pushName || undefined,
+          // pushName é o nome de quem enviou — se fomos nós, isso é o NOSSO nome, não o da
+          // lead, por isso só se passa quando a mensagem é mesmo recebida.
+          profileName: fromMe ? undefined : (msg.pushName || undefined),
           occurredAt,
+          fromMe,
         })
-        console.log('[worker] mensagem encaminhada', { phone })
+        console.log('[worker] mensagem encaminhada', { phone, fromMe })
       } catch (err) {
         console.error('[worker] falhou a processar mensagem recebida:', err.message)
       }
