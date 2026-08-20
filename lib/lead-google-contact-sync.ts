@@ -5,7 +5,13 @@
 // escreve de volta.
 
 import { createServiceClient } from '@/lib/supabase/server'
-import { createContact, updateContact, deleteContact, findOrCreateCrmContactGroup } from '@/lib/google-contacts'
+import {
+  createContact,
+  updateContact,
+  deleteContact,
+  findContactByPhone,
+  findOrCreateCrmContactGroup,
+} from '@/lib/google-contacts'
 import { LEAD_STATUS_LABELS, LEAD_TYPE_LABELS } from '@/lib/types'
 import type { Lead } from '@/lib/types'
 
@@ -49,8 +55,13 @@ export async function syncLeadToGoogleContact(teamId: string, lead: SyncableLead
     biography: buildBiography(lead),
   }
 
-  const resourceName = lead.google_contact_resource_name
-    ? await updateContact(teamId, lead.google_contact_resource_name, input)
+  // Se ainda nao sabemos o contacto desta lead, procura por telefone antes
+  // de criar — evita duplicar um contacto que ja existia manualmente.
+  const existingResourceName =
+    lead.google_contact_resource_name ?? (await findContactByPhone(teamId, lead.phone).catch(() => null))
+
+  const resourceName = existingResourceName
+    ? await updateContact(teamId, existingResourceName, input)
     : await createContact(teamId, input, groupResourceName ?? undefined)
 
   if (!resourceName) return // sem conexao Google ativa — nada a persistir

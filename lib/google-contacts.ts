@@ -30,6 +30,12 @@ function phoneToE164PT(phone: string): string {
   return `+351${phone}`
 }
 
+// Compara so os ultimos 9 digitos (numero PT sem indicativo), para casar
+// contactos guardados com/sem "+351", espacos ou tracos.
+function phoneMatchKey(phone: string): string {
+  return phone.replace(/\D/g, '').slice(-9)
+}
+
 function personBody(input: GoogleContactInput, groupResourceName?: string) {
   return {
     names: [{ givenName: input.fullName }],
@@ -131,6 +137,51 @@ export async function deleteContact(teamId: string, resourceName: string): Promi
     const errText = await res.text()
     throw new Error(`Google deleteContact falhou (${res.status}): ${errText}`)
   }
+}
+
+/**
+ * Procura, em TODOS os contactos Google do utilizador (nao so os criados
+ * pelo CRM), um que ja tenha este numero de telefone — para evitar criar um
+ * contacto duplicado quando a lead ja estava guardada manualmente. Devolve
+ * o resourceName do primeiro match, ou null se nao ha ligacao ativa ou nao
+ * encontrou nada.
+ */
+export async function findContactByPhone(teamId: string, phone: string): Promise<string | null> {
+  const tok = await getValidAccessToken(teamId)
+  if (!tok) return null
+
+  const targetKey = phoneMatchKey(phoneToE164PT(phone))
+  let pageToken: string | undefined
+  let pagesFetched = 0
+
+  do {
+    const params = new URLSearchParams({
+      personFields: 'phoneNumbers',
+      pageSize: '1000',
+      ...(pageToken ? { pageToken } : {}),
+    })
+    const res = await fetch(`${PEOPLE_API_BASE}/people/me/connections?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${tok.accessToken}` },
+    })
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Google connections.list falhou (${res.status}): ${errText}`)
+    }
+    const json = (await res.json()) as {
+      connections?: { resourceName: string; phoneNumbers?: { value?: string }[] }[]
+      nextPageToken?: string
+    }
+
+    for (const person of json.connections ?? []) {
+      const match = person.phoneNumbers?.some((p) => p.value && phoneMatchKey(p.value) === targetKey)
+      if (match) return person.resourceName
+    }
+
+    pageToken = json.nextPageToken
+    pagesFetched++
+  } while (pageToken && pagesFetched < 20) // limite de seguranca (~20k contactos)
+
+  return null
 }
 
 /**
