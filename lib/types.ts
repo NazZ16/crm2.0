@@ -64,6 +64,8 @@ export interface Lead {
   // Sync com Google Contacts (migration 033)
   google_contact_resource_name: string | null
   google_contact_synced_at: string | null
+  // true se o contacto ja existia antes do sync (migration 035) — nome/telefone/email nunca sao alterados
+  google_contact_preexisting: boolean
   created_at: string
   updated_at: string
 }

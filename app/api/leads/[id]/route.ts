@@ -2,7 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { applyAutoTaskOnStatusChange } from '@/lib/auto-tasks'
-import { syncLeadToGoogleContact, deleteLeadGoogleContact } from '@/lib/lead-google-contact-sync'
+import { syncLeadToGoogleContact, unlinkLeadGoogleContact } from '@/lib/lead-google-contact-sync'
 import type { LeadStatus, LeadType } from '@/lib/types'
 
 const updateLeadSchema = z.object({
@@ -42,7 +42,7 @@ async function getLeadAndVerify(leadId: string, userId: string) {
   // Captura status e lead_type actuais para detectar transicao no PATCH
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, team_id, status, lead_type, assigned_to, google_contact_resource_name')
+    .select('id, team_id, status, lead_type, assigned_to, google_contact_resource_name, google_contact_preexisting')
     .eq('id', leadId)
     .eq('team_id', member.team_id)
     .single()
@@ -186,9 +186,13 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   if (lead.google_contact_resource_name) {
     try {
-      await deleteLeadGoogleContact(member.team_id, lead.google_contact_resource_name as string)
+      await unlinkLeadGoogleContact(
+        member.team_id,
+        lead.google_contact_resource_name as string,
+        Boolean(lead.google_contact_preexisting)
+      )
     } catch (err) {
-      console.warn('[lead DELETE] google contact delete failed:', err)
+      console.warn('[lead DELETE] google contact unlink failed:', err)
     }
   }
 
