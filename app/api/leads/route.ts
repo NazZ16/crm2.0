@@ -10,6 +10,7 @@ const createLeadSchema = z.object({
   source: z.string().max(100).optional(),
   notes: z.string().max(2000).optional(),
   campaign_id: z.string().uuid().optional(),
+  lead_type: z.enum(['buyer', 'seller', 'both', 'unknown']).optional(),
 })
 
 export async function GET(request: Request) {
