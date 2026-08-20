@@ -10,6 +10,7 @@ import { TaskList } from './TaskList'
 import { CopyButton } from './CopyButton'
 import { PromoteToInvestorButton } from './PromoteToInvestorButton'
 import { EditLeadDetailsButton } from './EditLeadDetailsButton'
+import { ExcludeContactButton } from './ExcludeContactButton'
 import { EditLeadProfileButton } from './EditLeadProfileButton'
 import { DraftSendButtons } from './DraftSendButtons'
 import { QuickActionFab } from './QuickActionFab'
@@ -110,6 +111,15 @@ export default async function LeadDetailPage({ params }: Props) {
     .eq('team_id', member.team_id)
     .maybeSingle()
 
+  const { data: excludedContact } = lead.phone
+    ? await supabase
+        .from('excluded_contacts')
+        .select('id')
+        .eq('team_id', member.team_id)
+        .eq('phone', lead.phone)
+        .maybeSingle()
+    : { data: null }
+
   const { data: leadProfile } = await supabase
     .from('lead_profiles')
     .select('home_preferences, financial_profile, seller_profile')
@@ -199,6 +209,13 @@ export default async function LeadDetailPage({ params }: Props) {
               initialDealValue={dealValue}
               initialCommissionValue={commissionValue}
               initialClosedAt={closedAt}
+            />
+          )}
+          {member.role !== 'viewer' && (
+            <ExcludeContactButton
+              leadId={lead.id}
+              leadPhone={lead.phone ?? null}
+              initialExcluded={!!excludedContact}
             />
           )}
           {/* Botoes secundarios — escondidos em mobile (uso de campo) para nao poluir.
