@@ -32,7 +32,13 @@ export function GoogleCalendarSection({
       const res = await fetch('/api/leads/sync-google-contacts', { method: 'POST' })
       const json = await res.json()
       if (res.ok) {
-        toast.success(`${json.synced} sincronizadas${json.failed ? `, ${json.failed} falharam` : ''}`)
+        if (json.failed > 0) {
+          toast.error(`${json.synced} sincronizadas, ${json.failed} falharam: ${json.firstError ?? 'erro desconhecido'}`, {
+            duration: 15000,
+          })
+        } else {
+          toast.success(`${json.synced} sincronizadas`)
+        }
         router.refresh()
       } else {
         toast.error(json.error ?? 'Erro ao sincronizar')
