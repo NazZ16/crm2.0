@@ -25,6 +25,7 @@ import {
   Snowflake,
   PenSquare,
   Contact,
+  MessageCircleReply,
 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/leads', label: 'Leads', icon: Users },
   { href: '/dashboard/pipeline', label: 'Pipeline', icon: Kanban },
   { href: '/dashboard/cold-leads', label: 'Leads frias', icon: Snowflake },
+  { href: '/dashboard/respondentes', label: 'Respondentes', icon: MessageCircleReply },
   { href: '/dashboard/partners', label: 'Parceiros', icon: Contact },
   { href: '/dashboard/investors', label: 'Investidores', icon: Building2 },
   { href: '/dashboard/opportunities', label: 'Oportunidades', icon: Home },

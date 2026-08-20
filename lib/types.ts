@@ -228,6 +228,8 @@ export interface Interaction {
   listing_id: string | null
   outcome: InteractionOutcome | null
   rejection_reason: RejectionReason | null
+  // Sentido da mensagem (migration 033) — só preenchido para type='whatsapp'
+  direction: 'inbound' | 'outbound' | null
 }
 
 export const INTERACTION_OUTCOME_LABELS: Record<InteractionOutcome, string> = {

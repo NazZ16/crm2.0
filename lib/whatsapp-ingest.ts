@@ -78,6 +78,7 @@ export async function resolveLeadAndLogMessage(
     raw_text: displayText,
     summary: preview,
     occurred_at: occurredAt,
+    direction: fromMe ? 'outbound' : 'inbound',
   })
 
   // Notificação só faz sentido para mensagens recebidas — não avisar de mensagens que
