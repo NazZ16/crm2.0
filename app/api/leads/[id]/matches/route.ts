@@ -24,6 +24,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const { data: listings, error: listingsError } = await supabase
     .from('listings').select('*').eq('team_id', member.team_id).eq('status', 'active')
+    .not('is_published', 'is', false)
   if (listingsError) return NextResponse.json({ error: listingsError.message }, { status: 500 })
 
   const rejectionHistoryByLead = await fetchRejectionHistoryByLead(supabase, [id])
