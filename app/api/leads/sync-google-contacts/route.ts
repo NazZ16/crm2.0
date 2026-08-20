@@ -34,15 +34,18 @@ export async function POST() {
 
   let synced = 0
   let failed = 0
+  let firstError: string | null = null
   for (const lead of (leads ?? []) as Pick<Lead, 'id' | 'full_name' | 'phone' | 'email' | 'status' | 'lead_type' | 'tags' | 'notes'>[]) {
     try {
       await syncLeadToGoogleContact(member.team_id, lead)
       synced++
     } catch (err) {
       failed++
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!firstError) firstError = msg
       console.warn('[sync-google-contacts] falhou para lead', lead.id, err)
     }
   }
 
-  return NextResponse.json({ total: leads?.length ?? 0, synced, failed })
+  return NextResponse.json({ total: leads?.length ?? 0, synced, failed, firstError })
 }
