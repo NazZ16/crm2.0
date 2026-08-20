@@ -106,6 +106,18 @@ export default async function SettingsPage({
     googleScope = conn?.scope ?? null
   }
   const googleHasWriteScope = googleScope?.includes('calendar.events') ?? false
+  const googleHasContactsScope = googleScope?.includes('contacts') ?? false
+
+  let pendingContactsSyncCount = 0
+  if (teamId) {
+    const { count } = await supabase
+      .from('leads')
+      .select('id', { count: 'exact', head: true })
+      .eq('team_id', teamId)
+      .not('phone', 'is', null)
+      .is('google_contact_resource_name', null)
+    pendingContactsSyncCount = count ?? 0
+  }
 
   const googleFlash = params.google_connected
     ? { type: 'success' as const, text: 'Google Calendar ligado com sucesso!' }
@@ -138,6 +150,8 @@ export default async function SettingsPage({
       <GoogleCalendarSection
         connectedEmail={googleEmail}
         hasWriteScope={googleHasWriteScope}
+        hasContactsScope={googleHasContactsScope}
+        pendingContactsSyncCount={pendingContactsSyncCount}
         flashMessage={googleFlash}
       />
 

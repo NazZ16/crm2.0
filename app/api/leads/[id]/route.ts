@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { applyAutoTaskOnStatusChange } from '@/lib/auto-tasks'
+import { syncLeadToGoogleContact, deleteLeadGoogleContact } from '@/lib/lead-google-contact-sync'
 import type { LeadStatus, LeadType } from '@/lib/types'
 
 const updateLeadSchema = z.object({
@@ -41,7 +42,7 @@ async function getLeadAndVerify(leadId: string, userId: string) {
   // Captura status e lead_type actuais para detectar transicao no PATCH
   const { data: lead } = await supabase
     .from('leads')
-    .select('id, team_id, status, lead_type, assigned_to')
+    .select('id, team_id, status, lead_type, assigned_to, google_contact_resource_name')
     .eq('id', leadId)
     .eq('team_id', member.team_id)
     .single()
@@ -152,6 +153,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
   }
 
+  // Sync com Google Contacts (best-effort, nao bloqueia a resposta).
+  try {
+    await syncLeadToGoogleContact(member.team_id, data)
+  } catch (err) {
+    console.warn('[lead PATCH] google contact sync failed:', err)
+  }
+
   return NextResponse.json({ ...data, _auto_tasks: autoTasksCreated })
 }
 
@@ -174,6 +182,14 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
 
   if (uploads?.length) {
     await svc.storage.from('call-audio').remove(uploads.map((u) => u.storage_path))
+  }
+
+  if (lead.google_contact_resource_name) {
+    try {
+      await deleteLeadGoogleContact(member.team_id, lead.google_contact_resource_name as string)
+    } catch (err) {
+      console.warn('[lead DELETE] google contact delete failed:', err)
+    }
   }
 
   const { error } = await svc.from('leads').delete().eq('id', id)

@@ -61,6 +61,9 @@ export interface Lead {
   // Sub-estados do fecho (migration 020)
   cpcv_date: string | null          // data de assinatura do CPCV
   escritura_date: string | null     // data da escritura
+  // Sync com Google Contacts (migration 033)
+  google_contact_resource_name: string | null
+  google_contact_synced_at: string | null
   created_at: string
   updated_at: string
 }

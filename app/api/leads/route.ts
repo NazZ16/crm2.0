@@ -2,6 +2,7 @@ import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { normalizePhone } from '@/lib/phone'
+import { syncLeadToGoogleContact } from '@/lib/lead-google-contact-sync'
 
 const createLeadSchema = z.object({
   full_name: z.string().min(1).max(200),
@@ -181,6 +182,15 @@ export async function POST(request: Request) {
 
   // Create empty lead profile
   await db.from('lead_profiles').insert({ lead_id: data.id })
+
+  // Sync com Google Contacts (best-effort, nao bloqueia a resposta).
+  if (data.phone) {
+    try {
+      await syncLeadToGoogleContact(data.team_id, data)
+    } catch (err) {
+      console.warn('[leads POST] google contact sync failed:', err)
+    }
+  }
 
   return NextResponse.json(data, { status: 201 })
 }
