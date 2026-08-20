@@ -10,7 +10,9 @@ import {
   updateContact,
   deleteContact,
   findContactByPhone,
+  lookupContactByPhone,
   findOrCreateCrmContactGroup,
+  type ContactPhoneIndex,
 } from '@/lib/google-contacts'
 import { LEAD_STATUS_LABELS, LEAD_TYPE_LABELS } from '@/lib/types'
 import type { Lead } from '@/lib/types'
@@ -33,7 +35,11 @@ function buildBiography(lead: SyncableLead): string {
  * exista telefone. Best-effort: erros reais da API propagam para o caller
  * apanhar em try/catch — nunca deve bloquear o pedido principal do CRM.
  */
-export async function syncLeadToGoogleContact(teamId: string, lead: SyncableLead): Promise<void> {
+export async function syncLeadToGoogleContact(
+  teamId: string,
+  lead: SyncableLead,
+  phoneIndex?: ContactPhoneIndex | null
+): Promise<void> {
   const svc = createServiceClient()
 
   if (!lead.phone) {
@@ -56,9 +62,15 @@ export async function syncLeadToGoogleContact(teamId: string, lead: SyncableLead
   }
 
   // Se ainda nao sabemos o contacto desta lead, procura por telefone antes
-  // de criar — evita duplicar um contacto que ja existia manualmente.
+  // de criar — evita duplicar um contacto que ja existia manualmente. Se foi
+  // passado um indice pre-construido (sync em lote), usa-o em vez de listar
+  // os contactos outra vez — evitar isso é o que impede esgotar a quota da
+  // People API quando ha muitas leads a sincronizar de uma vez.
   const existingResourceName =
-    lead.google_contact_resource_name ?? (await findContactByPhone(teamId, lead.phone).catch(() => null))
+    lead.google_contact_resource_name ??
+    (phoneIndex
+      ? lookupContactByPhone(phoneIndex, lead.phone)
+      : await findContactByPhone(teamId, lead.phone).catch(() => null))
 
   const resourceName = existingResourceName
     ? await updateContact(teamId, existingResourceName, input)

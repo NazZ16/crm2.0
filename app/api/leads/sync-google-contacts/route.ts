@@ -5,6 +5,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { syncLeadToGoogleContact } from '@/lib/lead-google-contact-sync'
+import { buildContactPhoneIndex } from '@/lib/google-contacts'
 import type { Lead } from '@/lib/types'
 
 export async function POST() {
@@ -32,12 +33,16 @@ export async function POST() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Constroi o indice telefone -> contacto Google UMA vez para o lote
+  // inteiro (nao por lead) — evita esgotar a quota de leituras da People API.
+  const phoneIndex = await buildContactPhoneIndex(member.team_id).catch(() => null)
+
   let synced = 0
   let failed = 0
   let firstError: string | null = null
   for (const lead of (leads ?? []) as Pick<Lead, 'id' | 'full_name' | 'phone' | 'email' | 'status' | 'lead_type' | 'tags' | 'notes'>[]) {
     try {
-      await syncLeadToGoogleContact(member.team_id, lead)
+      await syncLeadToGoogleContact(member.team_id, lead, phoneIndex)
       synced++
     } catch (err) {
       failed++

@@ -16,6 +16,11 @@ import { getValidAccessToken } from '@/lib/google-calendar'
 
 const PEOPLE_API_BASE = 'https://people.googleapis.com/v1'
 const PERSON_FIELDS = 'names,phoneNumbers,emailAddresses,biographies,memberships'
+// Campos escritos num updateContact — sem 'memberships': se o incluirmos sem
+// enviar nenhum grupo no corpo, a People API interpreta como "remover de
+// todos os grupos", o que falha (um contacto tem de ficar em >=1 grupo).
+// Ao ficar de fora, o update nao mexe na membership existente do contacto.
+const PERSON_UPDATE_FIELDS = 'names,phoneNumbers,emailAddresses,biographies'
 
 export const CRM_CONTACT_GROUP_NAME = 'CRM Leads'
 
@@ -103,7 +108,7 @@ export async function updateContact(
   const current = (await getRes.json()) as { etag: string }
 
   const res = await fetch(
-    `${PEOPLE_API_BASE}/${resourceName}:updateContact?updatePersonFields=${PERSON_FIELDS}&personFields=${PERSON_FIELDS}`,
+    `${PEOPLE_API_BASE}/${resourceName}:updateContact?updatePersonFields=${PERSON_UPDATE_FIELDS}&personFields=${PERSON_FIELDS}`,
     {
       method: 'PATCH',
       headers: {
@@ -139,18 +144,23 @@ export async function deleteContact(teamId: string, resourceName: string): Promi
   }
 }
 
+export type ContactPhoneIndex = Map<string, string>
+
 /**
- * Procura, em TODOS os contactos Google do utilizador (nao so os criados
- * pelo CRM), um que ja tenha este numero de telefone — para evitar criar um
- * contacto duplicado quando a lead ja estava guardada manualmente. Devolve
- * o resourceName do primeiro match, ou null se nao ha ligacao ativa ou nao
- * encontrou nada.
+ * Lista TODOS os contactos Google do utilizador (nao so os criados pelo CRM)
+ * uma unica vez e devolve um indice telefone -> resourceName, para evitar
+ * criar contactos duplicados quando a lead ja estava guardada manualmente.
+ *
+ * Construir isto por lead (em vez de uma vez por batch) esgota rapidamente a
+ * quota de "critical read requests" da People API (90/min) quando ha dezenas
+ * de leads para sincronizar de uma vez — por isso o backfill usa esta funcao
+ * uma unica vez e reutiliza o indice para todas as leads do lote.
  */
-export async function findContactByPhone(teamId: string, phone: string): Promise<string | null> {
+export async function buildContactPhoneIndex(teamId: string): Promise<ContactPhoneIndex | null> {
   const tok = await getValidAccessToken(teamId)
   if (!tok) return null
 
-  const targetKey = phoneMatchKey(phoneToE164PT(phone))
+  const index: ContactPhoneIndex = new Map()
   let pageToken: string | undefined
   let pagesFetched = 0
 
@@ -173,15 +183,34 @@ export async function findContactByPhone(teamId: string, phone: string): Promise
     }
 
     for (const person of json.connections ?? []) {
-      const match = person.phoneNumbers?.some((p) => p.value && phoneMatchKey(p.value) === targetKey)
-      if (match) return person.resourceName
+      for (const p of person.phoneNumbers ?? []) {
+        if (p.value && !index.has(phoneMatchKey(p.value))) {
+          index.set(phoneMatchKey(p.value), person.resourceName)
+        }
+      }
     }
 
     pageToken = json.nextPageToken
     pagesFetched++
   } while (pageToken && pagesFetched < 20) // limite de seguranca (~20k contactos)
 
-  return null
+  return index
+}
+
+/** Procura um telefone num indice ja construido por buildContactPhoneIndex. */
+export function lookupContactByPhone(index: ContactPhoneIndex, phone: string): string | null {
+  return index.get(phoneMatchKey(phoneToE164PT(phone))) ?? null
+}
+
+/**
+ * Variante para um unico lookup pontual (ex: sync de uma lead isolada a
+ * partir das rotas de create/update). Constroi o indice so para este pedido
+ * — nao usar em loop, ver buildContactPhoneIndex acima para lotes.
+ */
+export async function findContactByPhone(teamId: string, phone: string): Promise<string | null> {
+  const index = await buildContactPhoneIndex(teamId)
+  if (!index) return null
+  return lookupContactByPhone(index, phone)
 }
 
 /**
