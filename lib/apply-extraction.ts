@@ -173,9 +173,18 @@ export async function applyExtraction(
     }
   }
 
+  const leadUpdate: Record<string, unknown> = { score: ex.score, urgency: ex.urgency, last_contact_at: now }
+
+  // Atualiza lead_type apenas se a lead estava 'unknown' (nao sobrepoe classificacao
+  // manual) — mesma regra do pipeline de chamadas (lib/call-pipeline.ts).
+  const currentLeadType = (leadRow?.lead_type as LeadType | null | undefined) ?? 'unknown'
+  if (ex.lead_type && currentLeadType === 'unknown') {
+    leadUpdate.lead_type = ex.lead_type
+  }
+
   await supabase
     .from('leads')
-    .update({ score: ex.score, urgency: ex.urgency, last_contact_at: now })
+    .update(leadUpdate)
     .eq('id', leadId)
 
   // Tasks a partir de next_best_actions
