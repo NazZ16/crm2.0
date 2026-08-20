@@ -127,6 +127,123 @@ export async function updateContact(
   return json.resourceName
 }
 
+// Marcadores para identificar o bloco de info do CRM dentro da biografia de
+// um contacto que ja existia antes do sync — permite re-sincronizar (ex:
+// mudou o status da lead) substituindo so o nosso bloco, sem tocar em notas
+// que o utilizador ja tivesse escrito no contacto, nem duplicar a cada sync.
+const CRM_NOTE_START = '--- CRM (sincronizado automaticamente) ---'
+const CRM_NOTE_END = '--- fim CRM ---'
+
+function mergeBiographyWithCrmBlock(existing: string | null, crmBlock: string): string {
+  const block = `${CRM_NOTE_START}\n${crmBlock}\n${CRM_NOTE_END}`
+  if (!existing) return block
+
+  const startIdx = existing.indexOf(CRM_NOTE_START)
+  const endIdx = existing.indexOf(CRM_NOTE_END)
+  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+    const before = existing.slice(0, startIdx).trim()
+    const after = existing.slice(endIdx + CRM_NOTE_END.length).trim()
+    return [before, block, after].filter(Boolean).join('\n\n')
+  }
+  return `${existing.trim()}\n\n${block}`
+}
+
+function removeCrmBlockFromBiography(existing: string | null): string | null {
+  if (!existing) return null
+  const startIdx = existing.indexOf(CRM_NOTE_START)
+  const endIdx = existing.indexOf(CRM_NOTE_END)
+  if (startIdx === -1 || endIdx === -1 || endIdx <= startIdx) return existing
+  const before = existing.slice(0, startIdx).trim()
+  const after = existing.slice(endIdx + CRM_NOTE_END.length).trim()
+  const rest = [before, after].filter(Boolean).join('\n\n')
+  return rest || null
+}
+
+/**
+ * Acrescenta (ou atualiza) so o bloco de info do CRM na biografia de um
+ * contacto que ja existia antes do sync — nunca toca em nome, telefone ou
+ * email, precisamente porque o contacto nao foi criado pelo CRM.
+ */
+export async function appendContactNote(
+  teamId: string,
+  resourceName: string,
+  crmBlock: string
+): Promise<string | null> {
+  const tok = await getValidAccessToken(teamId)
+  if (!tok) return null
+
+  const getRes = await fetch(`${PEOPLE_API_BASE}/${resourceName}?personFields=metadata,biographies`, {
+    headers: { Authorization: `Bearer ${tok.accessToken}` },
+  })
+  if (getRes.status === 404 || getRes.status === 410) return null
+  if (!getRes.ok) {
+    const errText = await getRes.text()
+    throw new Error(`Google getContact falhou (${getRes.status}): ${errText}`)
+  }
+  const current = (await getRes.json()) as { etag: string; biographies?: { value?: string }[] }
+  const merged = mergeBiographyWithCrmBlock(current.biographies?.[0]?.value ?? null, crmBlock)
+
+  const res = await fetch(
+    `${PEOPLE_API_BASE}/${resourceName}:updateContact?updatePersonFields=biographies&personFields=${PERSON_FIELDS}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${tok.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ etag: current.etag, biographies: [{ value: merged, contentType: 'TEXT_PLAIN' }] }),
+    }
+  )
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Google appendContactNote falhou (${res.status}): ${errText}`)
+  }
+  const json = (await res.json()) as { resourceName: string }
+  return json.resourceName
+}
+
+/**
+ * Remove so o bloco de info do CRM da biografia (usado ao desligar uma lead
+ * de um contacto pre-existente — telefone apagado ou lead eliminada). Nunca
+ * apaga o contacto em si, porque nao foi o CRM que o criou.
+ */
+export async function removeContactNote(teamId: string, resourceName: string): Promise<void> {
+  const tok = await getValidAccessToken(teamId)
+  if (!tok) return
+
+  const getRes = await fetch(`${PEOPLE_API_BASE}/${resourceName}?personFields=metadata,biographies`, {
+    headers: { Authorization: `Bearer ${tok.accessToken}` },
+  })
+  if (getRes.status === 404 || getRes.status === 410) return
+  if (!getRes.ok) {
+    const errText = await getRes.text()
+    throw new Error(`Google getContact falhou (${getRes.status}): ${errText}`)
+  }
+  const current = (await getRes.json()) as { etag: string; biographies?: { value?: string }[] }
+  const existing = current.biographies?.[0]?.value ?? null
+  const stripped = removeCrmBlockFromBiography(existing)
+  if (stripped === existing) return // nao havia bloco nosso para remover
+
+  const res = await fetch(
+    `${PEOPLE_API_BASE}/${resourceName}:updateContact?updatePersonFields=biographies&personFields=${PERSON_FIELDS}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${tok.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        etag: current.etag,
+        biographies: stripped ? [{ value: stripped, contentType: 'TEXT_PLAIN' }] : [],
+      }),
+    }
+  )
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Google removeContactNote falhou (${res.status}): ${errText}`)
+  }
+}
+
 /**
  * Apaga um contacto. Tolerante a 404/410 (ja foi apagado manualmente).
  */

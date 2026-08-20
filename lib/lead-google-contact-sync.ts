@@ -9,6 +9,8 @@ import {
   createContact,
   updateContact,
   deleteContact,
+  appendContactNote,
+  removeContactNote,
   findContactByPhone,
   lookupContactByPhone,
   findOrCreateCrmContactGroup,
@@ -20,7 +22,7 @@ import type { Lead } from '@/lib/types'
 type SyncableLead = Pick<
   Lead,
   'id' | 'full_name' | 'phone' | 'email' | 'status' | 'lead_type' | 'tags' | 'notes'
-> & { google_contact_resource_name?: string | null }
+> & { google_contact_resource_name?: string | null; google_contact_preexisting?: boolean | null }
 
 function buildBiography(lead: SyncableLead): string {
   const lines = [`CRM: ${LEAD_STATUS_LABELS[lead.status]} · ${LEAD_TYPE_LABELS[lead.lead_type]}`]
@@ -42,48 +44,105 @@ export async function syncLeadToGoogleContact(
 ): Promise<void> {
   const svc = createServiceClient()
 
+  // Lead sem telefone (ou telefone apagado): desliga do contacto Google, se
+  // havia algum associado. Um contacto pre-existente (nao criado pelo CRM)
+  // nunca e apagado — so removemos o nosso bloco de info da biografia.
   if (!lead.phone) {
     if (lead.google_contact_resource_name) {
-      await deleteContact(teamId, lead.google_contact_resource_name)
+      if (lead.google_contact_preexisting) {
+        await removeContactNote(teamId, lead.google_contact_resource_name)
+      } else {
+        await deleteContact(teamId, lead.google_contact_resource_name)
+      }
       await svc
         .from('leads')
-        .update({ google_contact_resource_name: null, google_contact_synced_at: null })
+        .update({ google_contact_resource_name: null, google_contact_preexisting: false, google_contact_synced_at: null })
         .eq('id', lead.id)
     }
     return
   }
 
-  const groupResourceName = await findOrCreateCrmContactGroup(teamId).catch(() => undefined)
+  const crmBlock = buildBiography(lead)
+
+  // Contacto ja associado e marcado como pre-existente: so acrescenta a
+  // info do CRM na biografia, nunca mexe em nome/telefone/email — esse
+  // contacto ja existia manualmente antes do sync.
+  if (lead.google_contact_resource_name && lead.google_contact_preexisting) {
+    await appendContactNote(teamId, lead.google_contact_resource_name, crmBlock)
+    await svc
+      .from('leads')
+      .update({ google_contact_synced_at: new Date().toISOString() })
+      .eq('id', lead.id)
+    return
+  }
+
   const input = {
     fullName: lead.full_name,
     phone: lead.phone,
     email: lead.email,
-    biography: buildBiography(lead),
+    biography: crmBlock,
   }
 
-  // Se ainda nao sabemos o contacto desta lead, procura por telefone antes
-  // de criar — evita duplicar um contacto que ja existia manualmente. Se foi
-  // passado um indice pre-construido (sync em lote), usa-o em vez de listar
-  // os contactos outra vez — evitar isso é o que impede esgotar a quota da
+  // Contacto ja associado e criado pelo proprio CRM: mantem tudo atualizado.
+  if (lead.google_contact_resource_name) {
+    const resourceName = await updateContact(teamId, lead.google_contact_resource_name, input)
+    if (resourceName) {
+      await svc
+        .from('leads')
+        .update({ google_contact_synced_at: new Date().toISOString() })
+        .eq('id', lead.id)
+    }
+    return
+  }
+
+  // Ainda nao sincronizado: procura por telefone antes de criar, para nao
+  // duplicar um contacto que ja existia manualmente. Se foi passado um
+  // indice pre-construido (sync em lote), usa-o em vez de listar os
+  // contactos outra vez — evitar isso é o que impede esgotar a quota da
   // People API quando ha muitas leads a sincronizar de uma vez.
-  const existingResourceName =
-    lead.google_contact_resource_name ??
-    (phoneIndex
-      ? lookupContactByPhone(phoneIndex, lead.phone)
-      : await findContactByPhone(teamId, lead.phone).catch(() => null))
+  const matchedResourceName = phoneIndex
+    ? lookupContactByPhone(phoneIndex, lead.phone)
+    : await findContactByPhone(teamId, lead.phone).catch(() => null)
 
-  const resourceName = existingResourceName
-    ? await updateContact(teamId, existingResourceName, input)
-    : await createContact(teamId, input, groupResourceName ?? undefined)
+  if (matchedResourceName) {
+    await appendContactNote(teamId, matchedResourceName, crmBlock)
+    await svc
+      .from('leads')
+      .update({
+        google_contact_resource_name: matchedResourceName,
+        google_contact_preexisting: true,
+        google_contact_synced_at: new Date().toISOString(),
+      })
+      .eq('id', lead.id)
+    return
+  }
 
+  const groupResourceName = await findOrCreateCrmContactGroup(teamId).catch(() => undefined)
+  const resourceName = await createContact(teamId, input, groupResourceName ?? undefined)
   if (!resourceName) return // sem conexao Google ativa — nada a persistir
 
   await svc
     .from('leads')
-    .update({ google_contact_resource_name: resourceName, google_contact_synced_at: new Date().toISOString() })
+    .update({
+      google_contact_resource_name: resourceName,
+      google_contact_preexisting: false,
+      google_contact_synced_at: new Date().toISOString(),
+    })
     .eq('id', lead.id)
 }
 
-export async function deleteLeadGoogleContact(teamId: string, resourceName: string): Promise<void> {
-  await deleteContact(teamId, resourceName)
+/**
+ * Usado quando uma lead e eliminada do CRM. Um contacto pre-existente (nao
+ * criado pelo CRM) nunca e apagado — so removemos o nosso bloco de info.
+ */
+export async function unlinkLeadGoogleContact(
+  teamId: string,
+  resourceName: string,
+  preexisting: boolean
+): Promise<void> {
+  if (preexisting) {
+    await removeContactNote(teamId, resourceName)
+  } else {
+    await deleteContact(teamId, resourceName)
+  }
 }
