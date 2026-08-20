@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Trophy,
   CalendarDays,
+  MessageCircleReply,
 } from 'lucide-react'
 import { orientatorAgent } from '@/lib/agents/orientator-agent'
 import { listTodaysEvents, isCrmCreatedEvent, type GoogleCalendarEvent } from '@/lib/google-calendar'
@@ -449,7 +450,9 @@ export default async function DashboardPage() {
 
   const teamId = memberData.team_id
 
-  const [leadsRes, tasksRes, agentRunsRes] = await Promise.all([
+  const sevenDaysAgoIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+
+  const [leadsRes, tasksRes, agentRunsRes, respondentesRes] = await Promise.all([
     supabase
       .from('leads')
       .select('id, status, score, urgency, full_name, last_contact_at, created_at, assigned_to')
@@ -468,11 +471,19 @@ export default async function DashboardPage() {
       .eq('team_id', teamId)
       .order('created_at', { ascending: false })
       .limit(8),
+    supabase
+      .from('interactions')
+      .select('lead_id')
+      .eq('team_id', teamId)
+      .eq('type', 'whatsapp')
+      .eq('direction', 'inbound')
+      .gte('occurred_at', sevenDaysAgoIso),
   ])
 
   const leads = leadsRes.data ?? []
   const tasks = tasksRes.data ?? []
   const agentRuns = agentRunsRes.data ?? []
+  const respondentesCount = new Set((respondentesRes.data ?? []).map((r) => r.lead_id)).size
 
   const totalLeads = leads.length
   const newLeads = leads.filter((l) => l.status === 'new').length
@@ -526,7 +537,7 @@ export default async function DashboardPage() {
         <OrientatorCard teamId={teamId} />
       </Suspense>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
@@ -588,6 +599,25 @@ export default async function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Link href="/dashboard/respondentes">
+          <Card className="hover:shadow-md transition-shadow cursor-pointer">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500">Respondentes</p>
+                  <p className={`text-3xl font-bold mt-1 ${respondentesCount > 0 ? 'text-green-600' : ''}`}>
+                    {respondentesCount}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">responderam esta semana</p>
+                </div>
+                <div className={`p-3 rounded-full ${respondentesCount > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
+                  <MessageCircleReply size={22} className={respondentesCount > 0 ? 'text-green-600' : 'text-gray-400'} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
