@@ -10,12 +10,37 @@ import { toast } from 'sonner'
 interface Props {
   connectedEmail: string | null
   hasWriteScope?: boolean
+  hasContactsScope?: boolean
+  pendingContactsSyncCount?: number
   flashMessage: { type: 'success' | 'error'; text: string } | null
 }
 
-export function GoogleCalendarSection({ connectedEmail, hasWriteScope = false, flashMessage }: Props) {
+export function GoogleCalendarSection({
+  connectedEmail,
+  hasWriteScope = false,
+  hasContactsScope = false,
+  pendingContactsSyncCount = 0,
+  flashMessage,
+}: Props) {
   const router = useRouter()
   const [disconnecting, setDisconnecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+
+  async function handleSyncContacts() {
+    setSyncing(true)
+    try {
+      const res = await fetch('/api/leads/sync-google-contacts', { method: 'POST' })
+      const json = await res.json()
+      if (res.ok) {
+        toast.success(`${json.synced} sincronizadas${json.failed ? `, ${json.failed} falharam` : ''}`)
+        router.refresh()
+      } else {
+        toast.error(json.error ?? 'Erro ao sincronizar')
+      }
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   async function handleDisconnect() {
     if (!confirm('Tens a certeza que queres desligar a conta Google?')) return
@@ -38,7 +63,7 @@ export function GoogleCalendarSection({ connectedEmail, hasWriteScope = false, f
       <CardHeader>
         <CardTitle className="text-base flex items-center gap-2">
           <CalendarDays size={16} />
-          Google Calendar
+          Google Calendar & Contactos
           {connectedEmail ? (
             <span className="ml-auto text-xs font-normal text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex items-center gap-1">
               <Check size={12} /> Ligado
@@ -50,7 +75,8 @@ export function GoogleCalendarSection({ connectedEmail, hasWriteScope = false, f
           )}
         </CardTitle>
         <CardDescription>
-          Liga a tua conta Google para veres a agenda de hoje no dashboard, junto com as tarefas e leads urgentes.
+          Liga a tua conta Google para veres a agenda de hoje no dashboard e para sincronizar as tuas leads com os
+          Contactos Google — assim, quando uma lead te ligar, o telemóvel mostra logo o nome.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -77,16 +103,39 @@ export function GoogleCalendarSection({ connectedEmail, hasWriteScope = false, f
                 Desligar
               </Button>
             </div>
-            {!hasWriteScope && (
+            {(!hasWriteScope || !hasContactsScope) && (
               <div className="text-xs px-3 py-2 rounded-lg bg-amber-50 text-amber-800 border border-amber-100 flex items-start gap-2">
                 <span className="flex-1">
-                  <strong>Permissoes incompletas:</strong> a tua conta foi ligada com permissao apenas de leitura. Para poderes adicionar tasks ao calendar, re-liga (vai pedir-te uma nova autorizacao).
+                  <strong>Permissoes incompletas:</strong>{' '}
+                  {!hasWriteScope && !hasContactsScope
+                    ? 'falta permissao para adicionar tasks ao calendar e para sincronizar contactos.'
+                    : !hasWriteScope
+                    ? 'falta permissao para adicionar tasks ao calendar.'
+                    : 'falta permissao para sincronizar leads com os Contactos Google.'}{' '}
+                  Re-liga (vai pedir-te uma nova autorizacao).
                 </span>
                 <a href="/api/auth/google/start">
                   <Button size="sm" className="h-7 gap-1 bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap">
                     Re-ligar
                   </Button>
                 </a>
+              </div>
+            )}
+            {hasContactsScope && pendingContactsSyncCount > 0 && (
+              <div className="text-xs px-3 py-2 rounded-lg bg-blue-50 text-blue-800 border border-blue-100 flex items-center gap-2">
+                <span className="flex-1">
+                  {pendingContactsSyncCount} lead{pendingContactsSyncCount === 1 ? '' : 's'} com telefone ainda
+                  não sincronizada{pendingContactsSyncCount === 1 ? '' : 's'} como contacto Google.
+                </span>
+                <Button
+                  size="sm"
+                  onClick={handleSyncContacts}
+                  disabled={syncing}
+                  className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap"
+                >
+                  {syncing ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Sincronizar agora
+                </Button>
               </div>
             )}
           </>
@@ -99,7 +148,7 @@ export function GoogleCalendarSection({ connectedEmail, hasWriteScope = false, f
               </Button>
             </a>
             <p className="text-xs text-gray-500">
-              Vamos pedir permissao apenas para LER a tua agenda (read-only). Os tokens ficam guardados no servidor — nada e exposto no cliente.
+              Vamos pedir permissao para gerir a tua agenda e os teus Contactos Google. Os tokens ficam guardados no servidor — nada e exposto no cliente.
             </p>
           </div>
         )}

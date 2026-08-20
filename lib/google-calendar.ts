@@ -11,9 +11,12 @@
 
 import { createServiceClient } from '@/lib/supabase/server'
 
-// Scope completo: read + write events. O user precisa re-autorizar uma vez para mudar de readonly.
+// Scope completo: read + write events, mais contacts (usado tambem por
+// lib/google-contacts.ts para sync de leads -> Google Contacts). O user
+// precisa re-autorizar uma vez sempre que adicionamos um scope novo.
 export const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/contacts',
   'https://www.googleapis.com/auth/userinfo.email',
 ].join(' ')
 
