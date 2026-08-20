@@ -21,7 +21,20 @@ export interface IncomingWhatsAppMessage {
 export async function resolveLeadAndLogMessage(
   supabase: ReturnType<typeof createServiceClient>,
   { teamId, userId, phone, text, profileName, occurredAt, fromMe }: IncomingWhatsAppMessage
-): Promise<{ leadId: string }> {
+): Promise<{ leadId: string | null }> {
+  const { data: excluded } = await supabase
+    .from('excluded_contacts')
+    .select('id')
+    .eq('team_id', teamId)
+    .eq('phone', phone)
+    .maybeSingle()
+
+  // Contacto pessoal/colega marcado para não virar lead — não cria/atualiza
+  // lead, não regista interaction nem notificação.
+  if (excluded) {
+    return { leadId: null }
+  }
+
   const { data: existingLead } = await supabase
     .from('leads')
     .select('id, full_name')
