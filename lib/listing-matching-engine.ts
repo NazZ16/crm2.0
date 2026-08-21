@@ -211,7 +211,7 @@ export function scoreListingForLead(
   rejectionHistory?: RejectionHistory,
 ): ListingMatchResult {
   const { score, reasons } = computeMatch(lead, listing, rejectionHistory)
-  return { lead_id: lead.id, lead_name: lead.full_name, score, reasons }
+  return { lead_id: lead.id, lead_name: lead.full_name, lead_phone: lead.phone, score, reasons }
 }
 
 export function scoreLeadsForListing(

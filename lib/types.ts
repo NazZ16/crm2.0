@@ -863,6 +863,7 @@ export interface ListingExtractionResult {
 export interface ListingMatchResult {
   lead_id: string
   lead_name: string
+  lead_phone: string | null
   score: number
   reasons: Array<{ reason: string; positive: boolean }>
 }

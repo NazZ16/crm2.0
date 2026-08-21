@@ -60,18 +60,47 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  const service = createServiceClient()
 
-  const { data: member } = await supabase
-    .from('team_members')
-    .select('team_id, role')
-    .eq('user_id', user.id)
-    .single()
+  // Suporta autenticação por API key para a extensão de browser — permite
+  // registar a rejeição de um match (imóvel↔lead) diretamente da página do
+  // anúncio, no mesmo padrão de /api/listings e /api/leads.
+  const apiKey = request.headers.get('X-API-Key')
+  let teamId: string | null = null
+  let usedApiKey = false
 
-  if (!member || member.role === 'viewer') {
-    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (apiKey) {
+    const { hashApiKey } = await import('@/lib/api-keys')
+    const keyHash = hashApiKey(apiKey)
+    const { data: apiKeyRow } = await service
+      .from('team_api_keys')
+      .select('team_id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
+      .single()
+    if (apiKeyRow) {
+      teamId = apiKeyRow.team_id
+      usedApiKey = true
+    }
   }
+
+  if (!teamId) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+    const { data: member } = await supabase
+      .from('team_members')
+      .select('team_id, role')
+      .eq('user_id', user.id)
+      .single()
+
+    if (!member || member.role === 'viewer') {
+      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    }
+    teamId = member.team_id
+  }
+
+  const db = usedApiKey ? service : supabase
 
   const body = await request.json()
   const parsed = createInteractionSchema.safeParse(body)
@@ -80,18 +109,18 @@ export async function POST(request: Request) {
   }
 
   // Verify lead belongs to team and capture current status para decidir auto-bump
-  const { data: lead } = await supabase
+  const { data: lead } = await db
     .from('leads')
     .select('id, status')
     .eq('id', parsed.data.lead_id)
-    .eq('team_id', member.team_id)
+    .eq('team_id', teamId)
     .single()
 
   if (!lead) return NextResponse.json({ error: 'Lead não encontrada' }, { status: 404 })
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('interactions')
-    .insert({ ...parsed.data, team_id: member.team_id })
+    .insert({ ...parsed.data, team_id: teamId })
     .select()
     .single()
 
@@ -99,7 +128,6 @@ export async function POST(request: Request) {
 
   // Atualizar last_contact_at e auto-bump de status quando primeiro contacto real.
   // Usa service client para nao depender de RLS (auth ja foi verificada acima).
-  const svc = createServiceClient()
   const leadUpdate: Record<string, unknown> = { last_contact_at: data.occurred_at }
 
   const isFirstContact = lead.status === 'new' && CONTACT_TYPES.has(parsed.data.type)
@@ -107,20 +135,20 @@ export async function POST(request: Request) {
     leadUpdate.status = 'qualified'
   }
 
-  await svc
+  await service
     .from('leads')
     .update(leadUpdate)
     .eq('id', parsed.data.lead_id)
-    .eq('team_id', member.team_id)
+    .eq('team_id', teamId)
 
   if (isFirstContact) {
     console.log(`[interactions] auto-bump lead ${parsed.data.lead_id} new -> qualified (interaction ${parsed.data.type})`)
   }
 
   // Contacto retomado: fecha a task de recontacto [auto:stale], se existir.
-  await cancelObsoleteAutoTasks(svc, {
+  await cancelObsoleteAutoTasks(service, {
     leadId: parsed.data.lead_id,
-    teamId: member.team_id,
+    teamId: teamId as string,
     matches: (key) => key === 'stale',
   })
 
