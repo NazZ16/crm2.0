@@ -3,9 +3,16 @@
 // venda/arrendamento) e leads compradores, usando lead_profiles.home_preferences
 // e financial_profile. Espelha o estilo de lib/matching-engine.ts (investidores).
 
-import type { Listing, LeadWithProfile, ListingMatchResult, LeadListingMatchResult } from './types'
+import type { Listing, LeadWithProfile, ListingMatchResult, LeadListingMatchResult, LeadStatus } from './types'
 import { parseEmbedding, cosineSimilarity } from './embeddings'
 import type { RejectionHistory } from './listing-rejection-history'
+
+// Estados em que uma lead compradora ainda está mesmo à procura de imóvel.
+// Usado nos dois sentidos do matching (imóvel→leads e lead→imóveis) para que
+// uma lead em 'cpcv'/'escriturado'/'won'/'lost' nunca apareça como match num
+// lado sem aparecer no outro — a inconsistência já aconteceu por estarem
+// filtrados só num dos dois endpoints.
+export const ACTIVE_BUYER_LEAD_STATUSES: LeadStatus[] = ['new', 'qualified', 'meeting', 'active']
 
 // Penalizações por histórico de rejeição (ver lib/listing-rejection-history.ts).
 // Mais pequenas que os bónus positivos equivalentes — é um sinal de que a

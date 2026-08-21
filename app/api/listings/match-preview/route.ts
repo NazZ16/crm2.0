@@ -1,7 +1,7 @@
 import { createClient, createServiceClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { listingSchema } from '@/lib/schemas/listing'
-import { scoreLeadsForListing, DEFAULT_LISTING_MATCH_THRESHOLD } from '@/lib/listing-matching-engine'
+import { scoreLeadsForListing, DEFAULT_LISTING_MATCH_THRESHOLD, ACTIVE_BUYER_LEAD_STATUSES } from '@/lib/listing-matching-engine'
 import { fetchRejectionHistoryByLead } from '@/lib/listing-rejection-history'
 import type { LeadWithProfile, Listing } from '@/lib/types'
 
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     .select('*, lead_profiles(*)')
     .eq('team_id', teamId)
     .in('lead_type', ['buyer', 'both'])
-    .in('status', ['new', 'qualified', 'meeting', 'active'])
+    .in('status', ACTIVE_BUYER_LEAD_STATUSES)
 
   if (leadsError) return NextResponse.json({ error: leadsError.message }, { status: 500 })
 
