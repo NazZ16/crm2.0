@@ -192,5 +192,23 @@ export async function POST(request: Request) {
     }
   }
 
+  // Leads de vendedor precisam de seguimento ativo desde o primeiro dia — sem
+  // isto, uma lead nova (ex.: FSBO importado pela extensão) só ganhava task
+  // automática na primeira transição de estado (ver lib/auto-tasks.ts), o que
+  // podia deixá-la parada dias sem ninguém a lembrar de dar seguimento.
+  if (parsed.data.lead_type === 'seller') {
+    const dueAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
+    await db.from('tasks').insert({
+      team_id: teamId,
+      lead_id: data.id,
+      title: 'Fazer seguimento ao contacto inicial',
+      description: '[auto:seller-new-lead] Lead de vendedor importada — confirma se respondeu ao primeiro contacto e agenda avaliação do imóvel.',
+      due_at: dueAt,
+      priority: 'high',
+      assigned_to: assignedTo,
+      created_by: 'agent',
+    })
+  }
+
   return NextResponse.json(data, { status: 201 })
 }
