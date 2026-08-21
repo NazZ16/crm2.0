@@ -198,7 +198,7 @@ export async function POST(request: Request) {
   // podia deixá-la parada dias sem ninguém a lembrar de dar seguimento.
   if (parsed.data.lead_type === 'seller') {
     const dueAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
-    await db.from('tasks').insert({
+    const { error: taskError } = await db.from('tasks').insert({
       team_id: teamId,
       lead_id: data.id,
       title: 'Fazer seguimento ao contacto inicial',
@@ -207,7 +207,9 @@ export async function POST(request: Request) {
       priority: 'high',
       assigned_to: assignedTo,
       created_by: 'agent',
+      status: 'open',
     })
+    if (taskError) console.warn('[leads POST] falha ao criar task de seguimento:', taskError.message)
   }
 
   return NextResponse.json(data, { status: 201 })
