@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MobileNav } from '@/components/layout/MobileNav'
 import { NotificationBell } from '@/components/layout/NotificationBell'
+import { ChatWidget } from '@/components/chat/ChatWidget'
 
 export default async function DashboardLayout({
   children,
@@ -55,6 +56,8 @@ export default async function DashboardLayout({
           teamName={teamName}
         />
       </div>
+
+      <ChatWidget />
     </div>
   )
 }
