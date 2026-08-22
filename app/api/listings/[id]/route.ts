@@ -97,12 +97,37 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+  const service = createServiceClient()
 
-  const { member } = await getMember(user.id)
-  if (!member) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
-  if (member.role === 'viewer') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  // Suporta autenticação por API key (extensão de browser e app Android) —
+  // mesmo padrão de /api/listings, para ligar a lead de vendedor criada
+  // automaticamente ao imóvel (lead_id) sem sessão de utilizador. Sem isto,
+  // reenviar o mesmo FSBO sem telefone criava uma lead duplicada de cada
+  // vez, porque não havia forma de saber que já existia uma ligada.
+  const apiKey = request.headers.get('X-API-Key')
+  let teamId: string | null = null
+
+  if (apiKey) {
+    const { hashApiKey } = await import('@/lib/api-keys')
+    const keyHash = hashApiKey(apiKey)
+    const { data: apiKeyRow } = await service
+      .from('team_api_keys')
+      .select('team_id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
+      .single()
+    if (apiKeyRow) teamId = apiKeyRow.team_id
+  }
+
+  if (!teamId) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+
+    const { member } = await getMember(user.id)
+    if (!member) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    if (member.role === 'viewer') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+    teamId = member.team_id
+  }
 
   const body = await request.json()
   const parsed = updateListingSchema.safeParse(body)
@@ -110,12 +135,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
-  const service = createServiceClient()
   const { data, error } = await service
     .from('listings')
     .update(parsed.data)
     .eq('id', id)
-    .eq('team_id', member.team_id)
+    .eq('team_id', teamId)
     .select('*, seller:leads!listings_lead_id_fkey(id,full_name,phone,email), buyer:leads!listings_buyer_lead_id_fkey(id,full_name,phone,email)')
     .single()
 
