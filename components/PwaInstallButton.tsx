@@ -96,6 +96,20 @@ export function PwaInstallButton() {
     )
   }
 
-  // A verificar ou não suportado — não mostrar nada para não poluir
+  // Desktop sem beforeinstallprompt (Firefox, Safari) — instruções manuais
+  if (state === 'unsupported' && !isIos) {
+    return (
+      <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 space-y-1">
+        <p className="font-medium">Instalar no computador</p>
+        <p>
+          No Chrome ou Edge: ícone de instalação (⊕) na barra de endereço, ou menu ⋮ →{' '}
+          <strong>&quot;Instalar CRM 2.0…&quot;</strong>. No Safari (macOS 14+): menu Ficheiro →{' '}
+          <strong>&quot;Adicionar ao Dock&quot;</strong>.
+        </p>
+      </div>
+    )
+  }
+
+  // A verificar — não mostrar nada para não poluir
   return null
 }

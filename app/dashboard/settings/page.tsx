@@ -136,10 +136,10 @@ export default async function SettingsPage({
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <Smartphone size={16} />
-            Aplicação Móvel
+            Instalar Aplicação
           </CardTitle>
           <CardDescription>
-            Instala o CRM como app no telemóvel para acesso rápido e para poder partilhar ficheiros de áudio diretamente.
+            Instala o CRM como app no computador ou no telemóvel para acesso rápido — no telemóvel também podes partilhar ficheiros de áudio diretamente.
           </CardDescription>
         </CardHeader>
         <CardContent>
