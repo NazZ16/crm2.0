@@ -85,12 +85,53 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
+  const service = createServiceClient()
 
-  const { member, lead } = await getLeadAndVerify(id, user.id)
-  if (!member || !lead) return NextResponse.json({ error: 'Lead nao encontrada' }, { status: 404 })
-  if (member.role === 'viewer') return NextResponse.json({ error: 'Sem permissao' }, { status: 403 })
+  // Suporta autenticação por API key (extensão de browser e app Android) —
+  // usado para completar o telefone de uma lead FSBO à mão quando a
+  // extração não o conseguiu capturar (ver LeadsHistoryActivity na app).
+  const apiKey = request.headers.get('X-API-Key')
+  let teamId: string | null = null
+  let usedApiKey = false
+
+  if (apiKey) {
+    const { hashApiKey } = await import('@/lib/api-keys')
+    const keyHash = hashApiKey(apiKey)
+    const { data: apiKeyRow } = await service
+      .from('team_api_keys')
+      .select('team_id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
+      .single()
+    if (apiKeyRow) {
+      teamId = apiKeyRow.team_id
+      usedApiKey = true
+    }
+  }
+
+  if (!teamId) {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Nao autenticado' }, { status: 401 })
+
+    const { data: member } = await supabase
+      .from('team_members')
+      .select('team_id, role')
+      .eq('user_id', user.id)
+      .single()
+    if (!member) return NextResponse.json({ error: 'Sem permissao' }, { status: 403 })
+    if (member.role === 'viewer') return NextResponse.json({ error: 'Sem permissao' }, { status: 403 })
+    teamId = member.team_id
+  }
+
+  const db = usedApiKey ? service : supabase
+  const { data: lead } = await db
+    .from('leads')
+    .select('id, team_id, status, lead_type, assigned_to, google_contact_resource_name, google_contact_preexisting')
+    .eq('id', id)
+    .eq('team_id', teamId)
+    .single()
+
+  if (!lead) return NextResponse.json({ error: 'Lead nao encontrada' }, { status: 404 })
 
   const body = await request.json()
   const parsed = updateLeadSchema.safeParse(body)
@@ -110,14 +151,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     updates.escritura_date = new Date().toISOString()
   }
 
-  // Usa service client porque a posse ja foi verificada acima (member.team_id === lead.team_id).
+  // Usa service client porque a posse ja foi verificada acima (teamId == lead.team_id).
   // Evita falsos sucessos por RLS quando a politica permite SELECT mas recusa UPDATE.
-  const svc = createServiceClient()
+  const svc = service
   const { data, error } = await svc
     .from('leads')
     .update(updates)
     .eq('id', id)
-    .eq('team_id', member.team_id) // defesa em profundidade
+    .eq('team_id', teamId) // defesa em profundidade
     .select()
     .single()
 
@@ -141,7 +182,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     try {
       autoTasksCreated = await applyAutoTaskOnStatusChange(svc, {
         leadId: id,
-        teamId: member.team_id,
+        teamId: teamId as string,
         oldStatus,
         newStatus,
         leadType,
@@ -155,7 +196,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   // Sync com Google Contacts (best-effort, nao bloqueia a resposta).
   try {
-    await syncLeadToGoogleContact(member.team_id, data)
+    await syncLeadToGoogleContact(teamId as string, data)
   } catch (err) {
     console.warn('[lead PATCH] google contact sync failed:', err)
   }
