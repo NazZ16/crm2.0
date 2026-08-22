@@ -52,7 +52,7 @@ export abstract class BaseAgent {
         }
       } catch (err) {
         const isOverloaded =
-          err instanceof Anthropic.APIError && (err.status === 529 || err.status === 529)
+          err instanceof Anthropic.APIError && err.status === 529
         const isRateLimit =
           err instanceof Anthropic.APIError && err.status === 429
         const shouldRetry = (isOverloaded || isRateLimit) && attempt < MAX_RETRIES

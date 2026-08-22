@@ -1,10 +1,7 @@
 // lib/agents/matching-agent.ts
-import Anthropic from '@anthropic-ai/sdk'
+import { BaseAgent, CLAUDE_HAIKU, PT_PT_LANGUAGE_RULES } from './base-agent'
 import type { Investor, Opportunity } from '@/lib/types'
 import type { ScoreResult } from '@/lib/matching-engine'
-import { PT_PT_LANGUAGE_RULES } from './base-agent'
-
-const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
 
 const SYSTEM_PROMPT = `És um consultor imobiliário especializado em investimento em Portugal.
 Para cada par investidor-imóvel, escreve um pitch de apresentação curto (3-4 frases).
@@ -20,48 +17,50 @@ export interface PitchResult {
   pitch_draft: string | null
 }
 
+interface PitchesOutput {
+  pitches: PitchResult[]
+}
+
+class MatchingAgent extends BaseAgent {
+  async generatePitches(
+    matches: ScoreResult[],
+    investors: Investor[],
+    opp: Opportunity,
+  ): Promise<PitchResult[]> {
+    if (matches.length === 0) return []
+
+    const investorMap = new Map(investors.map((i) => [i.id, i]))
+
+    const matchList = matches
+      .map((m) => {
+        const inv = investorMap.get(m.investor_id)
+        if (!inv) return null
+        return `Investidor: ${inv.name} | Budget: €${inv.budget_min?.toLocaleString('pt-PT') ?? '?'}-€${inv.budget_max?.toLocaleString('pt-PT') ?? '?'} | Tipos: ${inv.investment_type?.join(', ') ?? 'variado'} | Score: ${m.score}/100 | Razões positivas: ${m.reasons.filter((r) => r.positive).map((r) => r.reason).join('; ')}`
+      })
+      .filter(Boolean)
+      .join('\n')
+
+    const oppSummary = `Imóvel: ${opp.title} | Zona: ${opp.zone} | Tipo: ${opp.deal_type} | Preço: €${(opp.negotiated_price ?? opp.asking_price).toLocaleString('pt-PT')} | Tipologia: ${opp.typology ?? 'N/A'} | Área: ${opp.area_m2 ?? 'N/A'}m²`
+
+    const userMessage = `${oppSummary}\n\nInvestidores para apresentar:\n${matchList}\n\nResponde com:\n{"pitches":[{"investor_id":"uuid","pitch_draft":"texto"}]}`
+
+    try {
+      const { text } = await this.callClaude(SYSTEM_PROMPT, userMessage, 1024, CLAUDE_HAIKU)
+      const parsed = this.parseJSON<PitchesOutput>(text)
+      return parsed.pitches
+    } catch (err) {
+      console.error('[matching-agent] Falha ao gerar pitches:', err)
+      return matches.map((m) => ({ investor_id: m.investor_id, pitch_draft: null }))
+    }
+  }
+}
+
+const matchingAgent = new MatchingAgent()
+
 export async function generatePitches(
   matches: ScoreResult[],
   investors: Investor[],
   opp: Opportunity,
 ): Promise<PitchResult[]> {
-  if (matches.length === 0) return []
-
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const investorMap = new Map(investors.map((i) => [i.id, i]))
-
-  const matchList = matches
-    .map((m) => {
-      const inv = investorMap.get(m.investor_id)
-      if (!inv) return null
-      return `Investidor: ${inv.name} | Budget: €${inv.budget_min?.toLocaleString('pt-PT') ?? '?'}-€${inv.budget_max?.toLocaleString('pt-PT') ?? '?'} | Tipos: ${inv.investment_type?.join(', ') ?? 'variado'} | Score: ${m.score}/100 | Razões positivas: ${m.reasons.filter((r) => r.positive).map((r) => r.reason).join('; ')}`
-    })
-    .filter(Boolean)
-    .join('\n')
-
-  const oppSummary = `Imóvel: ${opp.title} | Zona: ${opp.zone} | Tipo: ${opp.deal_type} | Preço: €${(opp.negotiated_price ?? opp.asking_price).toLocaleString('pt-PT')} | Tipologia: ${opp.typology ?? 'N/A'} | Área: ${opp.area_m2 ?? 'N/A'}m²`
-
-  const userMessage = `${oppSummary}\n\nInvestidores para apresentar:\n${matchList}\n\nResponde com:\n{"pitches":[{"investor_id":"uuid","pitch_draft":"texto"}]}`
-
-  const response = await client.messages.create({
-    model: HAIKU_MODEL,
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userMessage }],
-  })
-
-  const text = response.content
-    .filter((c) => c.type === 'text')
-    .map((c) => (c as { type: 'text'; text: string }).text)
-    .join('')
-
-  try {
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    const parsed = JSON.parse(text.slice(start, end + 1)) as { pitches: PitchResult[] }
-    return parsed.pitches
-  } catch {
-    console.error('[matching-agent] Falha ao fazer parse dos pitches:', text)
-    return matches.map((m) => ({ investor_id: m.investor_id, pitch_draft: null }))
-  }
+  return matchingAgent.generatePitches(matches, investors, opp)
 }
