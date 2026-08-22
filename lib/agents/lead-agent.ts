@@ -1,4 +1,4 @@
-import { BaseAgent } from './base-agent'
+import { BaseAgent, PT_PT_LANGUAGE_RULES } from './base-agent'
 import type { AgentFullOutput, LeadProfile } from '@/lib/types'
 
 const SYSTEM_PROMPT = `Es um assistente especializado em analise de conversas imobiliarias em Portugal.
@@ -158,7 +158,11 @@ ATENCAO IMPORTANTE:
 - Os valores de "channel" sao SEMPRE em INGLES: "whatsapp" ou "email".
 - Os valores de "tone" sao em PORTUGUES: "curto", "neutro" ou "formal".
 - Inclui SEMPRE pelo menos 1 acao em next_best_actions, mesmo para leads frias (ex: agendar recontacto longe, pedir referencias).
-- NUNCA uses emojis (😊, 👍, 🚀, etc.) em "body", "subject" ou em qualquer texto que possa ir para WhatsApp ou email. Os links wa.me/mailto corrompem caracteres fora do BMP. Mantem o tom profissional e directo, sem icones nem decoracoes.
+- Os textos de "body" e "subject" dos drafts seguem SEMPRE estas regras:
+
+${PT_PT_LANGUAGE_RULES}
+
+  Nota adicional: os links wa.me/mailto corrompem caracteres fora do BMP (ex: emojis), por isso o "NUNCA uses emojis" acima aplica-se em particular aqui. Mantem o tom profissional e directo, sem icones nem decoracoes.
 
 REGRAS POR TIPO DE LEAD:
 - Se "lead_type" = "buyer": preenche home_preferences, financial_profile, family_context (perfil de quem procura). Deixa "seller_profile" todo a null. Drafts focados em proxima visita, shortlist, perguntas para apurar perfil.

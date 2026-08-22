@@ -2,13 +2,18 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Investor, Opportunity } from '@/lib/types'
 import type { ScoreResult } from '@/lib/matching-engine'
+import { PT_PT_LANGUAGE_RULES } from './base-agent'
 
 const HAIKU_MODEL = 'claude-haiku-4-5-20251001'
 
 const SYSTEM_PROMPT = `És um consultor imobiliário especializado em investimento em Portugal.
-Para cada par investidor-imóvel, escreve um pitch de apresentação curto (3-4 frases) em português de Portugal.
+Para cada par investidor-imóvel, escreve um pitch de apresentação curto (3-4 frases).
 O pitch deve destacar o que torna este imóvel interessante especificamente para aquele investidor.
-Responde SEMPRE em JSON válido com o array "pitches".`
+Responde SEMPRE em JSON válido com o array "pitches".
+
+O texto de "pitch_draft" segue SEMPRE estas regras:
+
+${PT_PT_LANGUAGE_RULES}`
 
 export interface PitchResult {
   investor_id: string

@@ -3,6 +3,18 @@ import Anthropic from '@anthropic-ai/sdk'
 export const CLAUDE_MODEL = 'claude-sonnet-5'
 export const CLAUDE_HAIKU = 'claude-haiku-4-5-20251001'
 
+// Regras de lingua partilhadas por todos os agentes que escrevem texto
+// dirigido a um lead ou investidor (mensagens, pitches, emails). Evita que
+// saia portugues do Brasil ou emojis nalgum dos pontos de contacto.
+export const PT_PT_LANGUAGE_RULES = `LINGUA (obrigatorio em qualquer texto dirigido a um lead ou investidor):
+- Portugues europeu (Portugal), NUNCA portugues do Brasil
+- Usa "tu" ou o nome da pessoa para te dirigires a ela — NUNCA "voce"
+- Usa a forma "a + infinitivo" para o gerundio: "estou a pensar", "a ver se" — NUNCA "estou pensando", "vendo se"
+- Vocabulario de Portugal: "telemovel" (nao "celular"), "combinar" (nao "agendar" no sentido informal), etc.
+- Evita expressoes tipicamente brasileiras (ex: "bacana", "legal" como elogio, "oi", "cara")
+- NUNCA uses emojis
+- NUNCA uses pontos de exclamacao excessivos (1 maximo)`
+
 export abstract class BaseAgent {
   protected client: Anthropic
 

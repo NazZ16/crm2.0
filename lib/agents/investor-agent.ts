@@ -1,4 +1,4 @@
-import { BaseAgent } from './base-agent'
+import { BaseAgent, PT_PT_LANGUAGE_RULES } from './base-agent'
 import type { Investor, Opportunity, RoiMetrics } from '@/lib/types'
 import { calcularRoi, formatEur, formatPct } from '@/lib/roi-calculator'
 
@@ -25,8 +25,11 @@ REGRAS:
 - Responde SEMPRE em JSON válido, sem texto antes ou depois
 - Sê objetivo e factual — baseia o score nas métricas reais
 - O score vai de 0 (não adequado) a 100 (match perfeito)
-- Os pitches devem ser diretos, em português de Portugal, profissionais mas não formais
+- Os pitches devem ser diretos, profissionais mas não formais
 - Nunca inventes dados — usa apenas o que é fornecido
+- O texto de "pitch_draft" segue SEMPRE estas regras:
+
+${PT_PT_LANGUAGE_RULES}
 
 CRITÉRIOS DE MATCHING:
 - Orçamento (peso 30%): preço dentro do range min-max do investidor
