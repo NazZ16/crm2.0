@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   let query = (usedApiKey ? service : supabase)
     .from('leads')
     .select(`
-      id, full_name, phone, email, source, status, score, urgency,
+      id, full_name, phone, email, source, status, score, urgency, lead_type,
       last_contact_at, next_action_at, created_at, assigned_to, campaign_id, tags, notes
     `)
     .eq('team_id', teamId)

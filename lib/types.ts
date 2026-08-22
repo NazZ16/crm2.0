@@ -820,12 +820,29 @@ export interface Listing {
   visit_count: number | null
   proposal_count: number | null
 
+  // Fecho de negócio (migration 036) — valor real de venda, distinto de
+  // "price" (valor pedido), e a lead compradora que fechou o negócio.
+  sold_price: number | null
+  buyer_lead_id: string | null
+  sold_at: string | null
+
   // Camada semântica de matching (migration 032)
   embedding?: number[] | string | null
   embedding_updated_at?: string | null
 
   created_at: string
   updated_at: string
+
+  // Joins opcionais devolvidos por GET/PATCH /api/listings/[id]
+  seller?: ListingLinkedLead | null
+  buyer?: ListingLinkedLead | null
+}
+
+export interface ListingLinkedLead {
+  id: string
+  full_name: string
+  phone: string | null
+  email: string | null
 }
 
 export interface ListingExtractionResult {

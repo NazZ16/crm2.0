@@ -50,6 +50,10 @@ const updateListingSchema = z.object({
   lead_id: z.string().uuid().nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),
 
+  sold_price: z.number().nonnegative().nullable().optional(),
+  buyer_lead_id: z.string().uuid().nullable().optional(),
+  sold_at: z.string().datetime().nullable().optional(),
+
   agent_name: z.string().max(200).nullable().optional(),
   agent_phone: z.string().max(50).nullable().optional(),
   agent_email: z.string().email().max(200).nullable().optional(),
@@ -80,7 +84,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const { data, error } = await supabase
     .from('listings')
-    .select('*')
+    .select('*, seller:leads!listings_lead_id_fkey(id,full_name,phone,email), buyer:leads!listings_buyer_lead_id_fkey(id,full_name,phone,email)')
     .eq('id', id)
     .eq('team_id', member.team_id)
     .single()
@@ -112,7 +116,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .update(parsed.data)
     .eq('id', id)
     .eq('team_id', member.team_id)
-    .select()
+    .select('*, seller:leads!listings_lead_id_fkey(id,full_name,phone,email), buyer:leads!listings_buyer_lead_id_fkey(id,full_name,phone,email)')
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -10,6 +10,7 @@ import {
 } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -17,8 +18,9 @@ import { toast } from 'sonner'
 import {
   ArrowLeft, MapPin, BedDouble, Bath, Ruler, Car, Zap, RefreshCw,
   Trash2, ExternalLink, CheckCircle2, AlertCircle, Users, UserRound, Phone, Mail,
-  ChevronLeft, ChevronRight, Clock, Eye, FileText,
+  ChevronLeft, ChevronRight, Clock, Eye, FileText, Handshake, UserPlus, Loader2,
 } from 'lucide-react'
+import { LeadPicker } from './LeadPicker'
 
 function formatPrice(price: number | null): string {
   if (price == null) return 'Sob consulta'
@@ -104,6 +106,12 @@ export default function ListingDetailPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [matches, setMatches] = useState<ListingMatchResult[] | null>(null)
   const [matchesLoading, setMatchesLoading] = useState(false)
+  const [linkingSeller, setLinkingSeller] = useState(false)
+  const [linkingBuyer, setLinkingBuyer] = useState(false)
+  const [savingSale, setSavingSale] = useState(false)
+  const [applyingValues, setApplyingValues] = useState(false)
+  const [soldPriceInput, setSoldPriceInput] = useState('')
+  const [soldAtInput, setSoldAtInput] = useState('')
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/listings/${id}`)
@@ -122,6 +130,86 @@ export default function ListingDetailPage() {
   }, [id])
 
   useEffect(() => { loadMatches() }, [loadMatches])
+
+  useEffect(() => {
+    if (!listing) return
+    setSoldPriceInput(listing.sold_price != null ? String(listing.sold_price) : '')
+    setSoldAtInput(listing.sold_at ? listing.sold_at.slice(0, 10) : new Date().toISOString().slice(0, 10))
+  }, [listing?.sold_price, listing?.sold_at])
+
+  async function patchListing(payload: Record<string, unknown>) {
+    const res = await fetch(`/api/listings/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (res.ok) {
+      setListing(await res.json())
+      toast.success('Atualizado')
+      return true
+    }
+    const data = await res.json().catch(() => null)
+    toast.error(typeof data?.error === 'string' ? data.error : 'Erro ao atualizar')
+    return false
+  }
+
+  async function linkSeller(lead: { id: string }) {
+    await patchListing({ lead_id: lead.id })
+    setLinkingSeller(false)
+  }
+  async function unlinkSeller() {
+    await patchListing({ lead_id: null })
+  }
+  async function linkBuyer(lead: { id: string }) {
+    await patchListing({ buyer_lead_id: lead.id })
+    setLinkingBuyer(false)
+  }
+  async function unlinkBuyer() {
+    await patchListing({ buyer_lead_id: null })
+  }
+
+  async function saveSaleDetails() {
+    const trimmed = soldPriceInput.trim()
+    const price = trimmed === '' ? null : Number(trimmed)
+    if (price != null && (Number.isNaN(price) || price < 0)) {
+      toast.error('Valor de venda inválido')
+      return
+    }
+    setSavingSale(true)
+    const sold_at = soldAtInput ? new Date(`${soldAtInput}T12:00:00`).toISOString() : null
+    await patchListing({ sold_price: price, sold_at })
+    setSavingSale(false)
+  }
+
+  async function applyValuesToLeads() {
+    if (!listing || listing.sold_price == null) return
+    const targets = [listing.lead_id, listing.buyer_lead_id].filter((v): v is string => Boolean(v))
+    if (targets.length === 0) return
+    setApplyingValues(true)
+    let updated = 0
+    try {
+      for (const leadId of targets) {
+        const res = await fetch(`/api/leads/${leadId}`)
+        if (!res.ok) continue
+        const lead = await res.json()
+        const patch: Record<string, unknown> = {}
+        if (lead.deal_value == null) patch.deal_value = listing.sold_price
+        if (lead.closed_at == null) patch.closed_at = listing.sold_at ?? new Date().toISOString()
+        if (Object.keys(patch).length === 0) continue
+        const patchRes = await fetch(`/api/leads/${leadId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        })
+        if (patchRes.ok) updated++
+      }
+      toast.success(updated > 0 ? `Valores aplicados a ${updated} lead(s)` : 'As leads já tinham valores preenchidos')
+    } catch {
+      toast.error('Erro ao aplicar valores às leads')
+    } finally {
+      setApplyingValues(false)
+    }
+  }
 
   async function updateStatus(status: ListingStatus) {
     setUpdatingStatus(true)
@@ -343,6 +431,89 @@ export default function ListingDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-1.5"><UserRound size={14} /> Vendedor</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {listing.seller ? (
+                <>
+                  <Link href={`/dashboard/leads/${listing.seller.id}`} className="flex items-center gap-1.5 font-medium text-gray-900 hover:text-blue-600">
+                    <UserRound size={13} className="text-gray-400" /> {listing.seller.full_name}
+                  </Link>
+                  {listing.seller.phone && (
+                    <a href={`tel:${listing.seller.phone}`} className="flex items-center gap-1.5 text-gray-700 hover:text-blue-600">
+                      <Phone size={13} className="text-gray-400" /> {listing.seller.phone}
+                    </a>
+                  )}
+                  {listing.seller.email && (
+                    <a href={`mailto:${listing.seller.email}`} className="flex items-center gap-1.5 text-gray-700 hover:text-blue-600">
+                      <Mail size={13} className="text-gray-400" /> {listing.seller.email}
+                    </a>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setLinkingSeller(true)}>Trocar</Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-red-600 hover:text-red-700" onClick={unlinkSeller}>Remover</Button>
+                  </div>
+                </>
+              ) : linkingSeller ? (
+                <LeadPicker defaultLeadType="seller" onSelect={linkSeller} onCancel={() => setLinkingSeller(false)} />
+              ) : (
+                <>
+                  <p className="text-xs text-gray-400">Ainda não há lead vendedora ligada a este anúncio.</p>
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setLinkingSeller(true)}>
+                    <UserPlus size={13} /> Ligar vendedor
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {listing.status === 'sold' && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-1.5"><Handshake size={14} /> Fecho de negócio</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Valor real de venda</label>
+                  <Input type="number" min={0} value={soldPriceInput} onChange={(e) => setSoldPriceInput(e.target.value)} placeholder="ex: 185000" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-gray-500">Data de fecho</label>
+                  <Input type="date" value={soldAtInput} onChange={(e) => setSoldAtInput(e.target.value)} />
+                </div>
+                <Button variant="outline" size="sm" disabled={savingSale} onClick={saveSaleDetails} className="gap-1.5">
+                  {savingSale && <Loader2 size={13} className="animate-spin" />} Guardar
+                </Button>
+
+                <div className="pt-2 border-t space-y-2">
+                  <span className="text-xs text-gray-500">Comprador</span>
+                  {listing.buyer ? (
+                    <div className="flex items-center justify-between">
+                      <Link href={`/dashboard/leads/${listing.buyer.id}`} className="font-medium text-gray-900 hover:text-blue-600">
+                        {listing.buyer.full_name}
+                      </Link>
+                      <Button variant="ghost" size="sm" className="h-6 text-xs text-red-600 hover:text-red-700" onClick={unlinkBuyer}>Remover</Button>
+                    </div>
+                  ) : linkingBuyer ? (
+                    <LeadPicker defaultLeadType="buyer" onSelect={linkBuyer} onCancel={() => setLinkingBuyer(false)} />
+                  ) : (
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setLinkingBuyer(true)}>
+                      <UserPlus size={13} /> Ligar comprador
+                    </Button>
+                  )}
+                </div>
+
+                {listing.sold_price != null && (listing.lead_id || listing.buyer_lead_id) && (
+                  <Button size="sm" className="gap-1.5 w-full" disabled={applyingValues} onClick={applyValuesToLeads}>
+                    {applyingValues && <Loader2 size={13} className="animate-spin" />} Aplicar valores às leads
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {(listing.agent_name || listing.agent_phone || listing.agent_email) && (
             <Card>
