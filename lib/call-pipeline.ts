@@ -19,6 +19,7 @@ import { diarizationAgent } from '@/lib/agents/diarization-agent'
 import { createServiceClient } from '@/lib/supabase/server'
 import { normalizePhone } from '@/lib/phone'
 import type { AgentFullOutput } from '@/lib/types'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 export async function runCallPipeline(
   uploadId: string,
@@ -45,7 +46,67 @@ export async function runCallPipeline(
       })
       .eq('id', uploadId)
 
-    // Passo a.5: Diarization via Haiku (Whisper-1 nao separa oradores).
+    await processTranscript(supabase, uploadId, teamId, transcriptText, filename, userId, known)
+  } catch (err) {
+    await marcarFalhado(supabase, uploadId, err)
+  }
+}
+
+/**
+ * Variante para transcricoes ja prontas (ex: Plaud, que transcreve no proprio
+ * aparelho e expoe so o texto via Zapier - sem ficheiro de audio). Salta o
+ * Whisper e entra directamente na analise/dedup/lead, reaproveitando o mesmo
+ * caminho que o runCallPipeline usa depois de transcrever.
+ */
+export async function runTranscriptPipeline(
+  uploadId: string,
+  teamId: string,
+  transcriptText: string,
+  filename: string,
+  userId: string,
+  known?: { knownContactName?: string; knownPhone?: string }
+): Promise<void> {
+  const supabase = createServiceClient()
+
+  try {
+    await supabase
+      .from('call_uploads')
+      .update({
+        transcript_text: transcriptText,
+        whisper_model: 'external',
+        status: 'analyzing',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', uploadId)
+
+    await processTranscript(supabase, uploadId, teamId, transcriptText, filename, userId, known)
+  } catch (err) {
+    await marcarFalhado(supabase, uploadId, err)
+  }
+}
+
+async function marcarFalhado(supabase: SupabaseClient, uploadId: string, err: unknown): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err)
+  await supabase
+    .from('call_uploads')
+    .update({
+      status: 'failed',
+      error: message,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', uploadId)
+}
+
+async function processTranscript(
+  supabase: SupabaseClient,
+  uploadId: string,
+  teamId: string,
+  transcriptText: string,
+  filename: string,
+  userId: string,
+  known?: { knownContactName?: string; knownPhone?: string }
+): Promise<void> {
+  // Passo a.5: Diarization via Haiku (Whisper-1 nao separa oradores).
     let transcriptFormatted: string | null = null
     try {
       const diarized = await diarizationAgent.reformat(transcriptText)
@@ -292,26 +353,15 @@ export async function runCallPipeline(
       link: `/dashboard/leads/${leadId}`,
     })
 
-    // Passo k: Marcar upload como done
-    await supabase
-      .from('call_uploads')
-      .update({
-        lead_id: leadId,
-        coach_feedback: coachFeedback as unknown as Record<string, unknown>,
-        status: 'done',
-        processed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', uploadId)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    await supabase
-      .from('call_uploads')
-      .update({
-        status: 'failed',
-        error: message,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', uploadId)
-  }
+  // Passo k: Marcar upload como done
+  await supabase
+    .from('call_uploads')
+    .update({
+      lead_id: leadId,
+      coach_feedback: coachFeedback as unknown as Record<string, unknown>,
+      status: 'done',
+      processed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', uploadId)
 }

@@ -4,8 +4,9 @@
  * Contrato (shape IngestPayload definido em elsio-hub/src/lib/crmClient.ts):
  *   {
  *     chatId: number,
- *     contentType: 'voice' | 'audio' | 'document' | 'photo' | 'video' | 'text',
- *     text?: string,
+ *     contentType: 'voice' | 'audio' | 'document' | 'photo' | 'video' | 'text' | 'transcript',
+ *     text?: string,  // obrigatorio quando contentType='transcript' (ex: Plaud via Zapier,
+ *                      // que ja transcreve no aparelho e nao expoe ficheiro de audio)
  *     fileUrl?: string,
  *     fileName?: string,
  *     mimeType?: string,
@@ -31,7 +32,7 @@
  */
 import { NextResponse, after } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { runCallPipeline } from '@/lib/call-pipeline'
+import { runCallPipeline, runTranscriptPipeline } from '@/lib/call-pipeline'
 
 export const maxDuration = 300
 
@@ -144,6 +145,95 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const contentType = payload.contentType
+
+  if (contentType === 'transcript') {
+    const transcriptText = payload.text?.trim()
+    if (!transcriptText) {
+      return err(400, 'missing_text', 'payload sem text para contentType=transcript')
+    }
+
+    const supabase = createServiceClient()
+    const filename = sanitizeFilename(payload.fileName || 'transcript_' + Date.now() + '.txt')
+    const storagePath = DEFAULT_TEAM_ID + '/calls/' + Date.now() + '-' + filename
+
+    await supabase.storage
+      .createBucket('call-audio', { public: false, fileSizeLimit: MAX_FILE_SIZE })
+      .catch(() => {})
+
+    const { error: storageError } = await supabase.storage
+      .from('call-audio')
+      .upload(storagePath, Buffer.from(transcriptText, 'utf-8'), { contentType: 'text/plain', upsert: false })
+
+    if (storageError) {
+      return err(500, 'storage_upload_failed', storageError.message)
+    }
+
+    const { data: uploadRow, error: insertError } = await supabase
+      .from('call_uploads')
+      .insert({
+        team_id: DEFAULT_TEAM_ID,
+        storage_path: storagePath,
+        status: 'transcribing',
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !uploadRow) {
+      void supabase.storage.from('call-audio').remove([storagePath])
+      return err(500, 'db_insert_failed', insertError?.message ?? 'insert sem linha devolvida')
+    }
+
+    const dashboardUrl = SITE_URL
+      ? SITE_URL + '/dashboard/leads/upload-call?id=' + uploadRow.id
+      : undefined
+
+    const hubChatId =
+      typeof payload.chatId === 'number' && Number.isFinite(payload.chatId)
+        ? payload.chatId
+        : undefined
+
+    const knownContactName = payload.metadata?.knownContactName?.trim() || undefined
+    const knownPhone = payload.metadata?.knownPhone?.trim() || undefined
+
+    after(
+      runTranscriptPipeline(
+        uploadRow.id,
+        DEFAULT_TEAM_ID,
+        transcriptText,
+        filename,
+        DEFAULT_USER_ID,
+        { knownContactName, knownPhone },
+      ).then(
+        async () => {
+          const successText = dashboardUrl
+            ? '✅ <b>Transcrição processada com sucesso!</b>\n\nVer lead:\n' + dashboardUrl
+            : '✅ <b>Transcrição processada com sucesso!</b>'
+          await notifyHub(hubChatId, successText, 'crm', uploadRow.id)
+        },
+        async (pipelineErr: unknown) => {
+          const errMsg = pipelineErr instanceof Error ? pipelineErr.message : String(pipelineErr)
+          console.error('[ingest] runTranscriptPipeline falhou', { uploadId: uploadRow.id, errMsg })
+          await notifyHub(
+            hubChatId,
+            '❌ <b>Erro ao processar transcrição no CRM</b>\n\n' + errMsg,
+            'crm',
+            uploadRow.id,
+          )
+        },
+      ),
+    )
+
+    return NextResponse.json(
+      {
+        ok: true,
+        uploadId: uploadRow.id,
+        dashboardUrl,
+        message: 'Aceite — transcricao a ser analisada em background',
+      },
+      { status: 202 },
+    )
+  }
+
   const fileUrl = payload.fileUrl
   const isVoice = contentType === 'voice'
   const isAudio = contentType === 'audio' || isVoice
