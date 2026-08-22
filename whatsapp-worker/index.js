@@ -1,5 +1,6 @@
 // whatsapp-worker/index.js — liga ao WhatsApp via Baileys (não-oficial, protocolo
-// "WhatsApp Web"/multi-device) e encaminha mensagens de texto recebidas para o CRM.
+// "WhatsApp Web"/multi-device) e encaminha mensagens de texto e áudio (transcrito no
+// backend) recebidas para o CRM.
 //
 // Leitura apenas: nunca envia mensagens. Corre como processo sempre ligado (não é
 // serverless) — deployado à parte do Next.js, ex. na Railway.
@@ -21,8 +22,14 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
+  downloadMediaMessage,
   DisconnectReason,
 } = require('@whiskeysockets/baileys')
+
+// Acima disto o worker so reconhece audio de WhatsApp e descarrega-o — a transcricao
+// em si (Whisper) acontece no backend (Vercel), que ja tem OPENAI_API_KEY configurada
+// para as chamadas telefonicas (lib/whisper.ts). Evita duplicar a chave/logica aqui.
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024
 
 const AUTH_DIR = process.env.AUTH_DIR || '/data/auth'
 const CRM_INGEST_URL = process.env.CRM_INGEST_URL
@@ -100,26 +107,53 @@ function resolvePhoneJid(msg) {
   return null
 }
 
-function extractText(message) {
+// Devolve { text } para mensagens de texto, ou { audioBuffer, mimeType } para audio (voz ou
+// ficheiro de audio partilhado) — o backend e que transcreve. `sock` e' necessario porque o
+// download pode ter de re-pedir o media ao WhatsApp (URL expirada).
+async function extractContent(msg, sock) {
+  const message = msg.message
   if (!message) return null
-  if (message.conversation) return message.conversation
+  if (message.conversation) return { text: message.conversation }
   if (message.extendedTextMessage && message.extendedTextMessage.text) {
-    return message.extendedTextMessage.text
+    return { text: message.extendedTextMessage.text }
+  }
+  if (message.audioMessage) {
+    const { fileLength, mimetype } = message.audioMessage
+    if (fileLength && Number(fileLength) > MAX_AUDIO_BYTES) {
+      console.warn('[worker] audio demasiado grande, a ignorar transcricao', { fileLength: Number(fileLength) })
+      return { text: '[mensagem: audioMessage — demasiado grande para transcrever]' }
+    }
+    try {
+      const audioBuffer = await downloadMediaMessage(
+        msg,
+        'buffer',
+        {},
+        { logger, reuploadRequest: sock.updateMediaMessage.bind(sock) }
+      )
+      return { audioBuffer, mimeType: mimetype || 'audio/ogg' }
+    } catch (err) {
+      console.error('[worker] falhou a descarregar audio:', err.message)
+      return { text: '[mensagem: audioMessage — falhou download]' }
+    }
   }
   const type = Object.keys(message)[0]
-  return type ? `[mensagem: ${type}]` : null
+  return type ? { text: `[mensagem: ${type}]` } : null
 }
 
-async function forwardMessage({ phone, text, profileName, occurredAt, fromMe }) {
+async function forwardMessage({ phone, text, audioBuffer, mimeType, profileName, occurredAt, fromMe }) {
+  const body = audioBuffer
+    ? { phone, audioBase64: audioBuffer.toString('base64'), audioMimeType: mimeType, profileName, occurredAt, fromMe }
+    : { phone, text, profileName, occurredAt, fromMe }
+
   try {
     const res = await fetch(CRM_INGEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-ingest-secret': CRM_INGEST_SECRET },
-      body: JSON.stringify({ phone, text, profileName, occurredAt, fromMe }),
+      body: JSON.stringify(body),
     })
     if (!res.ok) {
-      const body = await res.text()
-      console.error('[worker] CRM recusou a mensagem', res.status, body)
+      const responseBody = await res.text()
+      console.error('[worker] CRM recusou a mensagem', res.status, responseBody)
     }
   } catch (err) {
     console.error('[worker] falhou a enviar mensagem ao CRM:', err.message)
@@ -191,8 +225,8 @@ async function startSock() {
         const remoteJid = msg.key.remoteJid
         if (!remoteJid || remoteJid.endsWith('@g.us') || remoteJid === 'status@broadcast') continue
 
-        const text = extractText(msg.message)
-        if (!text) continue
+        const content = await extractContent(msg, sock)
+        if (!content) continue
 
         const phoneJid = resolvePhoneJid(msg)
         if (!phoneJid) {
@@ -212,14 +246,16 @@ async function startSock() {
 
         await forwardMessage({
           phone,
-          text,
+          text: content.text,
+          audioBuffer: content.audioBuffer,
+          mimeType: content.mimeType,
           // pushName é o nome de quem enviou — se fomos nós, isso é o NOSSO nome, não o da
           // lead, por isso só se passa quando a mensagem é mesmo recebida.
           profileName: fromMe ? undefined : (msg.pushName || undefined),
           occurredAt,
           fromMe,
         })
-        console.log('[worker] mensagem encaminhada', { phone, fromMe })
+        console.log('[worker] mensagem encaminhada', { phone, fromMe, audio: Boolean(content.audioBuffer) })
       } catch (err) {
         console.error('[worker] falhou a processar mensagem recebida:', err.message)
       }
