@@ -24,8 +24,9 @@ import {
 import Link from 'next/link'
 import type {
   LeadStatus, InteractionType, AgentDraft, AgentRecommendations, LeadType, SellerProfile,
-  AgentExtractionResult, AgentDrafts,
+  AgentExtractionResult, AgentDrafts, ListingStatus,
 } from '@/lib/types'
+import { LISTING_STATUS_LABELS } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -132,6 +133,24 @@ export default async function LeadDetailPage({ params }: Props) {
   const isSellerLead = leadType === 'seller' || leadType === 'both'
   const isBuyerLead = leadType === 'buyer' || leadType === 'both' || leadType === 'unknown'
 
+  // Imoveis ligados a esta lead como vendedora (migration 036 liga listings.lead_id
+  // a leads) — tambem serve para detetar quem tem varios imoveis a vender (possivel
+  // investidor). So consultado para leads vendedoras, para nao gastar uma query a mais
+  // em leads compradoras.
+  const sellerListings = isSellerLead
+    ? ((
+        await supabase
+          .from('listings')
+          .select('id, title, price, status')
+          .eq('lead_id', lead.id)
+          .order('created_at', { ascending: false })
+      ).data ?? [])
+    : []
+  const activeSellerListingsCount = sellerListings.filter(
+    (l) => l.status === 'active' || l.status === 'reserved'
+  ).length
+  const isPossibleInvestor = activeSellerListingsCount >= 2
+
   const profile = Array.isArray(lead.lead_profiles) ? lead.lead_profiles[0] : lead.lead_profiles
   const interactions = Array.isArray(lead.interactions) ? lead.interactions : []
   const tasks = Array.isArray(lead.tasks) ? lead.tasks : []
@@ -173,6 +192,12 @@ export default async function LeadDetailPage({ params }: Props) {
               <Badge className={`${LEAD_TYPE_COLORS[leadType]} text-xs`}>
                 {LEAD_TYPE_LABELS[leadType]}
               </Badge>
+              {isPossibleInvestor && (
+                <Badge variant="outline" className="text-xs text-purple-700 border-purple-300">
+                  <TrendingUp className="mr-1 h-3 w-3" />
+                  Possível investidor · {activeSellerListingsCount} imóveis
+                </Badge>
+              )}
               <span className="text-xs md:text-sm text-gray-500">
                 <span className="hidden md:inline">Score: </span>
                 <strong>{lead.score}</strong>
@@ -314,6 +339,33 @@ export default async function LeadDetailPage({ params }: Props) {
 
           {/* Imovel a vender (angariacao) — so para seller / both */}
           {isSellerLead && sellerProfile && <SellerProfileCard profile={sellerProfile} />}
+
+          {isSellerLead && sellerListings.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
+                  Imóveis a vender
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {sellerListings.map((listing) => (
+                  <Link
+                    key={listing.id}
+                    href={`/dashboard/listings/${listing.id}`}
+                    className="flex items-center justify-between gap-2 text-sm p-2 rounded-lg border border-gray-100 hover:bg-gray-50"
+                  >
+                    <span className="font-medium text-gray-900 truncate">{listing.title}</span>
+                    <span className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-xs text-gray-500">{fmtEur(listing.price)}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {LISTING_STATUS_LABELS[listing.status as ListingStatus]}
+                      </Badge>
+                    </span>
+                  </Link>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {isBuyerLead && (
             <Card>
