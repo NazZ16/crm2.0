@@ -7,6 +7,20 @@ ainda deslizar para português do Brasil (ex: "você", gerúndio "fazendo" em ve
 em vez de "você", "a + infinitivo" em vez de gerúndio, vocabulário de Portugal, evitar expressões brasileiras).
 Aplicar o mesmo nível de detalhe em qualquer agente novo que gere texto em português para o utilizador final.
 
+## 2026-08-21 — Android/Pixel bloqueia gravação de chamadas para apps de terceiros
+Tentei construir uma app Android (GravadorChamadas) para gravar chamadas reais via `MediaRecorder`
+(`AudioSource.MIC`, depois `VOICE_COMMUNICATION`) — ambas devolveram silêncio digital total
+(-91dB constante, confirmado com `ffmpeg -af volumedetect` em dois ficheiros reais, mesmo com
+alta-voz ligado). O Android (sobretudo Pixel/stock) silencia ativamente o microfone de apps de
+terceiros durante uma chamada real, para impedir gravação sem autorização — as únicas fontes com
+acesso real (`VOICE_CALL`/`VOICE_UPLINK`/`VOICE_DOWNLINK`) exigem a permissão de sistema
+`CAPTURE_AUDIO_OUTPUT`, inacessível sem root (e mesmo com root, dependente do chip/DSP). Não tentar
+de novo esta abordagem sem uma mudança de hardware ou root explicitamente aceite pelo Élsio.
+Pivotámos para o Plaud (gravador externo) + Zapier a enviar a transcrição já pronta para
+`/api/ingest` (`contentType='transcript'`, ver lib/call-pipeline.ts::runTranscriptPipeline) — e a
+app Android passa a servir só para capturar nome/número reais do contacto (Contactos do Android),
+correlacionados por tempo com a transcrição via `pending_call_metadata` (migration 037).
+
 ## 2026-08-18 — Registo demasiado escrito/formal em mensagens de WhatsApp
 O agente produzia frases correctas em PT-PT mas com registo demasiado escrito (ex: oração reduzida de
 particípio "Passado um tempo desde a última conversa e gostava de perceber..." — gramaticalmente válida

@@ -4,7 +4,7 @@
  * Contrato (shape IngestPayload definido em elsio-hub/src/lib/crmClient.ts):
  *   {
  *     chatId: number,
- *     contentType: 'voice' | 'audio' | 'document' | 'photo' | 'video' | 'text' | 'transcript',
+ *     contentType: 'voice' | 'audio' | 'document' | 'photo' | 'video' | 'text' | 'transcript' | 'call_metadata',
  *     text?: string,  // obrigatorio quando contentType='transcript' (ex: Plaud via Zapier,
  *                      // que ja transcreve no aparelho e nao expoe ficheiro de audio)
  *     fileUrl?: string,
@@ -23,9 +23,15 @@
  * Auth: header `x-ingest-secret` == env CRM_INGEST_SECRET.
  *
  * Comportamento:
- *   - So aceita payload audio (voice, audio, ou document com MIME audio/*).
- *   - Descarrega do fileUrl, guarda em Supabase Storage, cria linha call_uploads,
- *     arranca runCallPipeline em after() e responde 202 rapido.
+ *   - audio/voice/document(audio/*): descarrega do fileUrl, guarda em Supabase Storage,
+ *     cria linha call_uploads, arranca runCallPipeline em after() e responde 202 rapido.
+ *   - transcript: sem ficheiro — usa metadata.knownContactName/knownPhone se vierem no
+ *     payload, senão tenta cruzar com a entrada mais recente (últimos 60min) em
+ *     pending_call_metadata (ver contentType=call_metadata abaixo); arranca
+ *     runTranscriptPipeline em after().
+ *   - call_metadata: guarda knownContactName/knownPhone em pending_call_metadata para
+ *     a transcrição seguinte (do Plaud) usar — enviado pela app GravadorChamadas no
+ *     fim de cada chamada (ela sabe quem é mas não consegue gravar áudio no Pixel).
  *
  * Este endpoint corre em paralelo ao webhook antigo em /api/telegram/webhook
  * ate a Fase 6 fazer o cutover. NAO alterar o webhook antigo aqui.
@@ -146,6 +152,31 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const contentType = payload.contentType
 
+  if (contentType === 'call_metadata') {
+    const knownContactName = payload.metadata?.knownContactName?.trim() || null
+    const knownPhone = payload.metadata?.knownPhone?.trim() || null
+    if (!knownContactName && !knownPhone) {
+      return err(400, 'missing_metadata', 'payload sem knownContactName nem knownPhone')
+    }
+
+    const supabase = createServiceClient()
+    const { error: insertErr } = await supabase.from('pending_call_metadata').insert({
+      team_id: DEFAULT_TEAM_ID,
+      contact_name: knownContactName,
+      phone: knownPhone,
+      call_ended_at: payload.metadata?.receivedAt || new Date().toISOString(),
+    })
+
+    if (insertErr) {
+      return err(500, 'db_insert_failed', insertErr.message)
+    }
+
+    return NextResponse.json(
+      { ok: true, message: 'Metadata da chamada guardada, a aguardar transcricao' },
+      { status: 202 },
+    )
+  }
+
   if (contentType === 'transcript') {
     const transcriptText = payload.text?.trim()
     if (!transcriptText) {
@@ -192,8 +223,30 @@ export async function POST(request: Request): Promise<NextResponse> {
         ? payload.chatId
         : undefined
 
-    const knownContactName = payload.metadata?.knownContactName?.trim() || undefined
-    const knownPhone = payload.metadata?.knownPhone?.trim() || undefined
+    // Tenta cruzar com a metadata real da chamada (nome/telefone captados no
+    // telemóvel pela app GravadorChamadas via contentType=call_metadata) —
+    // so recorre a isto se o proprio payload nao ja trouxer os valores.
+    let knownContactName = payload.metadata?.knownContactName?.trim() || undefined
+    let knownPhone = payload.metadata?.knownPhone?.trim() || undefined
+
+    if (!knownContactName && !knownPhone) {
+      const windowStart = new Date(Date.now() - 60 * 60 * 1000).toISOString()
+      const { data: pendingMatch } = await supabase
+        .from('pending_call_metadata')
+        .select('id, contact_name, phone')
+        .eq('team_id', DEFAULT_TEAM_ID)
+        .eq('matched', false)
+        .gte('call_ended_at', windowStart)
+        .order('call_ended_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (pendingMatch) {
+        knownContactName = pendingMatch.contact_name?.trim() || undefined
+        knownPhone = pendingMatch.phone?.trim() || undefined
+        await supabase.from('pending_call_metadata').update({ matched: true }).eq('id', pendingMatch.id)
+      }
+    }
 
     after(
       runTranscriptPipeline(
